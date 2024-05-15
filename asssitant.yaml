@@ -1,0 +1,362 @@
+openapi: 3.1.0
+info:
+  title: Assistants API
+  version: "1.0.0"
+paths:
+  /assistant/create:
+    post:
+      summary: Create a new assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssistantRequest'
+      responses:
+        '200':
+          description: Assistant created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantResponse'
+  /assistant/{assistant_id}/delete:
+    post:
+      summary: Delete an assistant
+      parameters:
+        - in: path
+          name: assistant_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Assistant deleted successfully
+  /assistant/{assistant_id}:
+    get:
+      summary: Retrieve an assistant
+      parameters:
+        - in: path
+          name: assistant_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Assistant retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantResponse'
+  /thread/create:
+    post:
+      summary: Create a new thread for an assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateThreadRequest'
+      responses:
+        '200':
+          description: Thread created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadResponse'
+  /assistant/{assistant_id}/upsert:
+    post:
+      summary: Upsert an assistant
+      parameters:
+        - in: path
+          name: assistant_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertAssistantRequest'
+      responses:
+        '200':
+          description: Assistant upserted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantResponse'
+  /file/add:
+    post:
+      summary: Add a file to an assistant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddFileRequest'
+      responses:
+        '200':
+          description: File added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileResponse'
+  /thread/{thread_id}/delete:
+    delete:
+      summary: Delete a thread
+      parameters:
+        - in: path
+          name: thread_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Thread deleted successfully
+  /message/create:
+    post:
+      summary: Create a message in a thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessageRequest'
+      responses:
+        '200':
+          description: Message created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+  /thread-and-run/create:
+    post:
+      summary: Create a thread and run it immediately
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateThreadAndRunRequest'
+      responses:
+        '200':
+          description: Thread and run created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreadAndRunResponse'
+  /run/create:
+    post:
+      summary: Create a run for a thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRunRequest'
+      responses:
+        '200':
+          description: Run created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunResponse'
+  /message-and-run/create:
+    post:
+      summary: Create a message and run a thread
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessageAndRunRequest'
+      responses:
+        '200':
+          description: Message and thread run created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageAndRunResponse'
+
+components:
+  schemas:
+    CreateAssistantRequest:
+      type: object
+      properties:
+        tasksmanager_id:
+          type: string
+        model:
+          type: string
+        name:
+          type: string
+        deprecation:
+          type: string
+        instructions:
+          type: string
+        tools_id:
+          type: array
+          items:
+            type: string
+        file_ids:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+    AssistantResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        instructions:
+          type: string
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tool'
+        file_ids:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+    CreateThreadRequest:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            type: string
+    ThreadResponse:
+      type: object
+      properties:
+        id:
+          type: string
+    Tool:
+      type: object
+      properties:
+        function:
+          type: string
+        arguments:
+          type: object
+        settings:
+          type: object
+    UpsertAssistantRequest:
+      type: object
+      properties:
+        tasksmanager_id:
+          type: string
+        tools_id:
+          type: string
+        assistant:
+          $ref: '#/components/schemas/AssistantResponse'
+    AddFileRequest:
+      type: object
+      properties:
+        tasksmanager_id:
+          type: string
+        file:
+          type: string
+        name:
+          type: string
+    FileResponse:
+      type: object
+      properties:
+        id:
+          type: string
+    CreateMessageRequest:
+      type: object
+      properties:
+        tasksmanager_id:
+          type: string
+        thread_id:
+          type: string
+        role:
+          type: string
+        content:
+          type: string
+        file_ids:
+          type: array
+          items:
+            type: string
+    MessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+    CreateThreadAndRunRequest:
+      type: object
+      properties:
+        tasksmanager_id:
+          type: string
+        assistant_id:
+          type: string
+        instructions:
+          type: string
+        model:
+          type: string
+        tools_id:
+          type: string
+    ThreadAndRunResponse:
+      type: object
+      properties:
+        thread_id:
+          type: string
+        run_id:
+          type: string
+    CreateRunRequest:
+      type: object
+      properties:
+        tasksmanager_id:
+          type: string
+        thread_id:
+          type: string
+        assistant_id:
+          type: string
+        instructions:
+          type: string
+        model:
+          type: string
+        tools_id:
+          type: string
+    RunResponse:
+      type: object
+      properties:
+        id:
+          type: string
+    CreateMessageAndRunRequest:
+      type: object
+      properties:
+        tasksmanager_id:
+          type: string
+        thread_id:
+          type: string
+        role:
+          type: string
+        content:
+          type: string
+        file_ids:
+          type: array
+          items:
+            type: string
+        assistant_id:
+          type: string
+        instructions:
+          type: string
+        model:
+          type: string
+        tools_id:
+          type: string
+    MessageAndRunResponse:
+      type: object
+      properties:
+        message_id:
+          type: string
+        run_id:
+          type: string

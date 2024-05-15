@@ -1,0 +1,50 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+        "name": "Python Debugger: Current File",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${file}",
+        "console": "integratedTerminal"
+    },
+    {
+        "name": "Python: Run Tests",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "pytest",
+        "args": [
+            "tests/"
+        ],
+        "env": {
+            "PYTHONPATH": "${workspaceFolder}"
+        }
+    },
+    {
+        "name": "Python: Test Explorer",
+        "type": "debugpy",
+        "request": "launch",
+        "console": "integratedTerminal",
+        "module": "pytest",
+        "justMyCode": false,
+        "env": {
+            "PYTHONPATH": "${workspaceFolder}"
+        }
+    },
+    {
+        "name": "FastAPI: Debug",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "uvicorn",
+        "args": [
+            "src.server.main:app",
+            "--host", "0.0.0.0",
+            "--port", "8080",
+            "--reload"
+        ],
+        "jinja": false,
+        "console": "integratedTerminal"
+    }
+         
+  ]
+}

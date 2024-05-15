@@ -1,0 +1,474 @@
+components:
+  schemas:
+    ErrorResponse:
+      properties:
+        message:
+          type: string
+      type: object
+    Product:
+      properties:
+        count:
+          type: integer
+        description:
+          type: string
+        id:
+          type: string
+        imageUrl:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+        tag:
+          items:
+            type: string
+          type: array
+      type: object
+    Tag:
+      properties:
+        displayName:
+          type: string
+        name:
+          type: string
+      type: object
+info:
+  description: watch retail store
+  title: watch-retail-store
+  version: 1.0.0
+openapi: 3.1.0
+paths:
+  /carts/{customerId}:
+    get:
+      parameters:
+      - description: Unique identifier of the customer
+        in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              examples:
+                cartExample:
+                  summary: Example response for retrieving a cart
+                  value:
+                    customerId: 7cc2cff5-d7dd-46df-bdfa-3fa6ec7cae14
+                    items: []
+          description: Cart retrieved successfully
+      summary: Retrieve a customer's cart
+  /carts/{customerId}/items:
+    post:
+      parameters:
+      - description: Unique identifier of the customer whose cart is being updated
+        in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            examples:
+              addItemExample:
+                summary: Example request for adding an item
+                value:
+                  itemId: 510a0d7e-8e83-4193-b483-e27e09ddc34d
+                  quantity: 1
+                  unitPrice: 795
+            schema:
+              properties:
+                itemId:
+                  type: string
+                quantity:
+                  type: integer
+                unitPrice:
+                  type: number
+              type: object
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              examples:
+                itemAddedExample:
+                  summary: Example response for adding an item
+                  value:
+                    itemId: 510a0d7e-8e83-4193-b483-e27e09ddc34d
+                    quantity: 1
+                    unitPrice: 795
+          description: Item added to the cart successfully
+      summary: Add an item to the cart
+  /carts/{customerId}/items/{itemId}:
+    delete:
+      parameters:
+      - description: Unique identifier of the customer whose cart is being updated
+        in: path
+        name: customerId
+        required: true
+        schema:
+          type: string
+      - description: Unique identifier of the item to be removed
+        in: path
+        name: itemId
+        required: true
+        schema:
+          type: string
+      responses:
+        '202':
+          description: Item removed from the cart successfully
+      summary: Remove an item from the cart
+  /catalogue:
+    get:
+      parameters:
+      - description: Filter products by tags
+        in: query
+        name: tags
+        schema:
+          type: string
+      - description: Order of the products
+        in: query
+        name: order
+        schema:
+          type: string
+      - description: Page number for pagination
+        in: query
+        name: page
+        schema:
+          type: integer
+      - description: Number of products per page
+        in: query
+        name: size
+        schema:
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              examples:
+                productList:
+                  summary: Example list of products
+                  value: null
+              schema:
+                items:
+                  $ref: '#/components/schemas/Product'
+                type: array
+          description: An array of products
+      summary: Get a list of products from the catalogue
+  /catalogue/product/{productId}:
+    get:
+      parameters:
+      - description: Unique identifier of the product
+        in: path
+        name: productId
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              examples:
+                productDetail:
+                  summary: Example product detail
+                  value: null
+              schema:
+                $ref: '#/components/schemas/Product'
+          description: Detailed information about a product
+      summary: Get a specific product by ID
+  /catalogue/size:
+    get:
+      parameters:
+      - description: Filter size by tags
+        in: query
+        name: tags
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              examples:
+                catalogueSize:
+                  summary: Example size of the catalogue
+                  value:
+                    size: 6
+              schema:
+                properties:
+                  size:
+                    type: integer
+                type: object
+          description: Size of the catalogue
+      summary: Get the size of the catalogue
+  /catalogue/tags:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              examples:
+                tagList:
+                  summary: Example list of tags
+                  value:
+                  - displayName: Smart
+                    name: smart
+                  - displayName: Dress
+                    name: dress
+                  - displayName: Luxury
+                    name: luxury
+                  - displayName: Casual
+                    name: casual
+              schema:
+                items:
+                  $ref: '#/components/schemas/Tag'
+                type: array
+          description: An array of tags
+      summary: Get the list of tags
+  /checkout/{checkoutId}:
+    get:
+      description: Retrieves the checkout details for a given checkout session.
+      parameters:
+      - description: Unique identifier for the checkout session
+        in: path
+        name: checkoutId
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              example:
+                request:
+                  customerEmail: example@example.com
+                  items:
+                  - id: 510a0d7e-8e83-4193-b483-e27e09ddc34d
+                    imageUrl: /assets/gentleman.jpg
+                    name: Gentleman
+                    quantity: 1
+                    totalCost: 795
+                    unitCost: 795
+                  shippingAddress:
+                    address: 123 Elm St, Springfield
+                    firstName: John
+                    lastName: Doe
+                shippingRates:
+                  rates:
+                  - amount: 5
+                    estimatedDays: 10
+                    name: Priority Mail
+                    token: priority-mail
+                  - amount: 15
+                    estimatedDays: 5
+                    name: Priority Mail Express
+                    token: priority-mail-express
+                  shipmentId: 5XPBuQpQheo74vy0BegL1dDQob7nYxbI
+              schema:
+                properties:
+                  request:
+                    properties:
+                      customerEmail:
+                        format: email
+                        type: string
+                      items:
+                        items:
+                          $ref: '#/components/schemas/Product'
+                        type: array
+                      shippingAddress:
+                        properties:
+                          address:
+                            type: string
+                          firstName:
+                            type: string
+                          lastName:
+                            type: string
+                        type: object
+                    type: object
+                  shippingRates:
+                    properties:
+                      rates:
+                        items:
+                          properties:
+                            amount:
+                              type: number
+                            estimatedDays:
+                              type: integer
+                            name:
+                              type: string
+                            token:
+                              type: string
+                          type: object
+                        type: array
+                      shipmentId:
+                        type: string
+                    type: object
+                type: object
+          description: Checkout details retrieved successfully
+      summary: Retrieve checkout details
+  /checkout/{checkoutId}/update:
+    post:
+      description: Updates the checkout details for a given checkout session.
+      parameters:
+      - description: Unique identifier for the checkout session
+        in: path
+        name: checkoutId
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              example:
+                customerEmail: example@example.com
+                deliveryOptionToken: priority-mail
+                items:
+                - id: 808a2de1-1aaa-4c25-a9b9-6612e8f29a38
+                  imageUrl: /assets/chrono_classic.jpg
+                  name: Chronograf Classic
+                  quantity: 1
+                  totalCost: 5100
+                  unitCost: 5100
+                shippingAddress:
+                  address: 123 Elm St, Springfield
+                  firstName: John
+                  lastName: Doe
+                subtotal: 5100
+              properties:
+                customerEmail:
+                  description: Email address of the customer
+                  format: email
+                  type: string
+                deliveryOptionToken:
+                  description: Token representing the selected delivery option
+                  type: string
+                items:
+                  items:
+                    $ref: '#/components/schemas/Product'
+                  type: array
+                shippingAddress:
+                  properties:
+                    address:
+                      type: string
+                    firstName:
+                      type: string
+                    lastName:
+                      type: string
+                  type: object
+                subtotal:
+                  description: Subtotal price of the checkout
+                  format: float
+                  type: number
+              type: object
+        description: Checkout update payload
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              example:
+                paymentId: CIodvbFkdmHHH24l
+                paymentToken: 9bMqv6uzZDTdqniR9EzW6IqtYYoOgy7o
+                shipping: -1
+                shippingRates:
+                  rates:
+                  - amount: 5
+                    estimatedDays: 10
+                    name: Priority Mail
+                    token: priority-mail
+                  - amount: 15
+                    estimatedDays: 5
+                    name: Priority Mail Express
+                    token: priority-mail-express
+                  shipmentId: lbkN3NtM2fmp3hgHGLmJuaIGbESAX7vd
+                tax: -1
+                total: 0
+              schema:
+                properties:
+                  paymentId:
+                    type: string
+                  paymentToken:
+                    type: string
+                  shipping:
+                    type: number
+                  shippingRates:
+                    properties:
+                      rates:
+                        items:
+                          properties:
+                            amount:
+                              type: number
+                            estimatedDays:
+                              type: integer
+                            name:
+                              type: string
+                            token:
+                              type: string
+                          type: object
+                        type: array
+                      shipmentId:
+                        type: string
+                    type: object
+                  tax:
+                    type: number
+                  total:
+                    type: number
+                type: object
+          description: Checkout details updated successfully
+      summary: Update checkout details
+  /orders:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              example:
+                customerDetails:
+                  address: 123 Elm St, Springfield
+                  name: John Doe
+                productId: '12345'
+                quantity: 2
+              properties:
+                customerDetails:
+                  properties:
+                    address:
+                      type: string
+                    name:
+                      type: string
+                  type: object
+                productId:
+                  type: string
+                quantity:
+                  type: integer
+              type: object
+        required: true
+      responses:
+        '500':
+          content:
+            application/json:
+              examples:
+                internalServerError:
+                  summary: Example of an internal server error response
+                  value:
+                    error: Internal Server Error
+                    path: /orders
+                    status: 500
+                    timestamp: '2024-04-17T12:17:49.510+00:00'
+              schema:
+                properties:
+                  error:
+                    type: string
+                  path:
+                    type: string
+                  status:
+                    type: integer
+                  timestamp:
+                    format: date-time
+                    type: string
+                type: object
+          description: Internal Server Error
+      summary: Create a new order
+servers:
+- description: Main API server
+  url: https://app1.examples.genbrain.ai/api-proxy

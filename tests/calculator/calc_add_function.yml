@@ -1,0 +1,46 @@
+openapi: 3.0.0
+info:
+  title: Complex Number Calculator API
+  version: 1.0.0
+servers:
+  - url: http://example_complex_calculator.com
+paths:
+  /complex/add:
+    post:
+      summary: Adds two complex numbers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComplexOperation'
+      responses:
+        '200':
+          description: Result of addition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplexResult'
+components:
+  schemas:
+    ComplexNumber:
+      type: object
+      properties:
+        real:
+          type: number
+          format: float
+        imag:
+          type: number
+          format: float
+    ComplexOperation:
+      type: object
+      properties:
+        num1:
+          $ref: '#/components/schemas/ComplexNumber'
+        num2:
+          $ref: '#/components/schemas/ComplexNumber'
+    ComplexResult:
+      type: object
+      properties:
+        result:
+          $ref: '#/components/schemas/ComplexNumber'

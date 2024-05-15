@@ -1,0 +1,1226 @@
+openapi: 3.0.1
+info:
+  title: Atmos Cloud API
+  version: 1.7.0
+  description: |
+    The Atmos Cloud API allows administrators to have programmatic control over applications, tags, and locations.
+tags: [ ]
+servers:
+  - url: https://admin-api.axissecurity.com/api/v1
+paths:
+  /locations:
+    post:
+      summary: Create a new location
+      description: |
+        The management API allows administrators to create a new location.
+        Note: When creating a new location, the following sub-location is automatically created: <Location Name> - Other.
+      operationId: createLocation
+      tags:
+        - Locations
+      requestBody:
+        description: The location object to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationInput'
+      responses:
+        "201":
+          description: Location created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "409":
+          description: Conflict - Location already exists with the same name
+        "500":
+          description: Internal server error
+
+    get:
+      summary: Get a list of existing locations
+      description: |
+        Retrieve a paginated list of existing locations.
+      operationId: listLocations
+      tags:
+        - Locations
+      parameters:
+        - name: pageSize
+          in: query
+          description: Specify the maximum number of locations to retrieve.
+          schema:
+            type: integer
+            example: 100
+        - name: pageNumber
+          in: query
+          description: Page number to retrieve
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Locations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocationList'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /locations/{locationId}:
+    get:
+      summary: Get the details of an existing location
+      description: Retrieve the details of an existing location.
+      operationId: getLocation
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to retrieve
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Location information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Location'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Location not found
+        "500":
+          description: Internal server error
+
+    put:
+      summary: Update an existing location
+      description: |
+        Update an existing location. The values stated in the request body will override the existing values.
+      operationId: updateLocation
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to update
+          schema:
+            type: string
+      requestBody:
+        description: The updated location object
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocationInput'
+      responses:
+        "204":
+          description: Location updated successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Location not found
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Delete a location
+      description: |
+        Delete an existing location.
+      operationId: deleteLocation
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to delete
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Location deleted successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "403":
+          description: Operation is Forbidden
+        "404":
+          description: Location not found
+        "500":
+          description: Internal server error
+  /locations/{locationId}/sublocations:
+    post:
+      summary: Add a new sub-location to a location
+      description: |
+        The management API allows administrators to create new sub-location.
+      operationId: createSubLocation
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to add the sub-location
+          schema:
+            type: string
+      requestBody:
+        description: The sub-location object to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubLocationInput'
+      responses:
+        "201":
+          description: Sub-location created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubLocation'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "409":
+          description: Conflict - Sub-location already exists with the same name in the location
+        "500":
+          description: Internal server error
+
+    get:
+      summary: List existing sub-locations in a location
+      description: |
+        Retrieve a paginated list of sub-locations in a specific location.
+      operationId: listSubLocations
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to retrieve sub-locations from
+          schema:
+            type: string
+        - name: pageSize
+          in: query
+          description: Specify the maximum number of sub-locations to retrieve.
+          schema:
+            type: integer
+            example: 100
+        - name: pageNumber
+          in: query
+          description: Page number to retrieve
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Sub-locations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubLocationList'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /locations/{locationId}/sublocations/{subLocationId}:
+    get:
+      summary: Get the details of an existing sub-location in a location
+      description: Retrieve the details of an existing sub-location.
+      operationId: getSubLocation
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to retrieve sub-location from
+          schema:
+            type: string
+        - name: subLocationId
+          in: path
+          required: true
+          description: The ID of the sub-location to retrieve
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sub-location information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubLocation'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Sub-location not found
+        "500":
+          description: Internal server error
+
+    put:
+      summary: Update an existing sub-location in a location
+      description: |
+        Update an existing sub-location. The values stated in the request body will override the existing values.
+      operationId: updateSubLocation
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to update sub-location in
+          schema:
+            type: string
+        - name: subLocationId
+          in: path
+          required: true
+          description: The ID of the sub-location to update
+          schema:
+            type: string
+      requestBody:
+        description: The updated sub-location object
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubLocationInput'
+      responses:
+        "204":
+          description: Sub-location updated successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Sub-location not found
+        "409":
+          description: Conflict - Sub-location already exists with the same name in the location
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Delete a sub-location
+      description: |
+        Delete an existing sub-location.
+      operationId: deleteSubLocation
+      tags:
+        - Locations
+      parameters:
+        - name: locationId
+          in: path
+          required: true
+          description: The ID of the location to delete sub-location from
+          schema:
+            type: string
+        - name: subLocationId
+          in: path
+          required: true
+          description: The ID of the sub-location to delete
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Sub-location deleted successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "403":
+          description: Operation is Forbidden
+        "404":
+          description: Sub-location not found
+        "500":
+          description: Internal server error
+  /applications:
+    post:
+      summary: Create a new application
+      description: |
+        The management API allows administrators to create a new application.
+        A successful response will return a 201 response with the tag details.
+      operationId: createApplication
+      tags:
+        - Applications
+      requestBody:
+        description: The application object to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Application'
+      responses:
+        "201":
+          description: Application created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "409":
+          description: Conflict - An application already exists with the same name
+        "500":
+          description: Internal server error
+        "501":
+          description: Not supported - Operation is supported only for network range applications
+
+    get:
+      summary: Get a list of existing applications
+      description: |
+        Retrieve a paginated list of existing applications.
+      operationId: listApplications
+      tags:
+        - Applications
+      parameters:
+        - name: pageSize
+          in: query
+          description: Specify the maximum number of applications to retrieve.
+          schema:
+            type: integer
+            example: 100
+        - name: pageNumber
+          in: query
+          description: Page number to retrieve
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Applications retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationList'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /applications/{applicationId}:
+    get:
+      summary: Get the details of an existing application
+      description: Retrieve the details of an existing application.
+      operationId: getApplication
+      tags:
+        - Applications
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          description: The ID of the application to retrieve
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Application information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Application not found
+        "500":
+          description: Internal server error
+
+    put:
+      summary: Update an existing application
+      description: |
+        Update an existing application. The values stated in the request body will override the existing values.
+      operationId: updateApplication
+      tags:
+        - Applications
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          description: The ID of the application to update
+          schema:
+            type: string
+      requestBody:
+        description: The updated application object
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Application'
+      responses:
+        "204":
+          description: Application updated successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Application not found
+        "500":
+          description: Internal server error
+        "501":
+          description: Not supported - Operation is supported only for network range applications
+
+    delete:
+      summary: Delete an application
+      description: |
+        Delete an existing application.
+      operationId: deleteApplication
+      tags:
+        - Applications
+      parameters:
+        - name: applicationId
+          in: path
+          required: true
+          description: The ID of the application to delete
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Application deleted successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Application not found
+        "500":
+          description: Internal server error
+        "501":
+          description: Not supported - Operation is supported only for network range applications
+  /tags:
+    post:
+      summary: Create a new application tag
+      description: |
+        The management API allows administrators to create new application tags.
+        A successful response will return a 201 response with the tag details.
+      operationId: createTag
+      tags:
+        - Tags
+      requestBody:
+        description: The tag object to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Tag'
+      responses:
+        "201":
+          description: Tag created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "409":
+          description: Conflict - Tag already exists with the same name
+        "500":
+          description: Internal server error
+
+    get:
+      summary: Get a list of existing tags
+      description: |
+        Retrieve a paginated list of existing tags.
+      operationId: listTags
+      tags:
+        - Tags
+      parameters:
+        - name: pageSize
+          in: query
+          description: Specify the maximum number of tags to retrieve.
+          schema:
+            type: integer
+            example: 100
+        - name: pageNumber
+          in: query
+          description: Page number to retrieve
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Tags retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagList'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /tags/{tagId}:
+    get:
+      summary: Get the details of an existing tag
+      description: Retrieve the details of an existing tag.
+      operationId: getTag
+      tags:
+        - Tags
+      parameters:
+        - name: tagId
+          in: path
+          required: true
+          description: The ID of the tag to retrieve
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tag information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Tag not found
+        "500":
+          description: Internal server error
+
+    put:
+      summary: Update an existing tag
+      description: |
+        Update an existing tag. The values stated in the request body will override the existing values.
+      operationId: updateTag
+      tags:
+        - Tags
+      parameters:
+        - name: tagId
+          in: path
+          required: true
+          description: The ID of the tag to update
+          schema:
+            type: string
+      requestBody:
+        description: The updated tag object
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Tag'
+      responses:
+        "204":
+          description: Tag updated successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Tag not found
+        "409":
+          description: Conflict - Tag already exists with the same name
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Delete a tag
+      description: |
+        Delete an existing tag.
+      operationId: deleteTag
+      tags:
+        - Tags
+      parameters:
+        - name: tagId
+          in: path
+          required: true
+          description: The ID of the tag to delete
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Tag deleted successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Tag not found
+        "500":
+          description: Internal server error
+  /users:
+    post:
+      summary: Create a new user in Axis IdP
+      description: |
+        The management API allows administrators to create new users in Axis IdP.
+      operationId: createUser
+      tags:
+        - Axis IdP
+      requestBody:
+        description: The user object to create
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Entity not found
+        "500":
+          description: Internal server error
+
+    get:
+      summary: Get a list of existing users in Axis IdP
+      description: |
+        Retrieve a paginated list of existing users in Axis IdP.
+      operationId: listUsers
+      tags:
+        - Axis IdP
+      parameters:
+        - name: pageSize
+          in: query
+          description: Specify the maximum number of users to retrieve.
+          schema:
+            type: integer
+            example: 100
+        - name: pageNumber
+          in: query
+          description: Page number to retrieve
+          schema:
+            type: integer
+            example: 1
+      responses:
+        "200":
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /users/{userId}:
+    get:
+      summary: Get the details of an existing user in Axis IdP
+      description: Retrieve the details of an existing user.
+      operationId: getUser
+      tags:
+        - Axis IdP
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The ID of the user to retrieve
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Entity not found
+        "500":
+          description: Internal server error
+
+    put:
+      summary: Update an existing user in Axis IdP
+      description: |
+        Update an existing user. The values stated in the request body will override the user's existing values.
+      operationId: updateUser
+      tags:
+        - Axis IdP
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The ID of the user to update
+          schema:
+            type: string
+      requestBody:
+        description: The updated user object
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        "200":
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Entity not found
+        "500":
+          description: Internal server error
+
+    delete:
+      summary: Delete a user in Axis IdP
+      description: |
+        Delete an existing user.
+      operationId: deleteUser
+      tags:
+        - Axis IdP
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The ID of the user to delete
+          schema:
+            type: string
+      responses:
+        "204":
+          description: User deleted successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Entity not found
+        "500":
+          description: Internal server error
+  /groups:
+    put:
+      summary: Update an existing user group in Axis IdP
+      description: |
+        Update an existing user group. The values in the request body override existing user group values.
+      operationId: updateUserGroup
+      tags:
+        - Axis IdP
+      requestBody:
+        description: The updated user group object
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GroupInput'
+      responses:
+        "204":
+          description: Changes committed successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Entity not found
+        "500":
+          description: Internal server error
+    delete:
+      summary: Delete a user group in Axis IdP
+      description: |
+        Delete an existing user group.
+      operationId: deleteUserGroup
+      tags:
+        - Axis IdP
+      responses:
+        "204":
+          description: Group deleted successfully
+        "400":
+          description: Bad request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: Entity not found
+        "500":
+          description: Internal server error
+components:
+  schemas:
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Network Range 1"
+        type:
+          type: string
+          example: "NetworkRange"
+        enabled:
+          type: boolean
+          example: true
+        networkRangeApplicationData:
+          type: object
+          properties:
+            ipRangesOrCIDRs:
+              type: array
+              items:
+                type: string
+            dnsSearches:
+              type: array
+              items:
+                type: string
+            excludedDnsSearches:
+              type: array
+              items:
+                type: string
+            enableICMP:
+              type: boolean
+              example: true
+            portsAndProtocols:
+              type: array
+              items:
+                type: string
+            serverInitiatedPorts:
+              type: array
+              items:
+                type: string
+            enforceResolvedDnsToIp:
+              type: boolean
+              example: false
+        tags:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        connectorZoneID:
+          type: string
+    ApplicationList:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+        pageSize:
+          type: integer
+        firstPage:
+          type: string
+          format: uri
+        lastPage:
+          type: string
+          format: uri
+        totalPages:
+          type: integer
+        totalRecords:
+          type: integer
+        nextPage:
+          type: string
+          format: uri
+        previousPage:
+          type: string
+          format: uri
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Application'
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "mytag"
+        description:
+          type: string
+        applications:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+    TagList:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+        pageSize:
+          type: integer
+        firstPage:
+          type: string
+          format: uri
+        lastPage:
+          type: string
+          format: uri
+        totalPages:
+          type: integer
+        totalRecords:
+          type: integer
+        nextPage:
+          type: string
+          format: uri
+        previousPage:
+          type: string
+          format: uri
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+    Location:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          example: "Chicago Office"
+        subLocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubLocation'
+        tunnels:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+    LocationInput:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The location name
+          example: "Chicago Office"
+    LocationList:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+        pageSize:
+          type: integer
+        firstPage:
+          type: string
+          format: uri
+        lastPage:
+          type: string
+          format: uri
+        totalPages:
+          type: integer
+        totalRecords:
+          type: integer
+        nextPage:
+          type: string
+          format: uri
+        previousPage:
+          type: string
+          format: uri
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Location'
+    SubLocation:
+      type: object
+      properties:
+        id:
+          type: string
+        locationID:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          example: "Custom"
+        ipRanges:
+          type: array
+          items:
+            type: string
+    SubLocationInput:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The sub-location name
+          example: "Chicago Office - VLAN0003"
+        ipRanges:
+          type: array
+          description: List of IP addresses, IP ranges and CIDRs
+          items:
+            type: string
+    SubLocationList:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+        pageSize:
+          type: integer
+        firstPage:
+          type: string
+          format: uri
+        lastPage:
+          type: string
+          format: uri
+        totalPages:
+          type: integer
+        totalRecords:
+          type: integer
+        nextPage:
+          type: string
+          format: uri
+        previousPage:
+          type: string
+          format: uri
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubLocation'
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        userName:
+          type: string
+          example: "JohnDoe"
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+          example: "John"
+        lastName:
+          type: string
+          example: "Doe"
+        enabled:
+          type: boolean
+          example: true
+        expiration:
+          type: string
+          format: date-time
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+        hasSshPrivateKey:
+          type: boolean
+          example: true
+    UserInput:
+      type: object
+      properties:
+        userName:
+          type: string
+          description: The username provided to Axis Security
+        email:
+          type: string
+          format: email
+          description: The email address to send a password link to
+        firstName:
+          type: string
+          description: The user’s first name
+        lastName:
+          type: string
+          description: The user’s last name
+        enabled:
+          type: boolean
+        expiration:
+          type: string
+          format: date-time
+        groups:
+          type: array
+          description: List of groups the user belongs to
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+        sshPrivateKey:
+          type: string
+          description: Personal SSH key for user authentication
+    UserList:
+      type: object
+      properties:
+        pageNumber:
+          type: integer
+        pageSize:
+          type: integer
+        firstPage:
+          type: string
+          format: uri
+        lastPage:
+          type: string
+          format: uri
+        totalPages:
+          type: integer
+        totalRecords:
+          type: integer
+        nextPage:
+          type: string
+          format: uri
+        previousPage:
+          type: string
+          format: uri
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              value:
+                type: string
+    GroupInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        users:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string

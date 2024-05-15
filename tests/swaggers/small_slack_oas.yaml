@@ -1,0 +1,746 @@
+openapi: 3.0.1
+info:
+  title: Slack Web API
+  description: >-
+    One way to interact with the Slack platform is its HTTP RPC-based Web API, a
+    collection of methods requiring OAuth 2.0-based user, bot, or workspace
+    tokens blessed with related OAuth scopes.
+  contact:
+    name: Slack developer relations
+    url: https://api.slack.com/support
+  version: 1.7.0
+externalDocs:
+  description: Learn more about the Slack Web API
+  url: https://api.slack.com/web
+servers:
+  - url: https://slack.com/api
+tags: [ ]
+paths:
+  /admin.users.list:
+    get:
+      tags:
+        - admin.users
+        - admin
+      description: List users on a workspace
+      externalDocs:
+        description: API method documentation
+        url: https://api.slack.com/methods/admin.users.list
+      operationId: admin_users_list
+      parameters:
+        - name: token
+          in: header
+          description: 'Authentication token. Requires scope: `admin.users:read`'
+          required: true
+          schema:
+            type: string
+        - name: team_id
+          in: query
+          description: The ID (`T1234`) of the workspace.
+          required: true
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          description: >-
+            Set `cursor` to `next_cursor` returned by the previous call to list
+            items in the next page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Limit for how many users to be retrieved per page
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Typical success response
+          content:
+            application/json:
+              schema:
+                title: Default success template
+                type: object
+                additionalProperties:
+                  type: object
+                description: >-
+                  This method either only returns a brief _OK_ response or a
+                  verbose schema is not available for this method.
+              example:
+                ok: true
+                users:
+                  - email: bront@slack.com
+                    id: T1234
+                    is_admin: false
+                    is_bot: false
+                    is_owner: false
+                    is_primary_owner: false
+                    is_restricted: false
+                    is_ultra_restricted: false
+        default:
+          description: Typical error response
+          content:
+            application/json:
+              schema:
+                title: Default error template
+                type: object
+                additionalProperties:
+                  type: object
+                description: >-
+                  This method either only returns a brief _not OK_ response or a
+                  verbose schema is not available for this method.
+              example:
+                error: invalid_auth
+                ok: false
+      security:
+        - slackAuth:
+            - admin.users:read
+  /users.list:
+    get:
+      tags:
+        - users
+      description: Lists all users in a Slack team.
+      externalDocs:
+        description: API method documentation
+        url: https://api.slack.com/methods/users.list
+      operationId: users_list
+      parameters:
+        - name: token
+          in: query
+          description: 'Authentication token. Requires scope: `users:read`'
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: >-
+            The maximum number of items to return. Fewer than the requested
+            number of items may be returned, even if the end of the users list
+            hasn't been reached. Providing no `limit` value will result in Slack
+            attempting to deliver you the entire result set. If the collection
+            is too large you may experience `limit_required` or HTTP 500 errors.
+          schema:
+            type: integer
+        - name: cursor
+          in: query
+          description: >-
+            Paginate through collections of data by setting the `cursor`
+            parameter to a `next_cursor` attribute returned by a previous
+            request's `response_metadata`. Default value fetches the first
+            "page" of the collection. See [pagination](/docs/pagination) for
+            more detail.
+          schema:
+            type: string
+        - name: include_locale
+          in: query
+          description: >-
+            Set this to `true` to receive the locale for users. Defaults to
+            `false`
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Typical success response
+          content:
+            application/json:
+              schema:
+                title: users.list schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for successful response from users.list method
+              example:
+                cache_ts: 1498777272
+                members:
+                  - color: 9f69e7
+                    deleted: false
+                    has_2fa: false
+                    id: W012A3CDE
+                    is_admin: true
+                    is_app_user: false
+                    is_bot: false
+                    is_owner: false
+                    is_primary_owner: false
+                    is_restricted: false
+                    is_ultra_restricted: false
+                    name: spengler
+                    profile:
+                      avatar_hash: ge3b51ca72de
+                      display_name: spengler
+                      display_name_normalized: spengler
+                      email: spengler@ghostbusters.example.com
+                      image_192: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                      image_24: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                      image_32: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                      image_48: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                      image_512: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                      image_72: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                      real_name: Egon Spengler
+                      real_name_normalized: Egon Spengler
+                      status_emoji: ':books:'
+                      status_text: Print is dead
+                      team: T012AB3C4
+                    real_name: spengler
+                    team_id: T012AB3C4
+                    tz: America/Los_Angeles
+                    tz_label: Pacific Daylight Time
+                    tz_offset: -25200
+                    updated: 1502138686
+                  - color: 9f69e7
+                    deleted: false
+                    has_2fa: false
+                    id: W07QCRPA4
+                    is_admin: true
+                    is_bot: false
+                    is_owner: false
+                    is_primary_owner: false
+                    is_restricted: false
+                    is_ultra_restricted: false
+                    name: glinda
+                    profile:
+                      avatar_hash: 8fbdd10b41c6
+                      display_name: Glinda the Fairly Good
+                      display_name_normalized: Glinda the Fairly Good
+                      email: glenda@south.oz.coven
+                      first_name: Glinda
+                      image_1024: https://a.slack-edge.com...png
+                      image_192: https://a.slack-edge.com...png
+                      image_24: https://a.slack-edge.com...png
+                      image_32: https://a.slack-edge.com...png
+                      image_48: https://a.slack-edge.com...png
+                      image_512: https://a.slack-edge.com...png
+                      image_72: https://a.slack-edge.com...png
+                      image_original: https://a.slack-edge.com...png
+                      last_name: Southgood
+                      phone: ''
+                      real_name: Glinda Southgood
+                      real_name_normalized: Glinda Southgood
+                      skype: ''
+                      title: Glinda the Good
+                    real_name: Glinda Southgood
+                    team_id: T0G9PQBBK
+                    tz: America/Los_Angeles
+                    tz_label: Pacific Daylight Time
+                    tz_offset: -25200
+                    updated: 1480527098
+                ok: true
+                response_metadata:
+                  next_cursor: dXNlcjpVMEc5V0ZYTlo=
+        default:
+          description: Typical error response
+          content:
+            application/json:
+              schema:
+                title: users.list error schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for error response from users.list method
+              example:
+                error: invalid_cursor
+                ok: false
+      security:
+        - slackAuth:
+            - users:read
+  /users.lookupByEmail:
+    get:
+      tags:
+        - users
+      description: Find a user with an email address.
+      externalDocs:
+        description: API method documentation
+        url: https://api.slack.com/methods/users.lookupByEmail
+      operationId: users_lookupByEmail
+      parameters:
+        - name: token
+          in: query
+          description: 'Authentication token. Requires scope: `users:read.email`'
+          required: true
+          schema:
+            type: string
+        - name: email
+          in: query
+          description: An email address belonging to a user in the workspace
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Typical success response
+          content:
+            application/json:
+              schema:
+                title: users.lookupByEmail success schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for successful response from users.lookupByEmail method
+              example:
+                ok: true
+                user:
+                  color: 9f69e7
+                  deleted: false
+                  has_2fa: false
+                  id: W012A3CDE
+                  is_admin: true
+                  is_app_user: false
+                  is_bot: false
+                  is_owner: false
+                  is_primary_owner: false
+                  is_restricted: false
+                  is_ultra_restricted: false
+                  name: spengler
+                  profile:
+                    avatar_hash: ge3b51ca72de
+                    display_name: spengler
+                    display_name_normalized: spengler
+                    email: spengler@ghostbusters.example.com
+                    image_192: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                    image_24: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                    image_32: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                    image_48: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                    image_512: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                    image_72: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                    real_name: Egon Spengler
+                    real_name_normalized: Egon Spengler
+                    status_emoji: ':books:'
+                    status_text: Print is dead
+                    team: T012AB3C4
+                  real_name: Egon Spengler
+                  team_id: T012AB3C4
+                  tz: America/Los_Angeles
+                  tz_label: Pacific Daylight Time
+                  tz_offset: -25200
+                  updated: 1502138686
+        default:
+          description: Typical error response
+          content:
+            application/json:
+              schema:
+                title: users.lookupByEmail error schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for error response from users.lookupByEmail method
+              example:
+                error: users_not_found
+                ok: false
+      security:
+        - slackAuth:
+            - users:read.email
+  /users.profile.get:
+    get:
+      tags:
+        - users.profile
+        - users
+      description: Retrieves a user's profile information.
+      externalDocs:
+        description: API method documentation
+        url: https://api.slack.com/methods/users.profile.get
+      operationId: users_profile_get
+      parameters:
+        - name: token
+          in: query
+          description: 'Authentication token. Requires scope: `users.profile:read`'
+          required: true
+          schema:
+            type: string
+        - name: include_labels
+          in: query
+          description: Include labels for each ID in custom profile fields
+          schema:
+            type: boolean
+        - name: user
+          in: query
+          description: User to retrieve profile info for
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Typical success response
+          content:
+            application/json:
+              schema:
+                title: users.profile.get schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for successful response from users.profile.get method
+              example:
+                ok: true
+                profile:
+                  avatar_hash: ge3b51ca72de
+                  display_name: spengler
+                  display_name_normalized: spengler
+                  email: spengler@ghostbusters.example.com
+                  image_192: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_24: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_32: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_48: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_512: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_72: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_original: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  real_name: Egon Spengler
+                  real_name_normalized: Egon Spengler
+                  status_emoji: ':books:'
+                  status_expiration: 0
+                  status_text: Print is dead
+                  team: T012AB3C4
+        default:
+          description: Typical error response
+          content:
+            application/json:
+              schema:
+                title: users.profile.get error schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for error response from users.profile.get method
+              example:
+                error: user_not_found
+                ok: false
+      security:
+        - slackAuth:
+            - users.profile:read
+  /users.profile.set:
+    post:
+      tags:
+        - users.profile
+        - users
+      description: Set the profile information for a user.
+      externalDocs:
+        description: API method documentation
+        url: https://api.slack.com/methods/users.profile.set
+      operationId: users_profile_set
+      parameters:
+        - name: token
+          in: header
+          description: 'Authentication token. Requires scope: `users.profile:write`'
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              properties:
+                name:
+                  type: string
+                  description: >-
+                    Name of a single key to set. Usable only if `profile` is not
+                    passed.
+                profile:
+                  type: string
+                  description: >-
+                    Collection of key:value pairs presented as a URL-encoded
+                    JSON hash. At most 50 fields may be set. Each field name is
+                    limited to 255 characters.
+                user:
+                  type: string
+                  description: >-
+                    ID of user to change. This argument may only be specified by
+                    team admins on paid teams.
+                value:
+                  type: string
+                  description: >-
+                    Value to set a single key to. Usable only if `profile` is
+                    not passed.
+          application/json:
+            schema:
+              properties:
+                name:
+                  type: string
+                  description: >-
+                    Name of a single key to set. Usable only if `profile` is not
+                    passed.
+                profile:
+                  type: string
+                  description: >-
+                    Collection of key:value pairs presented as a URL-encoded
+                    JSON hash. At most 50 fields may be set. Each field name is
+                    limited to 255 characters.
+                user:
+                  type: string
+                  description: >-
+                    ID of user to change. This argument may only be specified by
+                    team admins on paid teams.
+                value:
+                  type: string
+                  description: >-
+                    Value to set a single key to. Usable only if `profile` is
+                    not passed.
+      responses:
+        '200':
+          description: Typical success response
+          content:
+            application/json:
+              schema:
+                title: users.profile.set schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for successful response from users.profile.set method
+              example:
+                ok: true
+                profile:
+                  avatar_hash: ge3b51ca72de
+                  display_name: spengler
+                  display_name_normalized: spengler
+                  email: spengler@ghostbusters.example.com
+                  image_192: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_24: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_32: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_48: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_512: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  image_72: https://.../avatar/e3b51ca72dee4ef87916ae2b9240df50.jpg
+                  real_name: Egon Spengler
+                  real_name_normalized: Egon Spengler
+                  status_emoji: ':books:'
+                  status_expiration: 0
+                  status_text: Print is dead
+                  team: T012AB3C4
+        default:
+          description: Typical error response
+          content:
+            application/json:
+              schema:
+                title: users.profile.set error schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for error response from users.profile.set method
+              example:
+                error: invalid_profile
+                ok: false
+      security:
+        - slackAuth:
+            - users.profile:write
+  /chat.postMessage:
+    post:
+      tags:
+        - chat
+      description: Sends a message to a channel.
+      externalDocs:
+        description: API method documentation
+        url: https://api.slack.com/methods/chat.postMessage
+      operationId: chat_postMessage
+      parameters:
+        - name: token
+          in: header
+          description: "Authentication token. Requires scope: `chat:write`"
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              required:
+                - channel
+              properties:
+                as_user:
+                  type: string
+                  description: >-
+                    Pass true to post the message as the authed user, instead of
+                    as a bot. Defaults to false. See [authorship](#authorship)
+                    below.
+                attachments:
+                  type: string
+                  description: >-
+                    A JSON-based array of structured attachments, presented as a
+                    URL-encoded string.
+                blocks:
+                  type: string
+                  description: >-
+                    A JSON-based array of structured blocks, presented as a
+                    URL-encoded string.
+                channel:
+                  type: string
+                  description: >-
+                    Channel, private group, or IM channel to send message to.
+                    Can be an encoded ID, or a name. See [below](#channels) for
+                    more details.
+                icon_emoji:
+                  type: string
+                  description: >-
+                    Emoji to use as the icon for this message. Overrides
+                    `icon_url`. Must be used in conjunction with `as_user` set
+                    to `false`, otherwise ignored. See [authorship](#authorship)
+                    below.
+                icon_url:
+                  type: string
+                  description: >-
+                    URL to an image to use as the icon for this message. Must be
+                    used in conjunction with `as_user` set to false, otherwise
+                    ignored. See [authorship](#authorship) below.
+                link_names:
+                  type: boolean
+                  description: Find and link channel names and usernames.
+                mrkdwn:
+                  type: boolean
+                  description: >-
+                    Disable Slack markup parsing by setting to `false`. Enabled
+                    by default.
+                parse:
+                  type: string
+                  description: >-
+                    Change how messages are treated. Defaults to `none`. See
+                    [below](#formatting).
+                reply_broadcast:
+                  type: boolean
+                  description: >-
+                    Used in conjunction with `thread_ts` and indicates whether
+                    reply should be made visible to everyone in the channel or
+                    conversation. Defaults to `false`.
+                text:
+                  type: string
+                  description: >-
+                    How this field works and whether it is required depends on
+                    other fields you use in your API call. [See
+                    below](#text_usage) for more detail.
+                thread_ts:
+                  type: string
+                  description: >-
+                    Provide another message's `ts` value to make this message a
+                    reply. Avoid using a reply's `ts` value; use its parent
+                    instead.
+                unfurl_links:
+                  type: boolean
+                  description: >-
+                    Pass true to enable unfurling of primarily text-based
+                    content.
+                unfurl_media:
+                  type: boolean
+                  description: Pass false to disable unfurling of media content.
+                username:
+                  type: string
+                  description: >-
+                    Set your bot's user name. Must be used in conjunction with
+                    `as_user` set to false, otherwise ignored. See
+                    [authorship](#authorship) below.
+          application/json:
+            schema:
+              required:
+                - channel
+              properties:
+                as_user:
+                  type: string
+                  description: >-
+                    Pass true to post the message as the authed user, instead of
+                    as a bot. Defaults to false. See [authorship](#authorship)
+                    below.
+                attachments:
+                  type: string
+                  description: >-
+                    A JSON-based array of structured attachments, presented as a
+                    URL-encoded string.
+                blocks:
+                  type: string
+                  description: >-
+                    A JSON-based array of structured blocks, presented as a
+                    URL-encoded string.
+                channel:
+                  type: string
+                  description: >-
+                    Channel, private group, or IM channel to send message to.
+                    Can be an encoded ID, or a name. See [below](#channels) for
+                    more details.
+                icon_emoji:
+                  type: string
+                  description: >-
+                    Emoji to use as the icon for this message. Overrides
+                    `icon_url`. Must be used in conjunction with `as_user` set
+                    to `false`, otherwise ignored. See [authorship](#authorship)
+                    below.
+                icon_url:
+                  type: string
+                  description: >-
+                    URL to an image to use as the icon for this message. Must be
+                    used in conjunction with `as_user` set to false, otherwise
+                    ignored. See [authorship](#authorship) below.
+                link_names:
+                  type: boolean
+                  description: Find and link channel names and usernames.
+                mrkdwn:
+                  type: boolean
+                  description: >-
+                    Disable Slack markup parsing by setting to `false`. Enabled
+                    by default.
+                parse:
+                  type: string
+                  description: >-
+                    Change how messages are treated. Defaults to `none`. See
+                    [below](#formatting).
+                reply_broadcast:
+                  type: boolean
+                  description: >-
+                    Used in conjunction with `thread_ts` and indicates whether
+                    reply should be made visible to everyone in the channel or
+                    conversation. Defaults to `false`.
+                text:
+                  type: string
+                  description: >-
+                    How this field works and whether it is required depends on
+                    other fields you use in your API call. [See
+                    below](#text_usage) for more detail.
+                thread_ts:
+                  type: string
+                  description: >-
+                    Provide another message's `ts` value to make this message a
+                    reply. Avoid using a reply's `ts` value; use its parent
+                    instead.
+                unfurl_links:
+                  type: boolean
+                  description: >-
+                    Pass true to enable unfurling of primarily text-based
+                    content.
+                unfurl_media:
+                  type: boolean
+                  description: Pass false to disable unfurling of media content.
+                username:
+                  type: string
+                  description: >-
+                    Set your bot's user name. Must be used in conjunction with
+                    `as_user` set to false, otherwise ignored. See
+                    [authorship](#authorship) below.
+        required: true
+      responses:
+        '200':
+          description: Typical success response
+          content:
+            application/json:
+              schema:
+                title: chat.postMessage success schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for successful response of chat.postMessage method
+              example:
+                channel: C1H9RESGL
+                message:
+                  attachments:
+                    - fallback: This is an attachment's fallback
+                      id: 1
+                      text: This is an attachment
+                  bot_id: B19LU7CSY
+                  subtype: bot_message
+                  text: Here's a message for you
+                  ts: '1503435956.000247'
+                  type: message
+                  username: ecto1
+                ok: true
+                ts: '1503435956.000247'
+        default:
+          description: Typical error response if too many attachments are included
+          content:
+            application/json:
+              schema:
+                title: chat.postMessage error schema
+                type: object
+                additionalProperties:
+                  type: object
+                description: Schema for error response chat.postMessage method
+              example:
+                error: too_many_attachments
+                ok: false
+      security:
+        - slackAuth:
+            - chat:write:user
+            - chat:write:bot
