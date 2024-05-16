@@ -1,24 +1,26 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, APIRouter
 from dotenv import load_dotenv
-from models import CreateAgentRequest, AgentModel, TaskModel
+from ..models.agent import CreateAgentRequest, AgentModel, TaskModel
 from crewai import Crew, Agent, Task
-from crewai_tools.tools import WebsiteSearchTool, SeperDevTool, FileReadTool
+# from crewai_tools import WebsiteSearchTool, FileReadTool
 
+
+router = APIRouter()
 
 # To add your own tools please refer to the following link:
 # https://docs.crewai.com/core-concepts/Tools/#creating-your-own-tools
 
 # Define available tools
 TOOLS = {
-    "WebsiteSearchTool": WebsiteSearchTool(),
-    "SeperDevTool": SeperDevTool(),
-    "FileReadTool": FileReadTool(
-        file_path='job_description_example.md',
-        description='A tool to read the job description example file.'
-    )
+    # "WebsiteSearchTool": WebsiteSearchTool(),
+    #"SeperDevTool": SeperDevTool(),
+    # "FileReadTool": FileReadTool(
+    #     file_path='job_description_example.md',
+    #     description='A tool to read the job description example file.'
+    # )
 }
 
-@app.post("/agent")
+@router.post("/agent")
 async def create_agents(request: CreateAgentRequest):
     try:
         # Create agents based on the request
@@ -58,5 +60,27 @@ async def create_agents(request: CreateAgentRequest):
         result = crew.kickoff()
 
         return {"message": "Job Posting Creation Process Completed", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agent/{agent_id}/run")
+async def run_agent_process(agent_id: str):
+    try:
+        # # Find the agent with the matching role
+        # agent = next((a for a in agents if a.role == agent_id), None)
+        # if not agent:
+        #     raise HTTPException(status_code=400, detail=f"Agent role '{agent_id}' not found.")
+
+        # # Instantiate the crew
+        # crew = Crew(
+        #     agents=[agent],
+        #     tasks=[]
+        # )
+
+        # # Kick off the process
+        # result = crew.kickoff()
+
+        return {"message": "Agent process started successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

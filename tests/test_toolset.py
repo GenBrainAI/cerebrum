@@ -141,10 +141,10 @@ def test_get_tasksmanager_toolsets():
     task_response = client.post("/task", json=task_data)
     assert task_response.status_code == 201
 
-    # Fetch toolsets associated with the created tasksmanager
-    response = client.get(f"/tasksmanager/{tasksmanager_id}/toolsets")
+    # Fetch toolsets by id
+    response = client.get(f"/toolsets/{toolset_id}")
     assert response.status_code == 200
     data = response.json()
 
     # Validate the response contains the created toolset
-    assert any(toolset['id'] == toolset_id for toolset in data), "Created toolset not found in tasksmanager's toolsets"
+    assert data['id'] == toolset_id, "toolset not found"

@@ -125,8 +125,6 @@ async def create_global_toolset(
     "/toolsets/{id}",
     responses={
         200: {"model": Toolset, "description": "Toolset requsted by id"},
-        400: {"model": Error, "description": "Bad request"},
-        401: {"model": Error, "description": "Unauthorized"},
         404: {"model": Error, "description": "TasksManager not found"},
     },
     tags=["default"],
@@ -140,6 +138,15 @@ async def get_toolsets(
         return persistence_model.toolsets.read(id)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+@router.get("/toolsets", status_code=status.HTTP_200_OK)
+async def get_toolsets(
+) -> Toolset:
+    try:
+        return persistence_model.toolsets.list()
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 @router.post(
     "/generate_tools/{toolset_id}",

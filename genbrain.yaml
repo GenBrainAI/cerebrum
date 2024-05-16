@@ -315,30 +315,6 @@ paths:
           description: ID of the task
           schema:
             type: string
-        - name: use_task_config
-          in: query
-          required: false
-          description: Whether to use the task's own configuration
-          schema:
-            type: boolean
-        - name: use_toolsets
-          in: query
-          required: false
-          description: Whether to utilize toolsets in the task run
-          schema:
-            type: boolean
-        - name: running_extra_params
-          in: query
-          required: false
-          description: Additional parameters for running the task
-          schema:
-            type: object
-        - name: task_config
-          in: query
-          required: false
-          description: Specific configuration details for the task
-          schema:
-            type: object
       responses:
         '202':
           description: Run completed successfully
@@ -383,7 +359,24 @@ paths:
                 $ref: '#/components/schemas/TasksManagerRunSession'
         '404':
           description: TasksManager not found
+
   /toolsets:
+    get:
+      description: |
+        "Description: Lists all available toolsets, which can be utilized across tasks and tasks managers.
+        Role in System: Provides a comprehensive overview of available toolsets, enabling users to select and configure tools for specific tasks."
+      operationId: listToolsets
+      responses:
+        '200':
+          description: Toolsets listed successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Toolset'
+        '500':
+          description: Internal server error
     post:
       description: |
         "Description: Creates a global toolset, which can be utilized across various tasks and tasks managers.
@@ -421,6 +414,32 @@ paths:
                 $ref: '#/components/schemas/Error'
           description: Internal server error.
       summary: Create a new global toolset.
+
+  /toolsets/{toolset_id}:
+    get:
+      description: |
+        "Description: Retrieves details about a specific toolset by ID, including its configuration and associated data.
+        Role in System: Essential for detailed monitoring and management of specific toolsets, enabling users to access and configure tools for tasks."
+      operationId: getToolsetById
+      parameters:
+        - name: toolset_id
+          in: path
+          required: true
+          description: ID of the toolset
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Toolset found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Toolset'
+        '404':
+          description: Toolset not found
+        '500':
+          description: Internal server error
+
   /tasksmanager/{tasksmanager_id}/pause:
     post:
       summary: Pause all tasks for an tasksmanager
@@ -512,6 +531,56 @@ paths:
                     type: string
         '400':
           description: Invalid input
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+  /agent/{id}/run:
+    post:
+      summary: Run an agent
+      description: Run an agent with the specified ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The unique identifier of the agent
+        - name: message
+          in: body
+          required: false
+          schema:
+            type: object
+            properties:
+            message:
+                $ref: '#/components/schemas/Message'
+          description: The message to send to the agent
+      responses:
+        '200':
+          description: Agent run completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  result:
+                    type: string
+        '404':
+          description: Agent not found
           content:
             application/json:
               schema:

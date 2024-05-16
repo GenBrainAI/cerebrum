@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from .apis.default_api import router as DefaultApiRouter
 from .apis.task_api import router as TaskApiRouter
 from .apis.assistant_api import router as AssistantApiRouter
+from .apis.agents_api import router as AgentsApiRouter
 
 app = FastAPI(
     title="GenBrain TasksManager API",
@@ -21,5 +22,6 @@ app = FastAPI(
 )
 
 app.include_router(DefaultApiRouter)
+app.include_router(AgentsApiRouter)
 app.include_router(AssistantApiRouter)
 app.include_router(TaskApiRouter)
