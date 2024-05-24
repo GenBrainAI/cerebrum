@@ -11,7 +11,6 @@ from fastapi import (
 from ..models.task import Task
 from ..models.list_tasks_managers import ListTasksManagers
 from ..models.custom_exceptions import *
-from ..models.run_session import TaskRunSession, TasksManagerRunSession, TasksManagerTaskSequenceState, TasksManagerTaskState
 from ..models.run_task import RunTask
 from ..models.toolset import Toolset
 from ..models.tasks_manager import TasksManager
@@ -214,8 +213,7 @@ async def update_tasksmanager(
         400: {"description": "Invalid input or organization not found."},
     },
     tags=["run"],
-    summary="run an tasksmanager task.",
-    response_model=TaskRunSession
+    summary="run an tasksmanager task."
   )
 async def run_task(
     tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
@@ -227,10 +225,9 @@ async def run_task(
             raise HTTPException(status_code=404, detail="Task not found or tasksmanager does not match")
 
         response = await task_runner.completion(tasksmanager_id=tasksmanager_id, task_id=task_id, messages=run_task_body.messages)
-        trs = TaskRunSession(task_id=task_id, tasksmanager_id=tasksmanager_id, response=response)
 
         return Response(
-            content=trs.json(),
+            content=response,
             status_code=status.HTTP_202_ACCEPTED,
             media_type="application/json",
         )

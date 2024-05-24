@@ -113,7 +113,7 @@ def parse_openapi(swagger_yaml):
                                     }
                                 }
                     tool_json = json.dumps(tool)
-                    print(f'tool_json: {tool_json}')
+                    # print(f'tool_json: {tool_json}')
                     tools.append(tool)
     except Exception as e:
         print(str(e))
@@ -124,7 +124,7 @@ def parse_openapi(swagger_yaml):
 # ----------- Tools ---------------
 def process_toolset(toolset, id):
     parsed_tools = parse_openapi(toolset.swagger)
-    
+    print(f'number of tools: {len(parsed_tools)}')
     for tool in parsed_tools:
         tool['function']['credentials'] = toolset.credentials.dict()
         tool['function']['toolsetId'] = id

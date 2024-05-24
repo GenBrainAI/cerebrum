@@ -44,7 +44,18 @@
         ],
         "jinja": false,
         "console": "integratedTerminal"
+    },
+    {
+        "name": "Python: Server Temp",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${workspaceFolder}/src/server/temp.py",
+        "console": "integratedTerminal",
+        "env": {
+            "PYTHONPATH": "${workspaceFolder}/src"
+        }
     }
+
          
   ]
 }

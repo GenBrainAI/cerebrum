@@ -8,6 +8,7 @@ from ..models.tasks_manager import TasksManager
 from ..models.toolset import Tool, Toolset
 from ..models.task import Task
 from ..models.message import Message
+from ..models.agent import CrewInfo
 
 class PersistenceModelBase(ABC):
 
@@ -55,5 +56,10 @@ class PersistenceModelBase(ABC):
     @property
     @abstractmethod
     def messages(self) -> CrudInterface[Message]:
+        pass
+
+    @property
+    @abstractmethod
+    def crews_info(self) -> CrudInterface[CrewInfo]:
         pass
 

@@ -11,13 +11,16 @@ requests
 python-multipart
 prance
 pytest
-crewai
-crewai-tools
+# Include crewai requirements as sub module
+-r crewai/requirements.txt
+crewai[tools]
+composio_crewai
+ollama
 llama-index
 autogen
 deepdiff
 jsonpath_ng
 boto3
 python-dotenv
-
+PyGithub
 

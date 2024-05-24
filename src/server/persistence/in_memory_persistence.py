@@ -1,7 +1,7 @@
 
 import json
 from pydantic import BaseModel
-from .in_memory_crud import InMemoryCrud, ToolCrud, ToolsetCrud, TasksManagerCrud, TaskCrud, MessageCrud
+from .in_memory_crud import InMemoryCrud, CrewInfoCrud, ToolCrud, ToolsetCrud, TasksManagerCrud, TaskCrud, MessageCrud
 from .persistence_model import PersistenceModelBase
 
 class InMemoryPersistenceModel(PersistenceModelBase):
@@ -12,6 +12,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tasksmanagers = TasksManagerCrud()
         self._tasks = TaskCrud()
         self._messages = MessageCrud()
+        self._crews_info = CrewInfoCrud()
 
         # For general dict non pydantic
         self.collections: Dict[str, InMemoryCrud[BaseModel]] = {}
@@ -26,6 +27,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
                 "tasksmanagers": self._tasksmanagers.to_json(),
                 "tasks": self._tasks.to_json(),
                 "messages": self._messages.to_json(),
+                "crews_info": self._crews_info.to_json(),
             }
             json_str = json.dumps(obj, indent=4)
             return json_str
@@ -40,7 +42,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tools.from_json(data["tools"])
         self._tasksmanagers.from_json(data["tasksmanagers"])
         self._tasks.from_json(data["tasks"])
-        self._messages.from_json(data["messages"])
+        self._crews_info.from_json(data["crews_info"])
 
     @property
     def tools(self) -> ToolCrud:
@@ -62,3 +64,6 @@ class InMemoryPersistenceModel(PersistenceModelBase):
     def messages(self) -> MessageCrud:
         return self._messages
 
+    @property
+    def crews_info(self) -> CrewInfoCrud:
+            return self._crews_info

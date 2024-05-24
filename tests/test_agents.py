@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 import pytest
 from src.server.main import app
-from src.server.models.agent import CreateAgentRequest
+from src.server.models.agent import CreateCrewRequest
 
 client = TestClient(app)
 

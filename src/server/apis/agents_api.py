@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException, APIRouter
 from dotenv import load_dotenv
-from ..models.agent import CreateAgentRequest, AgentModel, TaskModel
-from crewai import Crew, Agent, Task
-# from crewai_tools import WebsiteSearchTool, FileReadTool
+from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
+from crewai import Agent, Task, Crew
+from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 
 
 router = APIRouter()
@@ -12,16 +12,16 @@ router = APIRouter()
 
 # Define available tools
 TOOLS = {
-    # "WebsiteSearchTool": WebsiteSearchTool(),
-    #"SeperDevTool": SeperDevTool(),
-    # "FileReadTool": FileReadTool(
-    #     file_path='job_description_example.md',
-    #     description='A tool to read the job description example file.'
-    # )
+    "WebsiteSearchTool": WebsiteSearchTool(),
+    "SerperDevTool": SerperDevTool(),
+    "FileReadTool": FileReadTool(
+        file_path='job_description_example.md',
+        description='A tool to read the job description example file.'
+    )
 }
 
 @router.post("/agent")
-async def create_agents(request: CreateAgentRequest):
+async def create_agents(request: CreateCrewRequest):
     try:
         # Create agents based on the request
         agents = []
@@ -57,7 +57,7 @@ async def create_agents(request: CreateAgentRequest):
         )
 
         # Kick off the process
-        result = crew.kickoff()
+        #result = crew.kickoff()
 
         return {"message": "Job Posting Creation Process Completed", "result": result}
     except Exception as e:

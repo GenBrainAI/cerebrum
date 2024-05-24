@@ -8,6 +8,7 @@ from ..models.tasks_manager import TasksManager
 from ..models.toolset import Tool, Toolset
 from ..models.task import Task
 from ..models.message import Message
+from ..models.agent import CrewInfo
 from uuid import uuid4
 from datetime import datetime
 
@@ -18,25 +19,19 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
         self.storage: Dict[str, T] = {}
         self._model_class = model_class
 
+    # T is pydantic model
     def create(self, item: T) -> T:
-        # take id from payload -- otherwise generate
-        item_id = item.id if hasattr(item,'id') and item.id is not None else str(uuid4())
-
+        item_id = str(uuid4())
         created_at = datetime.now()
-        
-        if isinstance(item, dict):  # If item is a dictionary
-            item['id'] = item_id
-            item['created_at'] = created_at
-        else:  # Assume item is a Pydantic model or similar
-            try:
-                setattr(item, 'id', item_id)
-            except AttributeError:
-                pass  
-            try:
-                setattr(item, 'created_at', created_at)
-            except AttributeError:
-                pass  
-                
+        try:
+            setattr(item, 'id', item_id)
+        except Exception:
+            pass  
+        try:
+            setattr(item, 'created_at', created_at)
+        except Exception:
+            pass  
+
         self.storage[item_id] = item
         return item
 
@@ -91,7 +86,10 @@ class TaskCrud(InMemoryCrud[Task]):
     def __init__(self):
         super().__init__(Task)
 
-
 class MessageCrud(InMemoryCrud[Message]):
     def __init__(self):
         super().__init__(Message)
+
+class CrewInfoCrud(InMemoryCrud[CrewInfo]):
+    def __init__(self):
+        super().__init__(CrewInfo)

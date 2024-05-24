@@ -59,6 +59,34 @@ async def health_check(
   return "All OK"
 
 
+def create_toolset(credentials, name, description, swagger_content):
+    # Parse the credentials JSON string into a Python dict
+    credentials_dict = json.loads(credentials)
+    # Create a ToolsetCredentials object from the dict
+    toolset_credentials = ToolsetCredentials(**credentials_dict)
+    
+    toolset_data = {
+        "name": name,
+        "description": description,
+        "credentials": toolset_credentials,
+        "swagger": swagger_content
+    }
+    
+    toolset = Toolset(**toolset_data)
+    persisted_toolset = persistence_model.toolsets.create(toolset)
+    toolset = openapi.process_toolset(persisted_toolset, persisted_toolset.id)
+    
+    persisted_toolset.tool_ids = []
+    for tool in toolset['tools']:
+        try:
+            new_tool = persistence_model.tools.create(tool)
+            persisted_toolset.tool_ids.append(new_tool['id'])
+    
+        except Exception as e:
+            print(str(e))
+    return persisted_toolset
+
+
 @router.post(
     "/toolsets",
     responses={
@@ -87,30 +115,7 @@ async def create_global_toolset(
         raise HTTPException(status_code=400, detail="Swagger definition is required.")
     
     try:
-        # Parse the credentials JSON string into a Python dict
-        credentials_dict = json.loads(credentials)
-        # Create a ToolsetCredentials object from the dict
-        toolset_credentials = ToolsetCredentials(**credentials_dict)
-
-        toolset_data = {
-            "name": name,
-            "description": description,
-            "credentials": toolset_credentials,
-            "swagger": swagger_content
-        }
-
-        toolset = Toolset(**toolset_data)
-        persisted_toolset = persistence_model.toolsets.create(toolset)
-        fn_toolset = openapi.process_toolset(persisted_toolset, persisted_toolset.id)
-        
-        persisted_toolset.tool_ids = []
-        for fn_tool in fn_toolset['tools']:
-            try:
-                pfn = persistence_model.tools.create(fn_tool)
-                persisted_toolset.tool_ids.append(pfn['id'])
-
-            except Exception as e:
-                print(str(e))
+        persisted_toolset = create_toolset(credentials, name, description, swagger_content)
         return Response(
             content=persisted_toolset.json(),
             status_code=status.HTTP_201_CREATED,
@@ -195,3 +200,6 @@ async def load_state(storage: StorageLocation, return_as_json: Optional[bool] = 
             status_code=status.HTTP_201_CREATED,
             media_type="application/json",
     )
+
+async def do_some_work():
+    pass

@@ -1,0 +1,6 @@
+[submodule "crewai"]
+	path = crewai
+	url = git@github.com:joaomdmoura/crewAI.git
+[submodule "crewAI-examples"]
+	path = crewAI-examples
+	url = git@github.com:joaomdmoura/crewAI-examples.git
