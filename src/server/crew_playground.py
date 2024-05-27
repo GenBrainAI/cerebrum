@@ -121,5 +121,38 @@ def save_crew():
     except Exception as e:
         print(str(e))
 
+def some_test():
+    def apply_params_to_string(string, params):
+        for key, value in params.items():
+            placeholder = "{" + key + "}"
+            if isinstance(value, list):
+                value = ", ".join(str(item) for item in value)
+            string = string.replace(placeholder, str(value))
+        return string
+
+    template = """
+        Hello, {name}!
+
+        Your trip details are as follows:
+        - Destination: {destination}
+        - Dates: {start_date} to {end_date}
+        - Activities: {activities}
+
+        Enjoy your trip!
+    """
+
+    params = {
+        "name": "John",
+        "destination": "Paris",
+        "start_date": "2023-07-01",
+        "end_date": "2023-07-10",
+        "activities": ["sightseeing", "museum visits", "food tasting"]
+    }
+
+    result = apply_params_to_string(template, params)
+    print(result)
+
+
 if __name__ == "__main__":
-    save_crew()
+    #save_crew()
+    some_test()

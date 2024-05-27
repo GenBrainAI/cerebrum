@@ -542,6 +542,7 @@ paths:
           description: State saved successfully.
         '400':
           description: Bad request due to missing or invalid data.
+
   /state/load:
     post:
       summary: Load application state
@@ -568,6 +569,58 @@ paths:
                 additionalProperties: true
         '404':
           description: State not found.
+  /write_code:
+    post:
+      summary: Write code to a file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveFileRequest'
+      responses:
+        '200':
+          description: File saved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: File saved successfully
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPError'
+  /run_code:
+    post:
+      summary: Run code from a file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunFileRequest'
+      responses:
+        '200':
+          description: Execution output
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  output:
+                    type: string
+                    example: Hello, World!
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPError'
 
 components:
   parameters:
@@ -886,3 +939,36 @@ components:
         state_name:
           type: string
           description: Custom name for the saved state.
+    SaveFileRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          example: example.py
+        content:
+          type: string
+          example: print('Hello, World!')
+      required:
+        - filename
+        - content
+    RunFileRequest:
+      type: object
+      properties:
+        filename:
+          type: string
+          example: example.py
+        language:
+          type: string
+          enum:
+            - python
+            - nodejs
+          example: python
+      required:
+        - filename
+        - language
+    HTTPError:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: An error occurred

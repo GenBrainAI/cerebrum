@@ -19,6 +19,18 @@ TOOLS = {
         description='A tool to read the job description example file.'
     )
 }
+TOOLS += {
+    "WebsiteSearchTool": WebsiteSearchTool(),
+    "SerperDevTool": SerperDevTool(),
+    "FileReadTool": FileReadTool(
+        file_path='job_description_example.md',
+        description='A tool to read the job description example file.'
+    ),
+    "GithubTool": GithubTool(
+        access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
+        repo_name=os.getenv("GITHUB_REPO_NAME")
+    )
+}
 
 @router.post("/agent")
 async def create_agents(request: CreateCrewRequest):
