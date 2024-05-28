@@ -23,4 +23,5 @@ jsonpath_ng
 boto3
 python-dotenv
 PyGithub
-
+chromadb
+chromadb-default-embed

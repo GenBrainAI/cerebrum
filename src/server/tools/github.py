@@ -1,14 +1,13 @@
 from github import Github
-from pydantic import BaseModel
 from fastapi import FastAPI
 
-class GithubRepo(BaseModel):
+class GithubRepo():
     access_token: str
     repo_name: str
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        self.g = Github(self.access_token)
+    def __init__(self, access_token, repo_name):
+        self.access_token = access_token
+        self.g = None #Github(self.access_token)
         self.repo = self.g.get_repo(self.repo_name)
 
     def ls(self, path: str = ''):

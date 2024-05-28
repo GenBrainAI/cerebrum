@@ -14,6 +14,10 @@ Python >= 3.11
 To run the server, please execute the following from the root directory:
 
 ```bash
+cd crewai
+poetry export -f requirements.txt --output requirements.txt
+cd ..
+
 pip3 install -r requirements.txt
 uvicorn src.server.main:app --host 0.0.0.0 --port 8080 --reload
 ```

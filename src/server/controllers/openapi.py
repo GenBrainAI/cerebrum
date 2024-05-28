@@ -24,7 +24,7 @@ def generate_function_name(method, path, method_content):
     if 'operationId' in method_content:
         return method_content['operationId']
 
-    print(f'return method: {method} path: {path}')
+    #print(f'return method: {method} path: {path}')
 
     # Split the path and remove empty strings
     path_parts = [p for p in path.split('/') if p]
@@ -124,7 +124,7 @@ def parse_openapi(swagger_yaml):
 # ----------- Tools ---------------
 def process_toolset(toolset, id):
     parsed_tools = parse_openapi(toolset.swagger)
-    print(f'number of tools: {len(parsed_tools)}')
+    print(f'number of tools proccesed: {len(parsed_tools)}')
     for tool in parsed_tools:
         tool['function']['credentials'] = toolset.credentials.dict()
         tool['function']['toolsetId'] = id
@@ -138,4 +138,5 @@ def process_toolset(toolset, id):
         'swagger': toolset.swagger,
         'tools': parsed_tools,
     }
+    
     return toolset_data

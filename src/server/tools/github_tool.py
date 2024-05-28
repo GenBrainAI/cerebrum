@@ -1,12 +1,25 @@
 
 from typing import Optional
-from crewai import Tool
 from .github import GithubRepo
 
-class GithubTool(Tool):
+from github import Github
+
+class GithubRepo:
     def __init__(self, access_token: str, repo_name: str):
-        super().__init__(name="GithubTool", description="A tool to interact with GitHub repositories.")
-        self.github_repo = GithubRepo(access_token=access_token, repo_name=repo_name)
+        if access_token is None:
+            raise ValueError("Access token cannot be None")
+        if repo_name is None:
+            raise ValueError("Repository name cannot be None")
+
+        try:
+            self.g = Github(access_token)
+            self.repo = self.g.get_repo(repo_name)
+        except Exception as e:
+            print(f"Failed to get repository: {e}")
+            self.repo = None
+
+        if self.repo is None:
+            raise Exception(f"Could not access repository {repo_name} with provided token.")
 
     async def ls(self, path: str = '') -> list:
         return self.github_repo.ls(path)

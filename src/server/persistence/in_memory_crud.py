@@ -24,11 +24,12 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
         item_id = str(uuid4())
         created_at = datetime.now()
         try:
-            setattr(item, 'id', item_id)
+            item.id = item_id
         except Exception:
+            print("Failed to set id", item)
             pass  
         try:
-            setattr(item, 'created_at', created_at)
+            item.created_at = created_at
         except Exception:
             pass  
 

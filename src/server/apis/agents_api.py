@@ -1,9 +1,10 @@
+import os
 from fastapi import FastAPI, HTTPException, APIRouter
 from dotenv import load_dotenv
 from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
 from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
-
+from ..tools.github_tool import GithubTool
 
 router = APIRouter()
 

@@ -35,7 +35,7 @@ from ..models.tasks_manager import TasksManager
 from ..models.error import Error
 from ..models.list_tasks_managers import ListTasksManagers
 from ..models.task import Task
-from ..models.toolset import Toolset
+from ..models.toolset import Toolset, Tool
 from ..models.persistence_models import StorageLocation
 from ..controllers.persistence_controller import load_from_storage, save_to_storage
 from ..persistence.persistence_model_factory import PersistenceModelFactory
@@ -79,11 +79,14 @@ def create_toolset(credentials, name, description, swagger_content):
     persisted_toolset.tool_ids = []
     for tool in toolset['tools']:
         try:
-            new_tool = persistence_model.tools.create(tool)
-            persisted_toolset.tool_ids.append(new_tool['id'])
+            new_tool = persistence_model.tools.create(Tool(**tool))
+            print(f"new_tool: {new_tool}")
+            #persisted_toolset.tool_ids.append(new_tool.id)
+
     
         except Exception as e:
-            print(str(e))
+            print("Error" + str(e))
+    
     return persisted_toolset
 
 
