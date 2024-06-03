@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, HTTPException, APIRouter
 from dotenv import load_dotenv
-from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
+from ..models.agent import CreateCrewRequest, AgentModel, TaskModel, AutogenConfig
 from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from ..tools.github_tool import GithubTool
@@ -18,9 +18,7 @@ TOOLS = {
     "FileReadTool": FileReadTool(
         file_path='job_description_example.md',
         description='A tool to read the job description example file.'
-    )
-}
-TOOLS += {
+    ),
     "WebsiteSearchTool": WebsiteSearchTool(),
     "SerperDevTool": SerperDevTool(),
     "FileReadTool": FileReadTool(
@@ -29,7 +27,7 @@ TOOLS += {
     ),
     "GithubTool": GithubTool(
         access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
-        repo_name=os.getenv("GITHUB_REPO_NAME")
+        repo_name=os.getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
     )
 }
 
@@ -97,3 +95,14 @@ async def run_agent_process(agent_id: str):
         return {"message": "Agent process started successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agent/autogen")
+async def autogen_agent(config: AutogenConfig):
+    try:
+        agents = [create_agent(agent.dict()) for agent in config.agents]
+        tasks = [ChatTask(**task.dict()) for task in config.tasks]
+        chat_config = ChatConfig(agents=agents, tasks=tasks)
+        return JSONResponse(content={"agents": [agent.__dict__ for agent in agents], "tasks": [task.dict() for task in tasks]}, status_code=200)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

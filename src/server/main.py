@@ -26,12 +26,8 @@ app = FastAPI(
 )
 
 auth = GitHubAuth.Token(os.getenv('GITHUB_ACCESS_TOKEN'))
-# Public Web Github
 g = Github(auth=auth)
-
-# Github Enterprise with custom hostname
-#g = Github(base_url="https://{hostname}/api/v3", auth=auth)
-g.get_repo()
+g.get_repo("genbrainai/cerebrum")
 
 app.include_router(DefaultApiRouter)
 app.include_router(AgentsApiRouter)

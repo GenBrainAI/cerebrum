@@ -25,3 +25,6 @@ python-dotenv
 PyGithub
 chromadb
 chromadb-default-embed
+pyautogen
+ipython
+markdownify

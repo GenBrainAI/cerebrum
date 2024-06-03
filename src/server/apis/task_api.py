@@ -17,7 +17,7 @@ from ..models.tasks_manager import TasksManager
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..controllers.task_runner import TaskRunner
 from ..models.error import Error
-
+from ..controllers.tasks_controller import create_tasksmanager
 
 router = APIRouter()
 
@@ -150,11 +150,11 @@ async def get_tasksmanager(
     summary="Create a new tasksmanager",
     response_model_by_alias=True,
 )
-async def create_tasksmanager(
+async def post_create_tasksmanager(
     tasksmanager: TasksManager = Body(None, description=""),
 ) -> TasksManager:
     try:
-        created_bot =  persistence_model.tasksmanagers.create(tasksmanager)
+        created_bot = create_tasksmanager(tasksmanager)
         return Response(
             content=created_bot.json(),
             status_code=status.HTTP_201_CREATED,

@@ -4,7 +4,7 @@ from .github import GithubRepo
 
 from github import Github
 
-class GithubRepo:
+class GithubTool:
     def __init__(self, access_token: str, repo_name: str):
         if access_token is None:
             raise ValueError("Access token cannot be None")

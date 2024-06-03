@@ -26,6 +26,8 @@ class Task(BaseModel):
     description: Optional[str] = Field(default=None, json_schema_extra={"alias": "description"})
     messages: Optional[List[Message]] = Field(default=None, alias="messages")
     toolsets: Optional[List[str]] = Field(default=None, json_schema_extra={"alias": "toolsets"})
+    autogen_config_id: Optional[str] = Field(default=None, json_schema_extra={"alias": "autogen_config_id"})
+    crewai_info_id: Optional[str] = Field(default=None, json_schema_extra={"alias": "crewai_info_id"})
     created_at: Optional[datetime] = Field(default=None, json_schema_extra={"alias": "created_at"})
     updated_at: Optional[datetime] = Field(default=None, json_schema_extra={"alias": "updated_at"})
     config: Optional[Dict[str, Any]] = Field(default=None, json_schema_extra={"alias": "config"})
