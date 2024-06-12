@@ -3,17 +3,18 @@ import os
 from pydantic import BaseModel, Field
 from typing import List, Optional, Union, Dict, Literal, Callable
 from datetime import date, datetime
-
-
 import chromadb
-
 import autogen
 from autogen import AssistantAgent, UserProxyAgent
 # from autogen.agentchat.agent import LLMAgent
 from autogen.agentchat.contrib.retrieve_assistant_agent import RetrieveAssistantAgent
 from autogen.agentchat.contrib.retrieve_user_proxy_agent import RetrieveUserProxyAgent
 from autogen.agentchat.contrib.math_user_proxy_agent import MathUserProxyAgent
-    
+from typing import List, Optional, Union, Dict, Literal, Callable, Any
+from pydantic import BaseModel
+from enum import Enum
+import json
+
 
 class ToolModel(BaseModel):
     name: str
@@ -38,9 +39,9 @@ class CreateCrewRequest(BaseModel):
     agents: List[AgentModel]
     tasks: List[TaskModel]
 
-class CrewInfo(BaseModel):
+class CrewAIConfig(BaseModel):
     id: Optional[str] = Field(alias="id", default=None)
-    crew_info: Optional[CreateCrewRequest]  = Field(alias="crew_info", default=None)
+    create_crew: Optional[CreateCrewRequest]  = Field(alias="create_crew", default=None)
     created_at: Optional[datetime] = Field(alias="created_at", default=None)
     updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
 
@@ -55,12 +56,6 @@ config_list = [
 ]
 
 
-from typing import List, Optional, Union, Dict, Literal, Callable, Any
-from pydantic import BaseModel
-from enum import Enum
-import json
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 
 app = FastAPI()
 

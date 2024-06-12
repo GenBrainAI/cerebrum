@@ -8,7 +8,7 @@ from ..models.tasks_manager import TasksManager
 from ..models.toolset import Tool, Toolset
 from ..models.task import Task
 from ..models.message import Message
-from ..models.agent import CrewInfo
+from ..models.agent import CrewAIConfig, AutogenConfig
 
 class PersistenceModelBase(ABC):
 
@@ -60,6 +60,11 @@ class PersistenceModelBase(ABC):
 
     @property
     @abstractmethod
-    def crews_info(self) -> CrudInterface[CrewInfo]:
+    def crewai_config(self) -> CrudInterface[CrewAIConfig]:
+        pass
+
+    @property
+    @abstractmethod
+    def autogen_config(self) -> CrudInterface[AutogenConfig]:
         pass
 

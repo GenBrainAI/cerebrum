@@ -8,7 +8,7 @@ from ..models.tasks_manager import TasksManager
 from ..models.toolset import Tool, Toolset
 from ..models.task import Task
 from ..models.message import Message
-from ..models.agent import CrewInfo
+from ..models.agent import CrewAIConfig, AutogenConfig
 from uuid import uuid4
 from datetime import datetime
 
@@ -91,6 +91,11 @@ class MessageCrud(InMemoryCrud[Message]):
     def __init__(self):
         super().__init__(Message)
 
-class CrewInfoCrud(InMemoryCrud[CrewInfo]):
+class CrewAIConfigCrud(InMemoryCrud[CrewAIConfig]):
     def __init__(self):
-        super().__init__(CrewInfo)
+        super().__init__(CrewAIConfig)
+
+class AutogenConfigCrud(InMemoryCrud[AutogenConfig]):
+    def __init__(self):
+        super().__init__(AutogenConfig)
+

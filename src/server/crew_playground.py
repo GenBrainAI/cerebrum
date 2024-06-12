@@ -8,7 +8,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '/Users/mb/projects/genb
 
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.models.agent import CreateCrewRequest, AgentModel, TaskModel
-from src.server.models.agent import CrewInfo
+from src.server.models.agent import CrewAIConfig
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
@@ -109,15 +109,15 @@ def save_crew():
             agents=agents,
             tasks=tasks
         )
-        crew_info = CrewInfo(
-            crew_info = request,
+        crewai_config = CrewAIConfig(
+            crewai_config = request,
         )
-        persistence_model.crews_info.create(crew_info)
-        crew_info_id = crew_info.id
+        persistence_model.crewai_config.create(crewai_config)
+        crewai_config_id = crewai_config.id
         json = persistence_model.to_json()
         persistence_model.from_json(json)
-        crew_info_restored = persistence_model.crews_info.read(crew_info_id)
-        assert crew_info_restored.id == crew_info_id
+        crewai_config_restored = persistence_model.crewai_config.read(crewai_config_id)
+        assert crewai_config_restored.id == crewai_config_id
     except Exception as e:
         print(str(e))
 

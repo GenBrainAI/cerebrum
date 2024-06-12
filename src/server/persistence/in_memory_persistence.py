@@ -1,7 +1,7 @@
 
 import json
 from pydantic import BaseModel
-from .in_memory_crud import InMemoryCrud, CrewInfoCrud, ToolCrud, ToolsetCrud, TasksManagerCrud, TaskCrud, MessageCrud
+from .in_memory_crud import InMemoryCrud, AutogenConfigCrud, CrewAIConfigCrud, ToolCrud, ToolsetCrud, TasksManagerCrud, TaskCrud, MessageCrud
 from .persistence_model import PersistenceModelBase
 
 class InMemoryPersistenceModel(PersistenceModelBase):
@@ -12,7 +12,8 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tasksmanagers = TasksManagerCrud()
         self._tasks = TaskCrud()
         self._messages = MessageCrud()
-        self._crews_info = CrewInfoCrud()
+        self._crewai_config = CrewAIConfigCrud()
+        self._autogen_config = AutogenConfigCrud()
 
         # For general dict non pydantic
         self.collections: Dict[str, InMemoryCrud[BaseModel]] = {}
@@ -27,7 +28,8 @@ class InMemoryPersistenceModel(PersistenceModelBase):
                 "tasksmanagers": self._tasksmanagers.to_json(),
                 "tasks": self._tasks.to_json(),
                 "messages": self._messages.to_json(),
-                "crews_info": self._crews_info.to_json(),
+                "crewai_config": self._crewai_config.to_json(),
+                "autogen_config": self._autogen_config.to_json(),
             }
             json_str = json.dumps(obj, indent=4)
             return json_str
@@ -42,7 +44,8 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tools.from_json(data["tools"])
         self._tasksmanagers.from_json(data["tasksmanagers"])
         self._tasks.from_json(data["tasks"])
-        self._crews_info.from_json(data["crews_info"])
+        self._crewai_config.from_json(data["crewai_config"])
+        self._autogen_config.from_json(data["autogen_config"])
 
     @property
     def tools(self) -> ToolCrud:
@@ -65,5 +68,11 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         return self._messages
 
     @property
-    def crews_info(self) -> CrewInfoCrud:
-            return self._crews_info
+    def crewai_config(self) -> CrewAIConfigCrud:
+        return self._crewai_config
+
+    @property
+    def autogen_config(self) -> AutogenConfigCrud:
+        return self._autogen_config
+
+
