@@ -3,7 +3,7 @@ name: Deploy to Cloud Run
 env:
   SERVICE_NAME: cerebrum
   PROJECT_ID: fourth-return-426414-q6
-  DOCKER_IMAGE_URL: us-east1-docker.pkg.dev/fourth-return-426414-q6/cerebrum
+  DOCKER_IMAGE_URL: us-east1-docker.pkg.dev/fourth-return-426414-q6/cerebrum/image
 
 on:
   push:
