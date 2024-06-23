@@ -4,6 +4,7 @@ env:
   SERVICE_NAME: cerebrum
   PROJECT_ID: fourth-return-426414-q6
   DOCKER_IMAGE_URL: us-east1-docker.pkg.dev/fourth-return-426414-q6/cerebrum/image
+  REGION: us-east1
 
 on:
   push:
@@ -45,5 +46,5 @@ jobs:
           gcloud run deploy $SERVICE_NAME \
             --image ${{ env.DOCKER_IMAGE_URL }}:latest \
             --platform managed \
-            --region us-east1 \
+            --region ${{ env.REGION }} \
             --allow-unauthenticated

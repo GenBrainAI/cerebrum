@@ -25,7 +25,7 @@ boto3
 python-dotenv
 PyGithub
 chromadb
-# chromadb-default-embed
+chromadb-default-embed
 pyautogen
 ipython
 markdownify
