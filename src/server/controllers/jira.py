@@ -158,6 +158,6 @@ def configure_scheduler(config: SchedulerConfig):
 scheduler.add_job(fetch_new_tickets, 'interval', minutes=1)
 scheduler.start()
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# if __name__ == "__main__":
+#     import uvicorn
+#     uvicorn.run(app, host="0.0.0.0", port=8000)

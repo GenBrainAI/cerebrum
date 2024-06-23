@@ -32,5 +32,9 @@ class Task(BaseModel):
     updated_at: Optional[datetime] = Field(default=None, json_schema_extra={"alias": "updated_at"})
     config: Optional[Dict[str, Any]] = Field(default=None, json_schema_extra={"alias": "config"})
 
+    def run(self, additional_info: Optional[Dict] = None) -> str:
+        # Simulating a task execution that generates text
+        return f"Task {self.name} output: {input_data}"
+
 
 Task.model_rebuild()

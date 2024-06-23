@@ -14,7 +14,8 @@ pytest
 # Include crewai requirements as sub module
 -r crewai/requirements.txt
 crewai[tools]
-composio_crewai
+composio-crewai
+composio-openai
 ollama
 llama-index
 autogen
@@ -28,3 +29,4 @@ chromadb-default-embed
 pyautogen
 ipython
 markdownify
+apscheduler

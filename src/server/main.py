@@ -16,6 +16,7 @@ from .apis.default_api import router as DefaultApiRouter
 from .apis.task_api import router as TaskApiRouter
 from .apis.assistant_api import router as AssistantApiRouter
 from .apis.agents_api import router as AgentsApiRouter
+# from composio import ComposioToolSet
 
 load_dotenv()
 
@@ -25,6 +26,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# composio_toolset = ComposioToolSet(api_key=os.getenv('COMPOSIO_API_KEY'))
 auth = GitHubAuth.Token(os.getenv('GITHUB_ACCESS_TOKEN'))
 g = Github(auth=auth)
 g.get_repo("genbrainai/cerebrum")

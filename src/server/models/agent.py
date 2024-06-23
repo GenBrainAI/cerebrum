@@ -55,10 +55,6 @@ config_list = [
     {"model": "gpt-4", "api_key": os.environ.get("OPENAI_API_KEY"), "api_type": "openai"},
 ]
 
-
-
-app = FastAPI()
-
 # Enum for agent types
 class AgentType(str, Enum):
     ASSISTANT_AGENT = "AssistantAgent"

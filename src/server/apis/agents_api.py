@@ -20,5 +20,6 @@ async def create_crewai(request: CreateCrewRequest):
 @router.post("/agent/autogen")
 async def autogen_agent(config: AutogenConfig):
     try:
+        return {"message": "Not Implemented", "config": config}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
