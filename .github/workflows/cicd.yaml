@@ -1,9 +1,9 @@
 name: Deploy to Cloud Run
 
 env:
-  SERVICE_NAME: cerebrum-service
+  SERVICE_NAME: cerebrum
   PROJECT_ID: fourth-return-426414-q6
-  DOCKER_IMAGE_URL: us-central1-docker.pkg.dev/fourth-return-426414-q6/cerebrum
+  DOCKER_IMAGE_URL: us-east1-docker.pkg.dev/fourth-return-426414-q6/cerebrum
 
 on:
   push:
@@ -32,7 +32,7 @@ jobs:
 
       - name: Configure Docker
         run: |
-          gcloud auth configure-docker us-central1-docker.pkg.dev
+          gcloud auth configure-docker us-east1-docker.pkg.dev
 
       - name: Build and Push Docker Image
         run: |
