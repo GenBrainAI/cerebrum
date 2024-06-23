@@ -2,7 +2,7 @@ name: Deploy to Cloud Run
 
 env:
   SERVICE_NAME: cerebrum-service
-  PROJECT_ID: cerebrum
+  PROJECT_ID: fourth-return-426414-q6
   DOCKER_IMAGE_URL: us-central1-docker.pkg.dev/cerebrum/custom-fastapi/cerebrum
 
 on:
