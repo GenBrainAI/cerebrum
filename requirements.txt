@@ -12,7 +12,7 @@ python-multipart
 prance
 pytest
 # Include crewai requirements as sub module
--r crewai/requirements.txt
+# -r crewai/requirements.txt
 crewai[tools]
 composio-crewai
 composio-openai
