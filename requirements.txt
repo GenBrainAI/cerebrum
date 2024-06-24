@@ -30,3 +30,4 @@ pyautogen
 ipython
 markdownify
 apscheduler
+pyautogen

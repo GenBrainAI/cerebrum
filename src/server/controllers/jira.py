@@ -147,9 +147,6 @@ def get_jira_configurations():
 
 # if __name__ == "__main__":
 #     # Load all saved Jira configurations and start their schedulers
-#     for config_id, config in persistence_model.jira_configs.items():
-#         handler = JiraTicketHandler(config)
-#         scheduler.add_job(handler.fetch_new_tickets, 'interval', minutes=config.schedule_interval, id=config_id)
     
 #     import uvicorn
 #     uvicorn.run(app, host="0.0.0.0", port=8000)

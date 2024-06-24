@@ -1,7 +1,7 @@
 
 import json
 from pydantic import BaseModel
-from .in_memory_crud import InMemoryCrud, AutogenConfigCrud, CrewAIConfigCrud, ToolCrud, ToolsetCrud, TasksManagerCrud, TaskCrud, MessageCrud
+from .in_memory_crud import InMemoryCrud, CrewAIConfigCrud, ToolCrud, ToolsetCrud, TasksManagerCrud, TaskCrud, MessageCrud
 from .persistence_model import PersistenceModelBase
 
 class InMemoryPersistenceModel(PersistenceModelBase):
@@ -13,7 +13,6 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tasks = TaskCrud()
         self._messages = MessageCrud()
         self._crewai_config = CrewAIConfigCrud()
-        self._autogen_config = AutogenConfigCrud()
 
         # For general dict non pydantic
         self.collections: Dict[str, InMemoryCrud[BaseModel]] = {}
@@ -29,7 +28,6 @@ class InMemoryPersistenceModel(PersistenceModelBase):
                 "tasks": self._tasks.to_json(),
                 "messages": self._messages.to_json(),
                 "crewai_config": self._crewai_config.to_json(),
-                "autogen_config": self._autogen_config.to_json(),
             }
             json_str = json.dumps(obj, indent=4)
             return json_str
@@ -71,8 +69,5 @@ class InMemoryPersistenceModel(PersistenceModelBase):
     def crewai_config(self) -> CrewAIConfigCrud:
         return self._crewai_config
 
-    @property
-    def autogen_config(self) -> AutogenConfigCrud:
-        return self._autogen_config
 
 

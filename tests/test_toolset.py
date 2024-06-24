@@ -6,8 +6,6 @@ import pytest
 from src.server.main import app
 from src.server.models.message import Message
 from src.server.utils.task_utils import find_file
-from tests.calculator.calculator import Operation
-from tests.calculator.complex_calc import ComplexNumber, ComplexOperation
 
 client = TestClient(app)
 

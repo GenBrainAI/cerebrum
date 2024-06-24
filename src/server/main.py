@@ -26,10 +26,17 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
 # composio_toolset = ComposioToolSet(api_key=os.getenv('COMPOSIO_API_KEY'))
 auth = GitHubAuth.Token(os.getenv('GITHUB_ACCESS_TOKEN'))
 g = Github(auth=auth)
 g.get_repo("genbrainai/cerebrum")
+
+# Todo: Get all from persisntant layer and use this loop to tun them.
+# for config_id, config in persistence_model.jira_configs.items():
+#     handler = JiraTicketHandler(config)
+#     scheduler.add_job(handler.fetch_new_tickets, 'interval', minutes=config.schedule_interval, id=config_id)
+
 
 app.include_router(DefaultApiRouter)
 app.include_router(AgentsApiRouter)

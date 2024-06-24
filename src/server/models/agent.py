@@ -4,12 +4,11 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Union, Dict, Literal, Callable
 from datetime import date, datetime
 import chromadb
-import autogen
-from autogen import AssistantAgent, UserProxyAgent
+# from autogen import AssistantAgent, UserProxyAgent
 # from autogen.agentchat.agent import LLMAgent
-from autogen.agentchat.contrib.retrieve_assistant_agent import RetrieveAssistantAgent
-from autogen.agentchat.contrib.retrieve_user_proxy_agent import RetrieveUserProxyAgent
-from autogen.agentchat.contrib.math_user_proxy_agent import MathUserProxyAgent
+# from autogen.agentchat.contrib.retrieve_assistant_agent import RetrieveAssistantAgent
+# from autogen.agentchat.contrib.retrieve_user_proxy_agent import RetrieveUserProxyAgent
+# from autogen.agentchat.contrib.math_user_proxy_agent import MathUserProxyAgent
 from typing import List, Optional, Union, Dict, Literal, Callable, Any
 from pydantic import BaseModel
 from enum import Enum
@@ -48,97 +47,97 @@ class CrewAIConfig(BaseModel):
 
 # Accepted file formats for that can be stored in
 # a vector database instance
-from autogen.retrieve_utils import TEXT_FORMATS
+# from autogen.retrieve_utils import TEXT_FORMATS
 
 
-config_list = [
-    {"model": "gpt-4", "api_key": os.environ.get("OPENAI_API_KEY"), "api_type": "openai"},
-]
+# config_list = [
+#     {"model": "gpt-4", "api_key": os.environ.get("OPENAI_API_KEY"), "api_type": "openai"},
+# ]
 
-# Enum for agent types
-class AgentType(str, Enum):
-    ASSISTANT_AGENT = "AssistantAgent"
-    USER_PROXY_AGENT = "UserProxyAgent"
-    RETRIEVE_ASSISTANT_AGENT = "RetrieveAssistantAgent"
-    RETRIEVE_USER_PROXY_AGENT = "RetrieveUserProxyAgent"
-    MATH_USER_PROXY_AGENT = "MathUserProxyAgent"
+# # Enum for agent types
+# class AgentType(str, Enum):
+#     ASSISTANT_AGENT = "AssistantAgent"
+#     USER_PROXY_AGENT = "UserProxyAgent"
+#     RETRIEVE_ASSISTANT_AGENT = "RetrieveAssistantAgent"
+#     RETRIEVE_USER_PROXY_AGENT = "RetrieveUserProxyAgent"
+#     MATH_USER_PROXY_AGENT = "MathUserProxyAgent"
 
-# Pydantic models for configurations
-class LLMConfig(BaseModel):
-    timeout: int
-    seed: int
-    config_list: List[Dict]
+# # Pydantic models for configurations
+# class LLMConfig(BaseModel):
+#     timeout: int
+#     seed: int
+#     config_list: List[Dict]
 
-class CodeExecutionConfig(BaseModel):
-    use_docker: bool
-    last_n_messages: Optional[int] = None
-    work_dir: Optional[str] = None
+# class CodeExecutionConfig(BaseModel):
+#     use_docker: bool
+#     last_n_messages: Optional[int] = None
+#     work_dir: Optional[str] = None
 
-# Base agent model
-class BaseAgent(BaseModel):
-    name: str
-    type: AgentType
+# # Base agent model
+# class BaseAgent(BaseModel):
+#     name: str
+#     type: AgentType
 
-# Specific agent models
-class RetrieveAssistantAgent(BaseAgent):
-    llm_config: Optional[Union[Dict, Literal[False]]] = None
-    system_message: Optional[str] = None
+# # Specific agent models
+# class RetrieveAssistantAgent(BaseAgent):
+#     llm_config: Optional[Union[Dict, Literal[False]]] = None
+#     system_message: Optional[str] = None
 
-class RetrieveUserProxyAgent(BaseAgent):
-    human_input_mode: str
-    is_termination_msg: Optional[str] = None
-    code_execution_config: CodeExecutionConfig
+# class RetrieveUserProxyAgent(BaseAgent):
+#     human_input_mode: str
+#     is_termination_msg: Optional[str] = None
+#     code_execution_config: CodeExecutionConfig
 
-class MathUserProxyAgent(RetrieveUserProxyAgent):
-    pass
+# class MathUserProxyAgent(RetrieveUserProxyAgent):
+#     pass
 
-# Union type for agents
-Agent = Union[
-    RetrieveAssistantAgent,
-    RetrieveUserProxyAgent,
-    MathUserProxyAgent
-]
+# # Union type for agents
+# Agent = Union[
+#     RetrieveAssistantAgent,
+#     RetrieveUserProxyAgent,
+#     MathUserProxyAgent
+# ]
 
-# Chat task model
-class ChatTask(BaseModel):
-    chat_id: int
-    recipient: BaseAgent
-    message: str
-    silent: Optional[bool] = None
-    summary_method: Optional[str] = None
-    prerequisites: Optional[List[int]] = None
-    carryover: Optional[Union[str, List[str]]] = None
+# # Chat task model
+# class ChatTask(BaseModel):
+#     chat_id: int
+#     recipient: BaseAgent
+#     message: str
+#     silent: Optional[bool] = None
+#     summary_method: Optional[str] = None
+#     prerequisites: Optional[List[int]] = None
+#     carryover: Optional[Union[str, List[str]]] = None
 
-class GroupChat(BaseModel):
-    agents: List[BaseAgent]
-    messages: List[Dict[str, Any]]
-    max_round: int
+# class GroupChat(BaseModel):
+#     agents: List[BaseAgent]
+#     messages: List[Dict[str, Any]]
+#     max_round: int
 
-class GroupChatManager(BaseModel):
-    groupchat: GroupChat
-    llm_config: LLMConfig
+# class GroupChatManager(BaseModel):
+#     groupchat: GroupChat
+#     llm_config: LLMConfig
 
-class AutogenConfig(BaseModel):
-    agents: List[Agent]
-    tasks: List[ChatTask]
-    groupchat: Optional[GroupChat] = None
-    groupchat_manager: Optional[GroupChatManager] = None
+# class AutogenConfig(BaseModel):
+#     agents: List[Agent]
+#     tasks: List[ChatTask]
+#     groupchat: Optional[GroupChat] = None
+#     groupchat_manager: Optional[GroupChatManager] = None
 
-# Helper function to parse agents
-def create_agent(agent_data: Dict) -> Agent:
-    agent_type = AgentType(agent_data.pop("type"))
-    if agent_type == AgentType.ASSISTANT_AGENT:
-        return RetrieveAssistantAgent(**agent_data)
-    elif agent_type == AgentType.USER_PROXY_AGENT:
-        return RetrieveUserProxyAgent(**agent_data)
-    elif agent_type == AgentType.RETRIEVE_ASSISTANT_AGENT:
-        return RetrieveAssistantAgent(**agent_data)
-    elif agent_type == AgentType.RETRIEVE_USER_PROXY_AGENT:
-        return RetrieveUserProxyAgent(**agent_data)
-    elif agent_type == AgentType.MATH_USER_PROXY_AGENT:
-        return MathUserProxyAgent(**agent_data)
-    else:
-        raise ValueError(f"Unsupported agent type: {agent_type}")
+# # Helper function to parse agents
+# def create_agent(agent_data: Dict) -> Agent:
+#     agent_type = AgentType(agent_data.pop("type"))
+#     if agent_type == AgentType.ASSISTANT_AGENT:
+#         return RetrieveAssistantAgent(**agent_data)
+#     elif agent_type == AgentType.USER_PROXY_AGENT:
+#         return RetrieveUserProxyAgent(**agent_data)
+#     elif agent_type == AgentType.RETRIEVE_ASSISTANT_AGENT:
+#         return RetrieveAssistantAgent(**agent_data)
+#     elif agent_type == AgentType.RETRIEVE_USER_PROXY_AGENT:
+#         return RetrieveUserProxyAgent(**agent_data)
+#     elif agent_type == AgentType.MATH_USER_PROXY_AGENT:
+#         return MathUserProxyAgent(**agent_data)
+#     else:
+#         raise ValueError(f"Unsupported agent type: {agent_type}")
 
 
 # Example JSON configuration for testing

@@ -3,7 +3,7 @@ from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..models.agent import CreateCrewRequest, AgentModel, TaskModel, AutogenConfig
+from ..models.agent import CreateCrewRequest, AgentModel, TaskModel 
 from ..tools.github_tool import GithubTool
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
@@ -83,20 +83,20 @@ async def run_crewai(task_id: str):
 
 
 
-async def create_autogen(config: AutogenConfig):
-    try:
-        agents = [create_agent(agent.dict()) for agent in config.agents]
-        tasks = [ChatTask(**task.dict()) for task in config.tasks]
-        chat_config = ChatConfig(agents=agents, tasks=tasks)
-        return JSONResponse(content={"agents": [agent.__dict__ for agent in agents], "tasks": [task.dict() for task in tasks]}, status_code=200)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# async def create_autogen(config: AutogenConfig):
+#     try:
+#         agents = [create_agent(agent.dict()) for agent in config.agents]
+#         tasks = [ChatTask(**task.dict()) for task in config.tasks]
+#         chat_config = ChatConfig(agents=agents, tasks=tasks)
+#         return JSONResponse(content={"agents": [agent.__dict__ for agent in agents], "tasks": [task.dict() for task in tasks]}, status_code=200)
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=str(e))
 
 
-async def run_autogen_agent(task_id: str):
-    task = persistence_model.tasks.read(task_id)
-    autogen_config = persistence_model.autogen_config.read(task.autogen_config_id)
-    autogen = create_autogen(autogen_config)
-    result = autogen.run()
-    return result
+# async def run_autogen_agent(task_id: str):
+#     task = persistence_model.tasks.read(task_id)
+#     autogen_config = persistence_model.autogen_config.read(task.autogen_config_id)
+#     autogen = create_autogen(autogen_config)
+#     result = autogen.run()
+#     return result
 
