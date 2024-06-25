@@ -39,7 +39,8 @@ jobs:
             GITHUB_ACCESS_TOKEN:${{ env.PROJECT_ID }}/GITHUB_ACCESS_TOKEN
             JIRA_API_KEY:${{ env.PROJECT_ID }}/JIRA_API_KEY
             OPENAI_API_KEY:${{ env.PROJECT_ID }}/OPENAI_API_KEY
-          export_to_environment: true  
+          export_to_environment: 
+            required: true  
 
       - name: Configure Docker
         run: |
