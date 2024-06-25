@@ -35,10 +35,10 @@ jobs:
         uses: 'google-github-actions/get-secretmanager-secrets@v2'
         with:
           secrets: |-
-            COMPOSIO_API_KEY: 175583509933/COMPOSIO_API_KEY
-            GITHUB_ACCESS_TOKEN: 175583509933/GITHUB_ACCESS_TOKEN
-            JIRA_API_KEY: 175583509933/JIRA_API_KEY
-            JIRA_API_KEY: 175583509933/JIRA_API_KEY
+            COMPOSIO_API_KEY: ${{ env.PROJECT_ID }}/COMPOSIO_API_KEY/1
+            GITHUB_ACCESS_TOKEN: ${{ env.PROJECT_ID }}/GITHUB_ACCESS_TOKEN/1
+            JIRA_API_KEY: ${{ env.PROJECT_ID }}/JIRA_API_KEY/1
+            JIRA_API_KEY: ${{ env.PROJECT_ID }}/JIRA_API_KEY/1
           export_to_environment: true  
 
       - name: Configure Docker
