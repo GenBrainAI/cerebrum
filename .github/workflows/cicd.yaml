@@ -39,10 +39,7 @@ jobs:
             GITHUB_ACCESS_TOKEN: ${{ env.PROJECT_ID }}/GITHUB_ACCESS_TOKEN
             JIRA_API_KEY: ${{ env.PROJECT_ID }}/JIRA_API_KEY
             JIRA_API_KEY: ${{ env.PROJECT_ID }}/JIRA_API_KEY
-        export_to_environment:
-          description: |-
-            Make the fetched secrets additionally available as environment variables.
-          required: true    
+          export_to_environment: true  
 
       - name: Configure Docker
         run: |
