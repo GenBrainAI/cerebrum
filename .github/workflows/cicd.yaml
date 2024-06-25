@@ -44,14 +44,11 @@ jobs:
       - name: Get secret from Secret Manager
         id: get_secret
         run: |
-          SECRET_VALUE=$(gcloud secrets versions access latest --secret=COMPOSIO_API_KEY --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
-          echo "COMPOSIO_API_KEY=$SECRET_VALUE" >> .env
-          SECRET_VALUE=$(gcloud secrets versions access latest --secret=GITHUB_ACCESS_TOKEN --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
-          echo "GITHUB_ACCESS_TOKEN=$SECRET_VALUE" >> .env
-          SECRET_VALUE=$(gcloud secrets versions access latest --secret=JIRA_API_KEY --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
-          echo "JIRA_API_KEY=$SECRET_VALUE" >> .env
-          SECRET_VALUE=$(gcloud secrets versions access latest --secret=OPENAI_API_KEY --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
-          echo "OPENAI_API_KEY=$SECRET_VALUE" >> .env                          
+
+          echo "COMPOSIO_API_KEY=${{ secrets.COMPOSIO_API_KEY }}" >> .env
+          echo "GITHUB_ACCESS_TOKEN=${{ secrets.GITHUB_ACCESS_TOKEN }}" >> .env
+          echo "JIRA_API_KEY=${{ secrets.JIRA_API_KEY}}" >> .env
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env                          
           cat .env  # For debugging purposes
 
       - name: Configure Docker
