@@ -31,6 +31,19 @@ jobs:
       - name: Set up Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
 
+      - name: Google Secret Manager
+        uses: 'google-github-actions/get-secretmanager-secrets@v2'
+        with:
+          secrets: |-
+            COMPOSIO_API_KEY: ${{ env.PROJECT_ID }}/COMPOSIO_API_KEY
+            GITHUB_ACCESS_TOKEN: ${{ env.PROJECT_ID }}/GITHUB_ACCESS_TOKEN
+            JIRA_API_KEY: ${{ env.PROJECT_ID }}/JIRA_API_KEY
+            JIRA_API_KEY: ${{ env.PROJECT_ID }}/JIRA_API_KEY
+        export_to_environment:
+          description: |-
+            Make the fetched secrets additionally available as environment variables.
+          required: true    
+
       - name: Configure Docker
         run: |
           gcloud auth configure-docker us-east1-docker.pkg.dev
