@@ -31,18 +31,36 @@ jobs:
       - name: Set up Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
 
-      - name: Google Secret Manager
-        uses: 'google-github-actions/get-secretmanager-secrets@v2'
-        with:
-          secrets: |-
-            COMPOSIO_API_KEY:${{ env.PROJECT_ID }}/COMPOSIO_API_KEY
-          export_to_environment: true 
-            GITHUB_ACCESS_TOKEN:${{ env.PROJECT_ID }}/GITHUB_ACCESS_TOKEN
-          export_to_environment: true 
-            JIRA_API_KEY:${{ env.PROJECT_ID }}/JIRA_API_KEY
-          export_to_environment: true   
-            OPENAI_API_KEY:${{ env.PROJECT_ID }}/OPENAI_API_KEY
-          export_to_environment: true  
+      # - name: Google Secret Manager
+      #   uses: 'google-github-actions/get-secretmanager-secrets@v2'
+      #   with:
+      #     secrets: |-
+      #       COMPOSIO_API_KEY:${{ env.PROJECT_ID }}/COMPOSIO_API_KEY
+      #       GITHUB_ACCESS_TOKEN:${{ env.PROJECT_ID }}/GITHUB_ACCESS_TOKEN
+      #       JIRA_API_KEY:${{ env.PROJECT_ID }}/JIRA_API_KEY
+      #       OPENAI_API_KEY:${{ env.PROJECT_ID }}/OPENAI_API_KEY
+      #     export_to_environment: true  
+
+      - name: Get secret from Secret Manager
+        id: get_secret
+        run: |
+          gcloud secrets versions access latest --secret=COMPOSIO_API_KEY --project=${{ env.PROJECT_ID }}
+          echo "::set-output name=secret_value::$(cat /tmp/secret_value1)"
+          gcloud secrets versions access latest --secret=GITHUB_ACCESS_TOKEN --project=${{ env.PROJECT_ID }}
+          echo "::set-output name=secret_value::$(cat /tmp/secret_value2)"
+          gcloud secrets versions access latest --secret=JIRA_API_KEY --project=${{ env.PROJECT_ID }}
+          echo "::set-output name=secret_value::$(cat /tmp/secret_value3)"
+          gcloud secrets versions access latest --secret=OPENAI_API_KEY --project=${{ env.PROJECT_ID }}
+          echo "::set-output name=secret_value::$(cat /tmp/secret_value4)"
+
+      - name: Update environment file
+        run: |
+          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value1 }}" >> .env  # Adjust as per your environment file format
+          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value2 }}" >> .env  # Adjust as per your environment file format
+          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value3 }}" >> .env  # Adjust as per your environment file format
+          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value4 }}" >> .env  # Adjust as per your environment file format
+          cat .env  # For debugging purposes
+    
 
       - name: Configure Docker
         run: |
