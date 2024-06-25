@@ -44,23 +44,15 @@ jobs:
       - name: Get secret from Secret Manager
         id: get_secret
         run: |
-          gcloud secrets versions access latest --secret=COMPOSIO_API_KEY --project=${{ env.PROJECT_ID }}
-          echo "::set-output name=secret_value::$(cat /tmp/secret_value1)"
-          gcloud secrets versions access latest --secret=GITHUB_ACCESS_TOKEN --project=${{ env.PROJECT_ID }}
-          echo "::set-output name=secret_value::$(cat /tmp/secret_value2)"
-          gcloud secrets versions access latest --secret=JIRA_API_KEY --project=${{ env.PROJECT_ID }}
-          echo "::set-output name=secret_value::$(cat /tmp/secret_value3)"
-          gcloud secrets versions access latest --secret=OPENAI_API_KEY --project=${{ env.PROJECT_ID }}
-          echo "::set-output name=secret_value::$(cat /tmp/secret_value4)"
-
-      - name: Update environment file
-        run: |
-          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value1 }}" >> .env  # Adjust as per your environment file format
-          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value2 }}" >> .env  # Adjust as per your environment file format
-          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value3 }}" >> .env  # Adjust as per your environment file format
-          echo "SECRET_KEY=${{ steps.get_secret.outputs.secret_value4 }}" >> .env  # Adjust as per your environment file format
+          SECRET_VALUE=$(gcloud secrets versions access latest --secret=COMPOSIO_API_KEY --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
+          echo "COMPOSIO_API_KEY=$SECRET_VALUE" >> .env
+          SECRET_VALUE=$(gcloud secrets versions access latest --secret=GITHUB_ACCESS_TOKEN --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
+          echo "GITHUB_ACCESS_TOKEN=$SECRET_VALUE" >> .env
+          SECRET_VALUE=$(gcloud secrets versions access latest --secret=JIRA_API_KEY --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
+          echo "JIRA_API_KEY=$SECRET_VALUE" >> .env
+          SECRET_VALUE=$(gcloud secrets versions access latest --secret=OPENAI_API_KEY --format='get(payload.data)' --project=${{ env.PROJECT_ID }})
+          echo "OPENAI_API_KEY=$SECRET_VALUE" >> .env                          
           cat .env  # For debugging purposes
-    
 
       - name: Configure Docker
         run: |
