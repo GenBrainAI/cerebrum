@@ -12,6 +12,7 @@ async def create_crewai(request: CreateCrewRequest):
     try:
         crewai_config(create_crewai=request)
         persistence_model.crewai_config.create(crewai_config)
+        #Egbert: Add the crew ai to some task
         return {"message": "Crew created", "crewai_config": crewai_config}   
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

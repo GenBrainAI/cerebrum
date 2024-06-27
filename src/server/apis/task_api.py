@@ -224,6 +224,9 @@ async def run_task(
         if task is None or task.tasksmanager_id != tasksmanager_id:
             raise HTTPException(status_code=404, detail="Task not found or tasksmanager does not match")
 
+        #Egbert: Add the crew ai runnig if it is exist in the task.abs
+        # than we should think to run the tast after that 
+
         response = await task_runner.completion(tasksmanager_id=tasksmanager_id, task_id=task_id, messages=run_task_body.messages)
 
         return Response(

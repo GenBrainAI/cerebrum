@@ -26,14 +26,19 @@ class Task(BaseModel):
     description: Optional[str] = Field(default=None, json_schema_extra={"alias": "description"})
     messages: Optional[List[Message]] = Field(default=None, alias="messages")
     toolsets: Optional[List[str]] = Field(default=None, json_schema_extra={"alias": "toolsets"})
+
+    ## agentinc framework, if no agentic framework, then use the default one
+ 
     # open interperter
     # AutoGPT, LangGraph
     # AnythingLLM
     # https://github.com/Doriandarko/maestro
     # https://github.com/togethercomputer/MoA
     # Phi ?? 
+    crewai_info_id: Optional[str] = Field(default=None, json_schema_extra={"alias": "crewai_info_id"}) 
     autogen_config_id: Optional[str] = Field(default=None, json_schema_extra={"alias": "autogen_config_id"})
-    crewai_info_id: Optional[str] = Field(default=None, json_schema_extra={"alias": "crewai_info_id"})
+
+    # Extra information
     created_at: Optional[datetime] = Field(default=None, json_schema_extra={"alias": "created_at"})
     updated_at: Optional[datetime] = Field(default=None, json_schema_extra={"alias": "updated_at"})
     config: Optional[Dict[str, Any]] = Field(default=None, json_schema_extra={"alias": "config"})

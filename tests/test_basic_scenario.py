@@ -38,7 +38,7 @@ def test_scenario(client: TestClient):
     )
     task_data = {
         "name": "Solar System Questions",
-        "description": "Answer questions about the solar system",
+        "description": "Answer questions about the solar system, alway anser distance in Miles.",
         "tasksmanager_id": tasksmanager_id,
         "messages": [system_message.dict()],
         "toolsets": [toolset_id]
@@ -51,6 +51,18 @@ def test_scenario(client: TestClient):
     user_message = Message(
         role="user",
         content="What is the distance from Earth to the Moon in kilometers?"
+    )
+    run_task = {
+        'caller_id': "UnitTestCaller",
+        'messages': [user_message.dict()]
+    }
+    run_response = client.post(f"/task/{tasksmanager_id}/{task_id}/run", json=run_task)
+    assert run_response.status_code == 202
+
+    # Another use of this task 
+    user_message = Message(
+        role="user",
+        content="What is the distance from Earth to the Sun in kilometers?"
     )
     run_task = {
         'caller_id': "UnitTestCaller",

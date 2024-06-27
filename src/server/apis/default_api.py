@@ -204,5 +204,3 @@ async def load_state(storage: StorageLocation, return_as_json: Optional[bool] = 
             media_type="application/json",
     )
 
-async def do_some_work():
-    pass
