@@ -1,7 +1,7 @@
 from functools import partial
 import httpx
 
-class Proxy:
+class CurriedProxy:
     def __init__(self, functions_dict):
         self.functions_dict = functions_dict
 
