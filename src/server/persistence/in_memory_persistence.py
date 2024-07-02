@@ -43,7 +43,6 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tasksmanagers.from_json(data["tasksmanagers"])
         self._tasks.from_json(data["tasks"])
         self._crewai_config.from_json(data["crewai_config"])
-        self._autogen_config.from_json(data["autogen_config"])
 
     @property
     def tools(self) -> ToolCrud:
