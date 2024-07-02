@@ -142,3 +142,4 @@ cython_debug/
 .venv
 
 .history
+combined_output.txt

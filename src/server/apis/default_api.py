@@ -36,6 +36,7 @@ from ..models.error import Error
 from ..models.list_tasks_managers import ListTasksManagers
 from ..models.task import Task
 from ..models.toolset import Toolset, Tool
+from ..models.function import Function, ResolvedSchema, ParameterSchema, ResponseContent, ServerInfo, Info
 from ..models.persistence_models import StorageLocation
 from ..controllers.persistence_controller import load_from_storage, save_to_storage
 from ..persistence.persistence_model_factory import PersistenceModelFactory
@@ -59,7 +60,7 @@ async def health_check(
   return "All OK"
 
 
-def create_toolset(credentials, name, description, swagger_content):
+def create_toolset_X(credentials, name, description, swagger_content):
     # Parse the credentials JSON string into a Python dict
     credentials_dict = json.loads(credentials)
     # Create a ToolsetCredentials object from the dict
@@ -71,7 +72,7 @@ def create_toolset(credentials, name, description, swagger_content):
         "credentials": toolset_credentials,
         "swagger": swagger_content
     }
-    
+
     toolset = Toolset(**toolset_data)
     persisted_toolset = persistence_model.toolsets.create(toolset)
     toolset = openapi.process_toolset(persisted_toolset, persisted_toolset.id)
@@ -81,12 +82,75 @@ def create_toolset(credentials, name, description, swagger_content):
         try:
             new_tool = persistence_model.tools.create(Tool(**tool))
             print(f"new_tool: {new_tool}")
-            #persisted_toolset.tool_ids.append(new_tool.id)
-
-    
+            persisted_toolset.tool_ids.append(new_tool.id)
         except Exception as e:
             print("Error" + str(e))
     
+    return persisted_toolset
+
+def create_toolset(credentials, name, description, swagger_content):
+    credentials_dict = json.loads(credentials)
+    toolset_credentials = ToolsetCredentials(**credentials_dict)
+
+    toolset_data = {
+        "name": name,
+        "description": description,
+        "credentials": toolset_credentials,
+        "swagger": swagger_content
+    }
+
+    toolset = Toolset(**toolset_data)
+    persisted_toolset = persistence_model.toolsets.create(toolset)
+    parsed_tools = openapi.parse_openapi(persisted_toolset.swagger)
+
+    persisted_toolset.tool_ids = []
+    for parsed_tool in parsed_tools:
+        try:
+            function_data = parsed_tool['function']
+            
+            # Convert parameters
+            parameters = {}
+            for param_type, param_value in function_data['parameters'].items():
+                if param_type == 'requestBody':
+                    parameters[param_type] = ResolvedSchema.parse_obj(param_value)
+                else:
+                    parameters[param_type] = {
+                        name: ParameterSchema(name=name, in_=param_type, **param_info)
+                        for name, param_info in param_value.items()
+                    }
+
+            # Convert responses
+            responses = {
+                status: ResponseContent(
+                    description=resp_data['description'],
+                    content={
+                        content_type: {
+                            'schema': ResolvedSchema.parse_obj(content_schema)
+                        }
+                        for content_type, content_schema in resp_data['content'].items()
+                    }
+                )
+                for status, resp_data in function_data['responses'].items()
+            }
+
+            function = Function(
+                name=function_data['name'],
+                url=function_data['url'],
+                method=function_data['method'],
+                description=function_data['description'],
+                parameters=parameters,
+                responses=responses,
+                info=Info(**function_data['info']),
+                servers=[ServerInfo(**s) for s in function_data['servers']],
+                credentials=toolset_credentials,
+                toolsetId=persisted_toolset.id
+            )
+
+            new_tool = persistence_model.tools.create(Tool(function=function, type="function"))
+            persisted_toolset.tool_ids.append(new_tool.id)
+        except Exception as e:
+            print(f"Error creating tool: {str(e)}")
+
     return persisted_toolset
 
 

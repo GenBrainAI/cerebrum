@@ -28,9 +28,9 @@ app = FastAPI(
 
 
 # composio_toolset = ComposioToolSet(api_key=os.getenv('COMPOSIO_API_KEY'))
-auth = GitHubAuth.Token(os.getenv('GITHUB_ACCESS_TOKEN'))
-g = Github(auth=auth)
-g.get_repo("genbrainai/cerebrum")
+# auth = GitHubAuth.Token(os.getenv('GITHUB_ACCESS_TOKEN'))
+# g = Github(auth=auth)
+# g.get_repo("genbrainai/cerebrum")
 
 # Todo: Get all from persisntant layer and use this loop to tun them.
 # for config_id, config in persistence_model.jira_configs.items():

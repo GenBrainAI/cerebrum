@@ -34,6 +34,7 @@ class Toolset(BaseModel):
 class Tool(BaseModel):
     id: Optional[str] = Field(alias="id", default=None)
     function: Function
+    type: str = Field(alias="type", default="function")
     created_at: Optional[datetime] = Field(alias="created_at", default=None)
     updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
 

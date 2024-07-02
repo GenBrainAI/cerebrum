@@ -154,7 +154,7 @@ async def post_create_tasksmanager(
     tasksmanager: TasksManager = Body(None, description=""),
 ) -> TasksManager:
     try:
-        created_bot = create_tasksmanager(tasksmanager)
+        created_bot = await create_tasksmanager(tasksmanager)
         return Response(
             content=created_bot.json(),
             status_code=status.HTTP_201_CREATED,
@@ -258,37 +258,3 @@ async def update_tasksmanager(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post("/tasksmanager/{tasksmanager_id}/pause", status_code=status.HTTP_200_OK)
-async def pause_tasksmanager(tasksmanager_id: str = Path(..., description="ID of the tasksmanager whose tasks to pause")):
-    pause_tasksmanager_tasks(tasksmanager_id)
-    # Update the tasksmanager's task sequence state and respond with it
-    # ...
-
-
-@router.post("/tasksmanager/{tasksmanager_id}/continue", status_code=status.HTTP_200_OK)
-async def continue_tasksmanager(tasksmanager_id: str = Path(..., description="ID of the tasksmanager whose tasks to continue")):
-    continue_tasksmanager_tasks(tasksmanager_id)
-    # Update the tasksmanager's task sequence state and respond with it
-    # ...
-
-
-@router.post("/tasksmanager/{tasksmanager_id}/stop", status_code=status.HTTP_200_OK)
-async def stop_tasksmanager(tasksmanager_id: str = Path(..., description="ID of the tasksmanager whose tasks to stop")):
-    stop_tasksmanager_tasks(tasksmanager_id)
-    # Update the tasksmanager's task sequence state and respond with it
-    # ...
-
-
-def pause_tasksmanager_tasks(tasksmanager_id: str):
-    # Logic to pause the sequence of tasks for an tasksmanager
-    pass
-
-
-def continue_tasksmanager_tasks(tasksmanager_id: str):
-    # Logic to continue the paused sequence of tasks
-    pass
-
-
-def stop_tasksmanager_tasks(tasksmanager_id: str):
-    # Logic to stop the sequence of tasks
-    pass

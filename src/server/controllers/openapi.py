@@ -1,6 +1,3 @@
-# Welcome to Cloud Functions for Firebase for Python!
-# To get started, simply uncomment the below code or create your own.
-# Deploy with `firebase deploy`
 import asyncio
 from datetime import datetime
 from threading import Lock
@@ -128,6 +125,8 @@ def process_toolset(toolset, id):
     for tool in parsed_tools:
         tool['function']['credentials'] = toolset.credentials.dict()
         tool['function']['toolsetId'] = id
+        tool_json = json.dumps(tool, indent=2)
+        print(f'tool_json: {tool_json}')
 
     # print(f'parsed_tools: {parsed_tools}')
     toolset_data = {

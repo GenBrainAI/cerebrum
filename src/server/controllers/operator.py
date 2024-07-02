@@ -11,62 +11,66 @@ import httpx
 from openai import OpenAI
 from fastapi import HTTPException
 
+from typing import Dict
+from pydantic import BaseModel
 
 from src.server.controllers.rest_proxy_controller import RestProxyController
 from ..persistence.persistence_model_factory import PersistenceModelFactory
+from ..models.function import Function, ResolvedSchema
+from ..models.toolset import Tool
 
 load_dotenv()
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
-def transform_schema(schema):
-    if schema.get('type') == 'object' and 'properties' in schema:
-        transformed_properties = {}
-        for prop_name, prop_info in schema['properties'].items():
-            transformed_properties[prop_name] = transform_schema(prop_info)
+def transform_schema_pydantic(schema: ResolvedSchema) -> Dict:
+    if schema.type == 'object' and schema.properties:
+        transformed_properties = {
+            prop_name: transform_schema_pydantic(prop_schema)
+            for prop_name, prop_schema in schema.properties.items()
+        }
         return {
             'type': 'object',
             'properties': transformed_properties,
-            'required': schema.get('required', [])
+            'required': schema.required or []
         }
-    elif schema.get('type') == 'array' and 'items' in schema:
+    elif schema.type == 'array' and schema.items:
         return {
             'type': 'array',
-            'items': transform_schema(schema['items'])
+            'items': transform_schema_pydantic(schema.items)
         }
     else:
         return {
-            'type': schema.get('type', 'string'),
-            'description': schema.get('description', '')
+            'type': schema.type or 'string',
+            'description': schema.description or ''
         }
  
-def transform_functions_for_openai(functions_dict):
+def transform_functions_for_openai(functions_dict: Dict[str, Tool]) -> List[Dict]:
     transformed_functions = []
-    for fname, function in functions_dict.items():
+    for fname, tool in functions_dict.items():
+        function: Function = tool.function
         simplified_params = {
             'type': 'object',
             'properties': {},
-            'required': []        }
+            'required': []
+        }
 
-        if 'requestBody' in function['parameters']:
-            request_body = function['parameters']['requestBody']
-            request_body_json = json.dumps(request_body)
-            print(f'request_body_json: {request_body_json}')
-            simplified_params['properties']['requestBody'] = transform_schema(request_body)
-            simplified_params_json = json.dumps(simplified_params)
-            print(f'simplified_params_json: {simplified_params_json}')
+        if 'requestBody' in function.parameters:
+            request_body = function.parameters['requestBody']
+            simplified_params['properties']['requestBody'] = transform_schema_pydantic(request_body)
 
         for param_type in ['query', 'header', 'path']:
-            for param_name, param_info in function['parameters'].get(param_type, {}).items():
-                simplified_params['properties'][param_name] = transform_schema(param_info)
-                if param_info.get('required', False):
-                    simplified_params['required'].append(param_name)
+            if param_type in function.parameters:
+                for param_name, param_info in function.parameters[param_type].items():
+                    simplified_params['properties'][param_name] = transform_schema_pydantic(param_info.schema)
+                    if param_info.required:
+                        simplified_params['required'].append(param_name)
 
         transformed_functions.append({
             "type": "function",
             "function": {
                 'name': fname,
-                'description': function.get('description', ''),
+                'description': function.description,
                 'parameters': simplified_params,
             }
         })
@@ -74,7 +78,7 @@ def transform_functions_for_openai(functions_dict):
     return transformed_functions
 
 
-def get_task_tools(tasksmanager_id, task_id):
+def get_task_tools(tasksmanager_id: str, task_id: str):
     functions_dict = {}
     toolsets_ids = set()
     task = persistence_model.tasks.read(task_id)
@@ -84,17 +88,15 @@ def get_task_tools(tasksmanager_id, task_id):
     tasksmanager_tools = tasksmanager.toolsets
     toolsets_ids.update(tasksmanager_tools)
 
-
     for index, toolset_id in enumerate(toolsets_ids):
         toolset = persistence_model.toolsets.read(toolset_id)
         for tid in toolset.tool_ids:
             tool = persistence_model.tools.read(tid)
-            if tool['type'] != 'function':
+            if tool.type != 'function':
                 continue
-            function = tool['function']
-            fname = f"fn{index}_{function['name']}"
-            functions_dict[fname] = function
-        
+            fname = f"fn{index}_{tool.function.name}"
+            functions_dict[fname] = tool
+    
     tools = transform_functions_for_openai(functions_dict)
     return tools, functions_dict
 
