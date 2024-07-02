@@ -154,9 +154,9 @@ async def post_create_tasksmanager(
     tasksmanager: TasksManager = Body(None, description=""),
 ) -> TasksManager:
     try:
-        created_bot = await create_tasksmanager(tasksmanager)
+        tm = await create_tasksmanager(tasksmanager)
         return Response(
-            content=created_bot.json(),
+            content=tm.json(),
             status_code=status.HTTP_201_CREATED,
             media_type="application/json",
         )

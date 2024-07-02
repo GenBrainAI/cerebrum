@@ -79,7 +79,7 @@ def transform_functions_for_openai(functions_dict: Dict[str, Tool]) -> List[Dict
 
 
 def get_task_tools(tasksmanager_id: str, task_id: str):
-    functions_dict = {}
+    tools_dict = {}
     toolsets_ids = set()
     task = persistence_model.tasks.read(task_id)
     toolsets_ids.update(task.toolsets)
@@ -95,10 +95,10 @@ def get_task_tools(tasksmanager_id: str, task_id: str):
             if tool.type != 'function':
                 continue
             fname = f"fn{index}_{tool.function.name}"
-            functions_dict[fname] = tool
+            tools_dict[fname] = tool
     
-    tools = transform_functions_for_openai(functions_dict)
-    return tools, functions_dict
+    tools = transform_functions_for_openai(tools_dict)
+    return tools, tools_dict
 
 
 def messages_to_openai(messages):
@@ -134,7 +134,7 @@ class ToolsOperator:
       task = persistence_model.tasks.read(task_id)
 
       # Todo merge tools and settings
-      tools, functions_dict = get_task_tools(tasksmanager_id, task_id)
+      tools, tools_dict = get_task_tools(tasksmanager_id, task_id)
 
       messages = tasksmanager.messages
       messages += task.messages
@@ -175,7 +175,7 @@ class ToolsOperator:
                 for tool_call in tool_calls:
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
-                    coroutine = self.multiset_proxy(function_name, function_args, functions_dict)
+                    coroutine = self.multiset_proxy(function_name, function_args, tools_dict)
                     coroutine_list.append(coroutine)
 
                 # Run all coroutines concurrently and wait for all responses
