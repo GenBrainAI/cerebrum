@@ -65,11 +65,10 @@ def test_create_agents_and_tasks():
         ]
     }
 
-    response = client.post("/agent", json=request_data)
+    response = client.post("/agent/crewai", json=request_data)
     assert response.status_code == 200
     data = response.json()
-    assert data["message"] == "Job Posting Creation Process Completed"
-    assert "result" in data
+    assert data["message"] == "Crew created"
 
 @pytest.mark.unit
 def test_run_agent_process():

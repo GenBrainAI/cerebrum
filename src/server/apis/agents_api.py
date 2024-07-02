@@ -1,16 +1,16 @@
 import os
 from fastapi import FastAPI, HTTPException, APIRouter
 from dotenv import load_dotenv
-from ..models.agent import CreateCrewRequest
+from ..models.agent import CreateCrewRequest, CrewAIConfig
 router = APIRouter()
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
 
-@router.post("/agents/crewai")
+@router.post("/agent/crewai")
 async def create_crewai(request: CreateCrewRequest):
     try:
-        crewai_config(create_crewai=request)
+        crewai_config = CrewAIConfig(create_crew=request)
         persistence_model.crewai_config.create(crewai_config)
         #Egbert: Add the crew ai to some task
         return {"message": "Crew created", "crewai_config": crewai_config}   
