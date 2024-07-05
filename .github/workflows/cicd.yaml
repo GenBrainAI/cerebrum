@@ -30,6 +30,8 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: 'google-github-actions/setup-gcloud@v2'
+        with:
+          install_components: 'beta'
 
       # - name: Google Secret Manager
       #   uses: 'google-github-actions/get-secretmanager-secrets@v2'
