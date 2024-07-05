@@ -67,4 +67,7 @@ jobs:
             --image ${{ env.DOCKER_IMAGE_URL }}:latest \
             --platform managed \
             --region ${{ env.REGION }} \
-            --allow-unauthenticated
+            --allow-unauthenticated \
+            --execution-environment gen2 \ 
+            --add-volume=name=data,type=cloud-storage,bucket=cerebrum-data-01  \
+            --add-volume-mount=volume=data,mount-path=/app/data

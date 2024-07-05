@@ -17,6 +17,7 @@ ENV PATH=/venv/bin:$PATH
 # Service stage with corrected COPY command (if applicable)
 FROM python:3.11 AS service
 WORKDIR /app
+RUN mkdir -p /app/data
 COPY --from=test_runner /venv /venv
 ENV PATH=/venv/bin:$PATH
 COPY . /app
