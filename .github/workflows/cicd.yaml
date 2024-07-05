@@ -64,8 +64,8 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          echo SERVICE_NAME $SERVICE_NAME
-          gcloud beta run deploy $SERVICE_NAME \
+          echo SERVICE_NAME ${{ env.SERVICE_NAME }
+          gcloud beta run deploy ${{ env.SERVICE_NAME } \
             --image ${{ env.DOCKER_IMAGE_URL }}:latest \
             --platform managed \
             --region ${{ env.REGION }} \
