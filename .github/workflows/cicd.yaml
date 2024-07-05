@@ -64,13 +64,13 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud components install beta -q
           echo SERVICE_NAME ${{ env.SERVICE_NAME }}
           gcloud beta run deploy ${{ env.SERVICE_NAME }} \
             --image ${{ env.DOCKER_IMAGE_URL }}:latest \
             --platform managed \
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
-            --execution-environment gen2 \ 
-            --add-volume=name=data,type=cloud-storage,bucket=cerebrum-data-01  \
-            --add-volume-mount=volume=data,mount-path=/app/data
+            --execution-environment=gen2 \ 
+            --add-volume-mount=volume=data,mount-path=/app/data \
+            --add-volume=name=data,type=cloud-storage,bucket=cerebrum-data-01
+
