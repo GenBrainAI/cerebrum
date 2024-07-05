@@ -64,21 +64,21 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          # echo SERVICE_NAME ${{ env.SERVICE_NAME }}
-          # gcloud beta run deploy ${{ env.SERVICE_NAME }} \
-          #   --image ${{ env.DOCKER_IMAGE_URL }}:latest \
-          #   --platform managed \
-          #   --region ${{ env.REGION }} \
-          #   --allow-unauthenticated \
-          #   --execution-environment gen2 \ 
-          #   --add-volume-mount=volume=data,mount-path=/app/data \
-          #   --add-volume=name=data,type=cloud-storage,bucket=cerebrum-data-01
-
-          gcloud beta run deploy cerebrum \
-            --image  us-east1-docker.pkg.dev/fourth-return-426414-q6/cerebrum/image:latest \
+          echo SERVICE_NAME ${{ env.SERVICE_NAME }}
+          gcloud beta run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ env.DOCKER_IMAGE_URL }}:latest \
             --platform managed \
-            --region us-east1 \
-            --execution-environment gen2
-            # --allow-unauthenticated \
-            --add-volume=name=data,type=cloud-storage,bucket=cerebrum-data-01 \
-            --add-volume-mount=volume=data,mount-path=/app/data
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --execution-environment gen2 \ 
+            --add-volume-mount=volume=data,mount-path=/app/data \
+            --add-volume=name=data,type=cloud-storage,bucket=cerebrum-data-01
+
+          # gcloud beta run deploy cerebrum \
+          #   --image  us-east1-docker.pkg.dev/fourth-return-426414-q6/cerebrum/image:latest \
+          #   --platform managed \
+          #   --region us-east1 \
+          #   --execution-environment gen2
+          #   # --allow-unauthenticated \
+          #   --add-volume=name=data,type=cloud-storage,bucket=cerebrum-data-01 \
+          #   --add-volume-mount=volume=data,mount-path=/app/data
