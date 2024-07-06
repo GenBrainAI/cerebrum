@@ -37,10 +37,10 @@ class Function(BaseModel):
     url: str
     method: str
     description: str
-    parameters: Dict[str, Union[Dict[str, ParameterSchema], ResolvedSchema]]
-    responses: Dict[str, ResponseContent]
     info: Info
     servers: List[ServerInfo]
+    parameters: Optional[Dict[str, Union[Dict[str, ParameterSchema], ResolvedSchema]]]
+    responses: Optional[Dict[str, ResponseContent]]
     credentials: Optional[ToolsetCredentials] = None
     toolsetId: Optional[str] = None
     created_at: Optional[datetime] = Field(default=None)
