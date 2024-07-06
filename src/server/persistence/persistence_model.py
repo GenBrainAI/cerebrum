@@ -9,6 +9,7 @@ from ..models.toolset import Tool, Toolset
 from ..models.task import Task
 from ..models.message import Message
 from ..models.agent import CrewAIConfig
+from ..controllers.curried_proxy import CurriedProxy
 
 class PersistenceModelBase(ABC):
 
@@ -63,3 +64,7 @@ class PersistenceModelBase(ABC):
     def crewai_config(self) -> CrudInterface[CrewAIConfig]:
         pass
 
+    @property
+    @abstractmethod
+    def curried_proxies(self) -> CrudInterface[CurriedProxy]:
+        pass

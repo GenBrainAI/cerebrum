@@ -9,6 +9,7 @@ from ..models.toolset import Tool, Toolset
 from ..models.task import Task
 from ..models.message import Message
 from ..models.agent import CrewAIConfig
+from ..controllers.curried_proxy import CurriedProxy
 from uuid import uuid4
 from datetime import datetime
 
@@ -94,4 +95,9 @@ class MessageCrud(InMemoryCrud[Message]):
 class CrewAIConfigCrud(InMemoryCrud[CrewAIConfig]):
     def __init__(self):
         super().__init__(CrewAIConfig)
+
+class CurriedProxyCrud(InMemoryCrud[CurriedProxy]):
+    def __init__(self):
+        super().__init__(CurriedProxy)
+
 
