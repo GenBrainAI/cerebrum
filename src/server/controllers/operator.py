@@ -147,8 +147,10 @@ class ToolsOperator:
             model=model,
             messages=messages,
             tools=tools,
-            tool_choice="auto",
-        )
+            tool_choice="auto" ) if len(tools) > 0 else self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+            )
 
         # Loop to handle the responses
         while True:
