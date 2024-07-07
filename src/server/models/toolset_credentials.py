@@ -15,11 +15,11 @@ class ToolsetCredentials(BaseModel):
     ToolsetCredentials - a model defined in OpenAPI
     """
 
-    auth_type: Optional[str] = Field(default=None, alias="authType")
-    auth_key: Optional[str] = Field(default=None, alias="authKey")
-    authorization_header: Optional[str] = Field(default=None, alias="authorizationHeader")
-    custom_auth_type: Optional[str] = Field(default=None, alias="customAuthType")
-    path_credentials: Optional[str] = Field(default=None, alias="pathCredentials")
+    auth_type: Optional[str] = None
+    auth_key: Optional[str] = None
+    authorization_header: Optional[str] = None
+    custom_auth_type: Optional[str] = None
+    path_credentials: Optional[str] = None
 
 
 ToolsetCredentials.model_rebuild()

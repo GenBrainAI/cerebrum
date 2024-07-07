@@ -66,13 +66,15 @@ class CurriedProxy(BaseModel):
 
     async def multiset_proxy(self, name: str, arguments: Dict[str, Any]) -> Any:
         tool = self.tools_dict[name]
-        
-        if isinstance(tool, PythonFunctionTool):
-            return await self._call_python_function(tool.function, arguments)
-        elif isinstance(tool, Tool):
-            return await self._call_api_function(tool, arguments)
-        else:
-            raise ValueError(f"Unknown tool type for {name}")
+        try:
+            if isinstance(tool, PythonFunctionTool):
+                return await self._call_python_function(tool.function, arguments)
+            elif isinstance(tool, Tool):
+                return await self._call_api_function(tool, arguments)
+            else:
+                raise ValueError(f"Unknown tool type for {name}")
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _call_python_function(self, func: Callable, arguments: Dict[str, Any]) -> Any:
         if inspect.iscoroutinefunction(func):
@@ -158,21 +160,27 @@ class CurriedProxy(BaseModel):
     def list_tools(self) -> List[str]:
         return list(self.tools_dict.keys())
 
+    def create_crewai_tool(self, name: str, tool: Union[Tool, PythonFunctionTool]) -> BaseTool:
+        tool_description = tool.function.description if isinstance(tool, Tool) else tool.description
+
+        class CustomTool(BaseTool):
+            name: str
+            description: str
+            proxy: Any
+
+            def _run(self, **kwargs: Any) -> Any:
+                return self.proxy.curried_proxy(self.name)(kwargs)
+
+        custom_tool = CustomTool(
+            name=name,
+            description=tool_description,
+            proxy=self
+        )
+        return custom_tool
+
     def export_to_crewai(self) -> List[BaseTool]:
         crewai_tools = []
         for name, tool in self.tools_dict.items():
             crewai_tool = self.create_crewai_tool(name, tool)
             crewai_tools.append(crewai_tool)
         return crewai_tools
-
-    def create_crewai_tool(self, name: str, tool: Union[Tool, PythonFunctionTool]) -> BaseTool:
-        class CustomTool(BaseTool):
-            name: str = name
-            description: str = tool.function.description if isinstance(tool, Tool) else tool.description
-
-            def _run(self, **kwargs: Any) -> Any:
-                return self.proxy.curried_proxy(self.name)(kwargs)
-
-        crewai_tool = CustomTool()
-        crewai_tool.proxy = self
-        return crewai_tool

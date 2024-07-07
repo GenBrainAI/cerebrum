@@ -31,3 +31,4 @@ ipython
 markdownify
 apscheduler
 pyautogen
+pytest-asyncio
