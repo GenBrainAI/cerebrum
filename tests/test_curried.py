@@ -34,7 +34,17 @@ def fibonacci(n: int) -> list:
 
 @pytest.fixture
 def curried_proxy():
-    return CurriedProxy()
+    cp = CurriedProxy()
+    yield cp
+    for tool_name in cp.list_tools():
+        cp.remove_tool(tool_name)
+
+@pytest.fixture(autouse=True)
+def cleanup_curried_proxy(curried_proxy):
+    yield
+    # Clean up all tools after each test
+    for tool_name in curried_proxy.list_tools():
+        curried_proxy.remove_tool(tool_name)
 
 @pytest.fixture
 def mock_tool():
@@ -164,6 +174,7 @@ async def test_persistence_integration():
     
     fib_result = await retrieved_proxy.curried_proxy("fibonacci")({"n": 5})
     assert fib_result == [0, 1, 1, 2, 3]
+    persistence_model.curried_proxies.delete(str(created_proxy.id))
 
 async def test_export_to_crewai(curried_proxy, mock_tool):
     curried_proxy.add_tool("mock_api", mock_tool)
@@ -221,3 +232,4 @@ def test_remove_tool(curried_proxy, mock_tool):
     curried_proxy.remove_tool("mock_api")
     assert "mock_api" not in curried_proxy.list_tools()
     assert "fibonacci" in curried_proxy.list_tools()
+

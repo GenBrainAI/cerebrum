@@ -1,12 +1,16 @@
 import pytest
+import os
 from src.server.main import app
 from starlette.testclient import TestClient
 from src.server.models.persistence_models import StorageLocation, StorageType
 from src.server.utils.task_utils import find_file
 
-client = TestClient(app)
+@pytest.fixture(scope="function")
+def client():
+    return TestClient(app)
 
-def test_create_entities_and_serialize_deserialize():
+@pytest.mark.unit
+def test_create_entities_and_serialize_deserialize(client):
     # Define where the state will be saved (local file system for simplicity)
     local_storage = StorageLocation(type=StorageType.file, location="/tmp", state_name="test_state.json")
 
@@ -56,3 +60,5 @@ def test_create_entities_and_serialize_deserialize():
     loaded_task_response = client.get(f"/task/{task_id}")
     assert loaded_task_response.status_code == 200
     assert loaded_task_response.json()['id'] == task_id
+
+    os.remove("/tmp/test_state.json")
