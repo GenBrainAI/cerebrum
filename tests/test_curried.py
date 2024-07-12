@@ -129,34 +129,6 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
     # Print debug information
     print(f"Mock tool credentials after test: {mock_tool.function.credentials.dict()}")
 
-# async def test_add_and_use_api_tool(curried_proxy, mock_tool):     
-#     curried_proxy.add_tool("mock_api", mock_tool)
-    
-#     # Create a mock response
-#     mock_response = AsyncMock()
-#     mock_response.status_code = 200
-#     mock_response.json = AsyncMock(return_value={"result": "success"})
-    
-#     # Patch the AsyncClient's get method
-#     with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
-#         mock_get.return_value = mock_response
-        
-#         # Call the curried_proxy and await the result
-#         curried_func = curried_proxy.curried_proxy("mock_api")
-#         result = await curried_func({})
-#         # Assertions
-#         #assert result == {"result": "success"}
-#         mock_get.assert_called_once_with(
-#             url='https://api.example.com/resource',
-#             params={},
-#             headers={
-#                 #"Authorization": "Bearer mock_token",
-#                 "Content-Type": "application/x-www-form-urlencoded",
-#                 "Accept": "*/*"
-#             }
-#         )
-#         # await mock_response.json.assert_called_once()
-
 async def test_add_and_use_function_tool(curried_proxy):
     curried_proxy.add_tool("fibonacci", fibonacci)
     

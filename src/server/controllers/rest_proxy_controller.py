@@ -91,6 +91,19 @@ class RestProxyController:
         return await self._send_request(function.method, url, query_params, body_params, headers)
 
     async def _send_request(self, method: str, url: str, query_params: Dict[str, Any], body_params: Dict[str, Any], headers: Dict[str, str]):
+        method = method.lower().strip()
+        http_methods = [
+            'get',
+            'post',
+            'put',
+            'delete',
+            'patch',
+            'head',
+            'options']
+        
+        if method not in http_methods:
+            raise ValueError(f"Unsupported HTTP method: '{method}'")
+
         async with httpx.AsyncClient() as client:
             if method.lower() == 'get':
                 response = await client.get(url, params=query_params, headers=headers)
@@ -100,7 +113,11 @@ class RestProxyController:
                 response = await client.put(url, json=body_params, params=query_params, headers=headers)
             elif method.lower() == 'delete':
                 response = await client.delete(url, params=query_params, headers=headers)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
+            elif method == 'patch':
+                response = await client.patch(url, json=body_params, params=query_params, headers=headers)
+            elif method == 'head':
+                response = await client.head(url, params=query_params, headers=headers)
+            elif method == 'options':
+                response = await client.options(url, params=query_params, headers=headers)
 
         return response.json()

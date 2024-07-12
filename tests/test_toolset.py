@@ -30,7 +30,7 @@ def test_create_toolset_with_swagger_string():
 
 @pytest.mark.unit
 def test_run_task_with_calculator():
-    with open(find_file("tests/calculator/calculator.yaml"), "r") as file:
+    with open(find_file("tests/calculator/complex_calc.yml"), "r") as file:
         swagger_string = file.read()
 
     toolset_data = {
@@ -58,7 +58,6 @@ def test_run_task_with_calculator():
     tasksmanager_id = tasksmanager_response.json()["id"]
 
     # Create a task that uses the calculator toolset
-    # Create task
     system_message = Message(
         role="system",
         content="You are an complex numbers helper that call complex numbers calculator when ever you can."
@@ -77,7 +76,7 @@ def test_run_task_with_calculator():
     # Run task with user message
     user_message = Message(
         role="user",
-        content="Please add hose two complex numbers 1+2i and 3+4i"
+        content="Please add those two complex numbers 1+2i and 3+4i"
     )
 
     mock_response = httpx.Response(200, json={"result": {'real': 4, 'imag': 6}})
@@ -88,17 +87,21 @@ def test_run_task_with_calculator():
         }
         run_response = client.post(f"/task/{tasksmanager_id}/{task_id}/run", json=run_task)
         assert run_response.status_code == 202
-        mock_post.assert_any_call(
-            'http://localhost:10101/add',
-            json={'num1': 1, 'num2': 3},
+        mock_post.assert_called_once_with(
+            'http://example_complex_calculator.com/complex/add',
+            json={'num1': {'real': 1, 'imag': 2}, 'num2': {'real': 3, 'imag': 4}},
             params={},
-            headers={"Content-Type": "application/json", "Accept": "*/*"}
+            headers={
+                "Authorization": "Baerer: 123",
+                "Content-Type": "application/json",
+                "Accept": "*/*"
+            }
         )
 
 
 @pytest.mark.unit
 def test_get_tasksmanager_toolsets():
-    with open(find_file("tests/calculator/calculator.yaml"), "r") as file:
+    with open(find_file("tests/calculator/complex_calc.yml"), "r") as file:
         swagger_string = file.read()
 
     toolset_data = {
