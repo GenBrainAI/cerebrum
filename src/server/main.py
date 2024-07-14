@@ -40,5 +40,5 @@ app = FastAPI(
 
 app.include_router(DefaultApiRouter)
 app.include_router(AgentsApiRouter)
-app.include_router(AssistantApiRouter)
+#app.include_router(AssistantApiRouter)
 app.include_router(TaskApiRouter)
