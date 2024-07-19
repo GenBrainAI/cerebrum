@@ -50,16 +50,16 @@ class ToolsOperator:
         tools = curried_proxy.export_to_openai()
         messages = self._messages_to_openai(messages)
 
-        response = await self.client.chat.completions.create(
-            model=model,
-            messages=messages,
-            tools=tools,
-            tool_choice="auto"
-        ) if tools else await self.client.chat.create(
-            model=model,
-            messages=messages
-        )
         while True:
+            response = await self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                tools=tools,
+                tool_choice="auto"
+            ) if tools else await self.client.chat.create(
+                model=model,
+                messages=messages
+            )
             choice = response.choices[0]
             chat_completion_message = choice.message.content
 
@@ -99,15 +99,6 @@ class ToolsOperator:
                         "tool_call_id": tool_call.id,
                         "content": response_str
                     })
-            
-                # Make the next API call with the updated messages
-                response = await self.client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    tools=tools,
-                    tool_choice="auto",
-                )
-
             else:
                 raise ValueError(f"Unexpected finish reason: {choice.finish_reason}")
 
