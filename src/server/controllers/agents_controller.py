@@ -1,29 +1,21 @@
-import autogen
+# src/server/controllers/agents_controller.py
+
+import os
+from fastapi import HTTPException
 from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
+from langchain.tools import BaseTool as LangChainBaseTool
+# from llama_index.tools import BaseTool as LlamaIndexBaseTool
 
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..models.agent import CreateCrewRequest, AgentModel, TaskModel 
+from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
 from ..tools.github_tool import GithubTool
+from ..controllers.curried_proxy import CurriedProxy
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
-# To add your own tools please refer to the following link:
-# https://docs.crewai.com/core-concepts/Tools/#creating-your-own-tools
-
-
-config_list = autogen.config_list_from_json(env_or_file="OAI_CONFIG_LIST")
-llm_config = {"config_list": config_list}
-
-
 # Define available tools
 TOOLS = {
-    "WebsiteSearchTool": WebsiteSearchTool(),
-    "SerperDevTool": SerperDevTool(),
-    "FileReadTool": FileReadTool(
-        file_path='job_description_example.md',
-        description='A tool to read the job description example file.'
-    ),
     "WebsiteSearchTool": WebsiteSearchTool(),
     "SerperDevTool": SerperDevTool(),
     "FileReadTool": FileReadTool(
@@ -36,11 +28,25 @@ TOOLS = {
     )
 }
 
-async def create_crew(request: CreateCrewRequest):
-    # Create agents based on the request
+def create_crewai_tool(tool):
+    if isinstance(tool, (LangChainBaseTool)): #, LlamaIndexBaseTool)):
+        # Wrap LangChain or LlamaIndex tools
+        return tool
+    elif callable(tool):
+        # Wrap simple functions
+        return Tool.from_function(tool)
+    else:
+        # Assume it's already a CrewAI compatible tool
+        return tool
+
+async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
     agents = []
     for agent_data in request.agents:
-        tools = [TOOLS[tool.name] for tool in agent_data.tools if tool.name in TOOLS]
+        tools = [create_crewai_tool(TOOLS[tool.name]) for tool in agent_data.tools if tool.name in TOOLS]
+        
+        # Add tools from curried_proxy
+        tools.extend(curried_proxy.export_to_crewai())
+        
         agent = Agent(
             role=agent_data.role,
             goal=agent_data.goal,
@@ -50,10 +56,8 @@ async def create_crew(request: CreateCrewRequest):
         )
         agents.append(agent)
 
-    # Create tasks based on the request
     tasks = []
     for task_data in request.tasks:
-        # Find the agent with the matching role
         agent = next((a for a in agents if a.role == task_data.agent_role), None)
         if not agent:
             raise HTTPException(status_code=400, detail=f"Agent role '{task_data.agent_role}' not found.")
@@ -64,7 +68,6 @@ async def create_crew(request: CreateCrewRequest):
         )
         tasks.append(task)
 
-    # Instantiate the crew
     crew = Crew(
         agents=agents,
         tasks=tasks
@@ -72,16 +75,25 @@ async def create_crew(request: CreateCrewRequest):
 
     return crew
 
-
 async def run_crewai(task_id: str):
     task = persistence_model.tasks.read(task_id)
     crewai_config = persistence_model.crewai_config.read(task.crewai_info_id)
-    crew = create_crew(crewai_config.create_crew)
-    # Instantiate the crew
+    
+    # Create CurriedProxy instance
+    curried_proxy = CurriedProxy()
+    
+    # Add tools from task and tasksmanager
+    tasksmanager = persistence_model.tasksmanagers.read(task.tasksmanager_id)
+    toolset_ids = task.toolsets + tasksmanager.toolsets
+    for toolset_id in toolset_ids:
+        toolset = persistence_model.toolsets.read(toolset_id)
+        for tool_id in toolset.tool_ids:
+            tool = persistence_model.tools.read(tool_id)
+            curried_proxy.add_tool(f"{toolset.name}_{tool.function.name}", tool)
+    
+    crew = await create_crew(crewai_config.create_crew, curried_proxy)
     result = crew.kickoff()
     return result
-
-
 
 # async def create_autogen(config: AutogenConfig):
 #     try:
