@@ -7,17 +7,17 @@ from fastapi import (
     status,
     Query,
 )
+from starlette.responses import Response
 
-from ..models.task import Task
+from ..controllers.agents_controller import create_crew, run_crewai
+from ..controllers.task_runner import TaskRunner
+from ..controllers.tasks_controller import create_tasksmanager
+from ..models.error import Error
 from ..models.list_tasks_managers import ListTasksManagers
-from ..models.custom_exceptions import *
 from ..models.run_task import RunTask
-from ..models.toolset import Toolset
+from ..models.task import Task
 from ..models.tasks_manager import TasksManager
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..controllers.task_runner import TaskRunner
-from ..models.error import Error
-from ..controllers.tasks_controller import create_tasksmanager
 
 router = APIRouter()
 
@@ -37,8 +37,8 @@ task_runner = TaskRunner(persistence_model)
     response_model_by_alias=True,
 )
 async def create_task(
-    task: Task = Body(None, description=""),
-) -> Task:
+        task: Task = Body(None, description=""),
+) -> Response:
     try:
         task_created = persistence_model.tasks.create(task)
         return Response(
@@ -62,7 +62,7 @@ async def create_task(
     response_model_by_alias=True,
 )
 async def delete_task(
-    id: int = Path(..., description="ID of the task to delete"),
+        id: int = Path(..., description="ID of the task to delete"),
 ) -> None:
     try:
         persistence_model.tasks.delete(str(id))
@@ -82,7 +82,7 @@ async def delete_task(
     response_model_by_alias=True,
 )
 async def get_task_by_id(
-    id: str = Path(..., description="ID of the task to get"),
+        id: str = Path(..., description="ID of the task to get"),
 ) -> Task:
     try:
         task = persistence_model.tasks.read(id)
@@ -93,6 +93,7 @@ async def get_task_by_id(
         raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
 
 @router.get(
     "/tasksmanager",
@@ -106,9 +107,9 @@ async def get_task_by_id(
     response_model_by_alias=True,
 )
 async def list_tasks_managers(
-    status: str = Query(None, description="Filter tasksmanagers by status", alias="status"),
-    page: int = Query(1, description="Page number for pagination", alias="page"),
-    page_size: int = Query(10, description="Number of items per page", alias="pageSize"),
+        status: str = Query(None, description="Filter tasksmanagers by status", alias="status"),
+        page: int = Query(1, description="Page number for pagination", alias="page"),
+        page_size: int = Query(10, description="Number of items per page", alias="pageSize"),
 ) -> ListTasksManagers:
     try:
         all_tasksmanagers = persistence_model.tasksmanagers.list()
@@ -131,7 +132,7 @@ async def list_tasks_managers(
     response_model_by_alias=True,
 )
 async def get_tasksmanager(
-    id: str = Path(..., description="ID of the tasksmanager to retrieve"),
+        id: str = Path(..., description="ID of the tasksmanager to retrieve"),
 ) -> TasksManager:
     try:
         return persistence_model.tasksmanagers.read(id)
@@ -151,7 +152,7 @@ async def get_tasksmanager(
     response_model_by_alias=True,
 )
 async def post_create_tasksmanager(
-    tasksmanager: TasksManager = Body(None, description=""),
+        tasksmanager: TasksManager = Body(None, description=""),
 ) -> TasksManager:
     try:
         tm = await create_tasksmanager(tasksmanager)
@@ -176,7 +177,7 @@ async def post_create_tasksmanager(
     response_model_by_alias=True,
 )
 async def delete_tasksmanager(
-    id: int = Path(..., description="ID of the tasksmanager to delete"),
+        id: int = Path(..., description="ID of the tasksmanager to delete"),
 ) -> None:
     try:
         persistence_model.tasksmanagers.delete(str(id))
@@ -197,8 +198,8 @@ async def delete_tasksmanager(
     response_model_by_alias=True,
 )
 async def update_tasksmanager(
-    id: int = Path(..., description="ID of the tasksmanager to update"),
-    tasksmanager: TasksManager = Body(None, description=""),
+        id: int = Path(..., description="ID of the tasksmanager to update"),
+        tasksmanager: TasksManager = Body(None, description=""),
 ) -> TasksManager:
     try:
         return persistence_model.tasksmanagers.update(str(id), tasksmanager)
@@ -208,20 +209,23 @@ async def update_tasksmanager(
 
 @router.post("/task/{tasksmanager_id}/{task_id}/run")
 async def run_task(
-    tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
-    task_id: str = Path(..., description="ID of the task"),
-    run_task_body: RunTask = Body(..., description="Task run information")
+        tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
+        task_id: str = Path(..., description="ID of the task"),
+        run_task_body: RunTask = Body(..., description="Task run information")
 ):
     task = persistence_model.tasks.read(task_id)
     if task is None or task.tasksmanager_id != tasksmanager_id:
         raise HTTPException(status_code=404, detail="Task not found or tasksmanager does not match")
 
+    response = await task_runner.completion(tasksmanager_id=tasksmanager_id, task_id=task_id,
+                                            messages=run_task_body.messages)
     if task.crewai_info_id:
         response = await run_crewai(task_id)
     else:
         response = await task_runner.completion(tasksmanager_id=tasksmanager_id, task_id=task_id, messages=run_task_body.messages)
 
     return {"response": response}
+
 
 @router.patch(
     "/tasksmanager/{id}",
@@ -235,14 +239,11 @@ async def run_task(
     summary="Update tasksmanager details",
     response_model_by_alias=True,
 )
-
 async def update_tasksmanager(
-    id: int = Path(..., description="ID of the tasksmanager to update"),
-    tasksmanager: TasksManager = Body(None, description=""),
+        id: int = Path(..., description="ID of the tasksmanager to update"),
+        tasksmanager: TasksManager = Body(None, description=""),
 ) -> TasksManager:
     try:
         return persistence_model.tasksmanagers.update(str(id), tasksmanager)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-
-

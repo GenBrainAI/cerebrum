@@ -1,3 +1,4 @@
+from crewai_tools import BaseTool
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import requests
@@ -5,7 +6,7 @@ from requests.auth import HTTPBasicAuth
 import json
 import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
-from typing import List, Optional
+from typing import List, Optional, Any
 
 app = FastAPI(
     title="Jira Ticket Fetcher API",
@@ -30,11 +31,14 @@ class JiraConfig(BaseModel):
 
 
 class JiraTicketHandler:
+    name: str = "Jira Ticket Handler"
+    description: str = "A tool to fetch Jira tickets read them and at the contents to a github readme file"
     def __init__(self, config: JiraConfig):
+
         self.config = config
 
     def fetch_new_tickets(self):
-        jql_query = f'project = {self.config.project_key} AND labels = {self.config.tag} ORDER BY created DESC'
+        jql_query = f'project = {self.config.project_key} ORDER BY created DESC'
 
         headers = {
             'Accept': 'application/json',

@@ -1,5 +1,7 @@
 from typing import Optional
+
 from github import Github
+
 
 class GithubTool:
     def __init__(self, access_token: str, repo_name: str):

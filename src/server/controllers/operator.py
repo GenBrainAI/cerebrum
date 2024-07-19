@@ -86,7 +86,7 @@ class ToolsOperator:
                 messages=messages,
                 tools=tools if tools else None,
                 tool_choice="auto" if tools else None
-            ) 
+            )
             # if tools else await self.client.chat.completions.create(
             #     model=model,
             #     messages=messages
@@ -150,7 +150,7 @@ class ToolsOperator:
                 api_params["tools"] = tools
 
             response = await self.client.messages.create(**api_params)
-            
+
             if response.content:
                 return response.content[0].text
             else:
@@ -220,8 +220,8 @@ class ToolsOperator:
         except Exception as e:
             logging.error(f"Error in LangChain completion: {e}")
             raise HTTPException(status_code=500, detail=str(e))
-            
-            
+
+
     def _convert_messages_to_langchain(self, messages: List[Any]) -> List[Any]:
         langchain_messages = []
         for message in messages:
@@ -235,8 +235,8 @@ class ToolsOperator:
                 langchain_messages.append(FunctionMessage(content=message.content, name=message.name))
         return langchain_messages
 
-            
-            
+
+
     def _convert_messages_to_langchain(self, messages: List[Any]) -> List[Any]:
         langchain_messages = []
         for message in messages:
@@ -284,7 +284,7 @@ class ToolsOperator:
 
             # Add the function result to the messages
             new_message = {"role": "function", "name": function_name, "content": json.dumps(result)}
-            
+
             # Continue the conversation with the function result
             return await self.completion(
                 tasksmanager_id=None,  # We don't need these for recursive calls
@@ -299,7 +299,7 @@ class ToolsOperator:
     async def _gemini_completion(self, model: str, messages: List[Dict[str, Any]], curried_proxy: CurriedProxy) -> str:
         try:
             tools = curried_proxy.export_to_openai()  # We'll use OpenAI function format for compatibility
-            
+
             # Convert OpenAI tools format to Gemini's FunctionDeclaration
             gemini_tools = [
                 FunctionDeclaration(
@@ -336,13 +336,13 @@ class ToolsOperator:
             function_call = response.candidates[0].content.parts[0].function_call
             function_name = function_call.name
             function_args = json.loads(function_call.args)
-            
+
             # Execute the function
             result = await curried_proxy.curried_proxy(function_name)(function_args)
-            
+
             # Add the function result to the messages
             gemini_messages.append({"role": "function", "parts": [{"text": json.dumps(result)}], "name": function_name})
-            
+
             # Continue the conversation with the function result
             chat = self.client.start_chat(history=gemini_messages)
             follow_up_response = await asyncio.to_thread(

@@ -1,5 +1,3 @@
-# src/server/controllers/agents_controller.py
-
 import os
 from dotenv import load_dotenv
 from fastapi import HTTPException
@@ -44,10 +42,10 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
     agents = []
     for agent_data in request.agents:
         tools = [create_crewai_tool(TOOLS[tool.name]) for tool in agent_data.tools if tool.name in TOOLS]
-        
+
         # Add tools from curried_proxy
         tools.extend(curried_proxy.export_to_crewai())
-        
+
         agent = Agent(
             role=agent_data.role,
             goal=agent_data.goal,
@@ -79,10 +77,10 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
 async def run_crewai(task_id: str):
     task = persistence_model.tasks.read(task_id)
     crewai_config = persistence_model.crewai_config.read(task.crewai_info_id)
-    
+
     # Create CurriedProxy instance
     curried_proxy = CurriedProxy()
-    
+
     # Add tools from task and tasksmanager
     tasksmanager = persistence_model.tasksmanagers.read(task.tasksmanager_id)
     toolset_ids = task.toolsets + tasksmanager.toolsets
@@ -91,7 +89,7 @@ async def run_crewai(task_id: str):
         for tool_id in toolset.tool_ids:
             tool = persistence_model.tools.read(tool_id)
             curried_proxy.add_tool(f"{toolset.name}_{tool.function.name}", tool)
-    
+
     crew = await create_crew(crewai_config.create_crew, curried_proxy)
     result = crew.kickoff()
     return result
