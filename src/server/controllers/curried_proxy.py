@@ -18,6 +18,7 @@ class PythonFunctionTool(BaseModel):
     function: Callable
     description: str = ""
 
+
 class CurriedProxy(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tools_dict: Dict[str, Union[Tool, PythonFunctionTool]] = Field(default_factory=dict)
@@ -29,11 +30,11 @@ class CurriedProxy(BaseModel):
     def generate_safe_name(self, original_name: str) -> str:
         # Remove non-alphanumeric characters and replace spaces with underscores
         safe_name = re.sub(r'[^\w\s-]', '', original_name).strip().replace(' ', '_')
-        
+
         # Ensure the name starts with a letter or underscore
         if not safe_name[0].isalpha() and safe_name[0] != '_':
             safe_name = f"tool_{safe_name}"
-        
+
         # If the name already exists, append a number
         base_name = safe_name
         if base_name in self.name_counter:
@@ -41,9 +42,8 @@ class CurriedProxy(BaseModel):
             safe_name = f"{base_name}_{self.name_counter[base_name]}"
         else:
             self.name_counter[base_name] = 0
-        
-        return safe_name
 
+        return safe_name
 
     async def multiset_proxy(self, name: str, arguments: Dict[str, Any]) -> Any:
         tool = self.tools_dict[name]
@@ -120,7 +120,8 @@ class CurriedProxy(BaseModel):
         if isinstance(tool, Tool):
             self.tools_dict[safe_name] = tool
         elif callable(tool):
-            self.tools_dict[safe_name] = PythonFunctionTool(name=safe_name, function=tool, description=tool.__doc__ or "")
+            self.tools_dict[safe_name] = PythonFunctionTool(name=safe_name, function=tool,
+                                                            description=tool.__doc__ or "")
         elif isinstance(tool, object):
             for method_name, method in inspect.getmembers(tool, predicate=inspect.ismethod):
                 if not method_name.startswith('_'):
@@ -259,7 +260,7 @@ class CurriedProxy(BaseModel):
         else:
             # If it's neither a dict nor a ResolvedSchema, return a default schema
             converted = {"type": "string"}
-        
+
         return converted
 
     def _get_function_parameters(self, func: Callable) -> Dict[str, Any]:
@@ -277,4 +278,3 @@ class CurriedProxy(BaseModel):
             if param.default == inspect.Parameter.empty:
                 parameters["required"].append(name)
         return parameters
-

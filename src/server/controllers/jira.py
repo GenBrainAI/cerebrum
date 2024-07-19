@@ -60,8 +60,8 @@ class JiraTicketHandler:
 
         if response.status_code == 200:
             issues = response.json().get('issues', [])
-            for issue in issues:
-                self.process_ticket(issue)
+            return issues
+
         else:
             print(f"Failed to fetch issues. Status Code: {response.status_code}")
             print(f"Response: {response.text}")
