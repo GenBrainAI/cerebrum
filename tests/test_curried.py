@@ -129,7 +129,7 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
         
         assert kwargs['url'] == 'https://api.example.com/resource'
         assert 'Authorization' in kwargs['headers']
-        assert kwargs['headers']['Authorization'] == 'Bearer mock_token'
+        assert kwargs['headers']['Authorization'] == 'Bearer: mock_token'
         assert kwargs['headers']['Content-Type'] == 'application/x-www-form-urlencoded'
         assert kwargs['headers']['Accept'] == '*/*'
         

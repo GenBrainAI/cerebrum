@@ -148,7 +148,7 @@ class CurriedProxy(BaseModel):
         class CustomTool(BaseTool):
             name: str
             description: str
-            proxy: Any
+            proxy: CurriedProxy
 
             def _run(self, **kwargs: Any) -> Any:
                 return self.proxy.curried_proxy(self.name)(kwargs)
