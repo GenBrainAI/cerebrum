@@ -1,56 +1,17 @@
-# # Example usage
-# from src.server.persistence.persistence_model_factory import PersistenceModelFactory
-
-# persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-
-# # Create a CurriedProxy instance
-# curried_proxy = CurriedProxy()
-# persistence_model.curried_proxies.create(curried_proxy)
-
-# # Add a Tool
-# api_tool = Tool(...)  # Create a Tool instance
-# curried_proxy.add_tool("api_tool", api_tool)
-
-# # Add a function
-# def fibonacci(n: int) -> List[int]:
-#     if n <= 0:
-#         return []
-#     elif n == 1:
-#         return [0]
-#     elif n == 2:
-#         return [0, 1]
-    
-#     fib_sequence = [0, 1]
-#     for i in range(2, n):
-#         next_fib = fib_sequence[-1] + fib_sequence[-2]
-#         fib_sequence.append(next_fib)
-    
-#     return fib_sequence
-
-# curried_proxy.add_tool("fibonacci", fibonacci)
-
-# # Add a class
-# github_tool = GithubTool("your_access_token", "your_repo_name")
-# curried_proxy.add_tool("github", github_tool)
-
-# # Use the tools
-# api_result = await curried_proxy.curried_proxy("api_tool")({"some": "arguments"})
-# fib_result = await curried_proxy.curried_proxy("fibonacci")({"n": 10})
-# readme = await curried_proxy.curried_proxy("github.get_readme")({})
-
-# # Update the stored proxy
-# persistence_model.curried_proxies.update(str(curried_proxy.id), curried_proxy)
-
+import re
 from functools import partial
+import inspect
 import httpx
+from uuid import UUID, uuid4
 from typing import Dict, Any, List, Callable, Union
 from crewai_tools import BaseTool
 from pydantic import BaseModel, Field
 from src.server.models.toolset import Tool
 from src.server.models.function import Function, ServerInfo
 from src.server.models.toolset_credentials import ToolsetCredentials
-from uuid import UUID, uuid4
+from src.server.models.function import ResolvedSchema
 import inspect
+
 
 class PythonFunctionTool(BaseModel):
     name: str
@@ -60,9 +21,29 @@ class PythonFunctionTool(BaseModel):
 class CurriedProxy(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tools_dict: Dict[str, Union[Tool, PythonFunctionTool]] = Field(default_factory=dict)
+    name_counter: Dict[str, int] = Field(default_factory=dict)
 
     class Config:
         arbitrary_types_allowed = True
+
+    def generate_safe_name(self, original_name: str) -> str:
+        # Remove non-alphanumeric characters and replace spaces with underscores
+        safe_name = re.sub(r'[^\w\s-]', '', original_name).strip().replace(' ', '_')
+        
+        # Ensure the name starts with a letter or underscore
+        if not safe_name[0].isalpha() and safe_name[0] != '_':
+            safe_name = f"tool_{safe_name}"
+        
+        # If the name already exists, append a number
+        base_name = safe_name
+        if base_name in self.name_counter:
+            self.name_counter[base_name] += 1
+            safe_name = f"{base_name}_{self.name_counter[base_name]}"
+        else:
+            self.name_counter[base_name] = 0
+        
+        return safe_name
+
 
     async def multiset_proxy(self, name: str, arguments: Dict[str, Any]) -> Any:
         tool = self.tools_dict[name]
@@ -90,7 +71,7 @@ class CurriedProxy(BaseModel):
         credentials: ToolsetCredentials = function.credentials
 
         if credentials.auth_type and credentials.auth_key:
-            headers["Authorization"] = f"{credentials.auth_type} {credentials.auth_key}"
+            headers["Authorization"] = f"{credentials.auth_type}: {credentials.auth_key}"
 
         query_params = {}
         header_params = {}
@@ -135,14 +116,15 @@ class CurriedProxy(BaseModel):
         return partial(self.multiset_proxy, name)
 
     def add_tool(self, name: str, tool: Union[Tool, Callable, object]):
+        safe_name = self.generate_safe_name(name)
         if isinstance(tool, Tool):
-            self.tools_dict[name] = tool
+            self.tools_dict[safe_name] = tool
         elif callable(tool):
-            self.tools_dict[name] = PythonFunctionTool(name=name, function=tool, description=tool.__doc__ or "")
+            self.tools_dict[safe_name] = PythonFunctionTool(name=safe_name, function=tool, description=tool.__doc__ or "")
         elif isinstance(tool, object):
             for method_name, method in inspect.getmembers(tool, predicate=inspect.ismethod):
                 if not method_name.startswith('_'):
-                    full_name = f"{name}.{method_name}"
+                    full_name = self.generate_safe_name(f"{name}.{method_name}")
                     self.tools_dict[full_name] = PythonFunctionTool(
                         name=full_name,
                         function=method,
@@ -184,3 +166,115 @@ class CurriedProxy(BaseModel):
             crewai_tool = self.create_crewai_tool(name, tool)
             crewai_tools.append(crewai_tool)
         return crewai_tools
+
+    def export_to_openai(self) -> List[Dict[str, Any]]:
+        openai_tools = []
+        for name, tool in self.tools_dict.items():
+            if isinstance(tool, Tool):
+                function = tool.function
+                openai_tool = {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": function.description,
+                        "parameters": self._convert_parameters_to_openai_schema(function.parameters)
+                    }
+                }
+                openai_tools.append(openai_tool)
+            elif isinstance(tool, PythonFunctionTool):
+                openai_tool = {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": tool.description,
+                        "parameters": self._get_function_parameters(tool.function)
+                    }
+                }
+                openai_tools.append(openai_tool)
+        return openai_tools
+
+    def export_to_anthropic(self) -> List[Dict[str, Any]]:
+        anthropic_tools = []
+        for name, tool in self.tools_dict.items():
+            if isinstance(tool, Tool):
+                function = tool.function
+                anthropic_tool = {
+                    "type": "function",
+                    "name": name,
+                    "description": function.description,
+                    "parameters": self._convert_parameters_to_anthropic_schema(function.parameters)
+                }
+                anthropic_tools.append(anthropic_tool)
+            elif isinstance(tool, PythonFunctionTool):
+                anthropic_tool = {
+                    "type": "function",
+                    "name": name,
+                    "description": tool.description,
+                    "parameters": self._get_function_parameters(tool.function)
+                }
+                anthropic_tools.append(anthropic_tool)
+        return anthropic_tools
+
+    def _convert_parameters_to_openai_schema(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        schema = {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+        for param_type, params in parameters.items():
+            if param_type == 'requestBody':
+                schema["properties"]["requestBody"] = self._convert_schema(params)
+            else:
+                for name, param in params.items():
+                    schema["properties"][name] = self._convert_schema(param.schema)
+                    if param.required:
+                        schema["required"].append(name)
+        return schema
+
+    def _convert_parameters_to_anthropic_schema(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        # Anthropic's schema is similar to OpenAI's, so we can reuse the conversion
+        return self._convert_parameters_to_openai_schema(parameters)
+
+    def _convert_schema(self, schema: Union[Dict[str, Any], ResolvedSchema]) -> Dict[str, Any]:
+        if isinstance(schema, dict):
+            converted = {"type": schema.get("type", "string")}
+            if "description" in schema:
+                converted["description"] = schema["description"]
+            if "properties" in schema:
+                converted["properties"] = {
+                    k: self._convert_schema(v) for k, v in schema["properties"].items()
+                }
+            if "items" in schema:
+                converted["items"] = self._convert_schema(schema["items"])
+        elif isinstance(schema, ResolvedSchema):
+            converted = {"type": schema.type or "string"}
+            if schema.description:
+                converted["description"] = schema.description
+            if schema.properties:
+                converted["properties"] = {
+                    k: self._convert_schema(v) for k, v in schema.properties.items()
+                }
+            if schema.items:
+                converted["items"] = self._convert_schema(schema.items)
+        else:
+            # If it's neither a dict nor a ResolvedSchema, return a default schema
+            converted = {"type": "string"}
+        
+        return converted
+
+    def _get_function_parameters(self, func: Callable) -> Dict[str, Any]:
+        sig = inspect.signature(func)
+        parameters = {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+        for name, param in sig.parameters.items():
+            if param.annotation != inspect.Parameter.empty:
+                parameters["properties"][name] = {"type": str(param.annotation.__name__)}
+            else:
+                parameters["properties"][name] = {"type": "string"}
+            if param.default == inspect.Parameter.empty:
+                parameters["required"].append(name)
+        return parameters
+

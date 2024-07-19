@@ -57,7 +57,7 @@ def test_scenario(client: TestClient):
         'messages': [user_message.dict()]
     }
     run_response = client.post(f"/task/{tasksmanager_id}/{task_id}/run", json=run_task)
-    assert run_response.status_code == 202
+    assert run_response.status_code == 200
 
     # Another use of this task 
     user_message = Message(
@@ -69,4 +69,4 @@ def test_scenario(client: TestClient):
         'messages': [user_message.dict()]
     }
     run_response = client.post(f"/task/{tasksmanager_id}/{task_id}/run", json=run_task)
-    assert run_response.status_code == 202
+    assert run_response.status_code == 200

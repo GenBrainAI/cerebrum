@@ -86,16 +86,20 @@ def test_run_task_with_calculator():
             'messages': [user_message.dict()]
         }
         run_response = client.post(f"/task/{tasksmanager_id}/{task_id}/run", json=run_task)
-        assert run_response.status_code == 202
+        assert run_response.status_code == 200
+        response_data = run_response.json()
+        assert "response" in response_data
+        # assert response_data["response"] == "The sum of the complex numbers \\(1+2i\\) and \\(3+4i\\) is \\(4+6i\\)."
+
         mock_post.assert_called_once_with(
-            'http://example_complex_calculator.com/complex/add',
-            json={'num1': {'real': 1, 'imag': 2}, 'num2': {'real': 3, 'imag': 4}},
+            url='http://example_complex_calculator.com/complex/add',
             params={},
             headers={
                 "Authorization": "Baerer: 123",
                 "Content-Type": "application/json",
                 "Accept": "*/*"
-            }
+            },
+            json={'num1': {'real': 1, 'imag': 2}, 'num2': {'real': 3, 'imag': 4}}
         )
 
 

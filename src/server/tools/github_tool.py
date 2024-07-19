@@ -1,6 +1,4 @@
 from typing import Optional
-from .github import GithubRepo
-
 from github import Github
 
 class GithubTool:

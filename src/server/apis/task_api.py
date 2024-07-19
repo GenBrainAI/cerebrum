@@ -206,34 +206,22 @@ async def update_tasksmanager(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-@router.post(
-    "/task/{tasksmanager_id}/{task_id}/run",
-    responses = {
-        202: {"description": "Run completed successfully."},
-        400: {"description": "Invalid input or organization not found."},
-    },
-    tags=["run"],
-    summary="run an tasksmanager task."
-  )
+@router.post("/task/{tasksmanager_id}/{task_id}/run")
 async def run_task(
     tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
     task_id: str = Path(..., description="ID of the task"),
     run_task_body: RunTask = Body(..., description="Task run information")
-    ):
-        task = persistence_model.tasks.read(task_id)
-        if task is None or task.tasksmanager_id != tasksmanager_id:
-            raise HTTPException(status_code=404, detail="Task not found or tasksmanager does not match")
+):
+    task = persistence_model.tasks.read(task_id)
+    if task is None or task.tasksmanager_id != tasksmanager_id:
+        raise HTTPException(status_code=404, detail="Task not found or tasksmanager does not match")
 
-        #Egbert: Add the crew ai runnig if it is exist in the task.abs
-        # than we should think to run the tast after that 
-
+    if task.crewai_info_id:
+        response = await run_crewai(task_id)
+    else:
         response = await task_runner.completion(tasksmanager_id=tasksmanager_id, task_id=task_id, messages=run_task_body.messages)
 
-        return Response(
-            content=response,
-            status_code=status.HTTP_202_ACCEPTED,
-            media_type="application/json",
-        )
+    return {"response": response}
 
 @router.patch(
     "/tasksmanager/{id}",

@@ -149,10 +149,10 @@ async def test_add_and_use_class_methods(curried_proxy):
     github_tool = MockGithubTool()
     curried_proxy.add_tool("github", github_tool)
     
-    ls_result = await curried_proxy.curried_proxy("github.ls")({})
+    ls_result = await curried_proxy.curried_proxy("githubls")({})
     assert ls_result == ['file1.txt', 'file2.py']
     
-    readme_result = await curried_proxy.curried_proxy("github.get_readme")({})
+    readme_result = await curried_proxy.curried_proxy("githubget_readme")({})
     assert readme_result == "# Mock README"
 
 @pytest.mark.asyncio
@@ -170,7 +170,7 @@ async def test_persistence_integration():
     
     retrieved_proxy = persistence_model.curried_proxies.read(str(created_proxy.id))
     assert "fibonacci" in retrieved_proxy.list_tools()
-    assert "github.ls" in retrieved_proxy.list_tools()
+    assert "githubls" in retrieved_proxy.list_tools()
     
     fib_result = await retrieved_proxy.curried_proxy("fibonacci")({"n": 5})
     assert fib_result == [0, 1, 1, 2, 3]
@@ -222,7 +222,7 @@ def test_list_tools(curried_proxy, mock_tool):
     curried_proxy.add_tool("github", github_tool)
     
     tool_list = curried_proxy.list_tools()
-    assert set(tool_list) == {"mock_api", "fibonacci", "github.ls", "github.get_readme"}
+    assert set(tool_list) == {'mock_api', 'fibonacci', 'githubget_readme', 'githubls'}
 
 def test_remove_tool(curried_proxy, mock_tool):
     curried_proxy.add_tool("mock_api", mock_tool)
