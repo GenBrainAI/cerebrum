@@ -23,9 +23,9 @@ def combine_files(extensions, directory=".", recursive=False, exclude_items=None
                     # Skip hidden files and excluded files
                     if filename.startswith('.') or filename in exclude_items:
                         continue
-                    print(f"filename: {filename}")
                     base, ext = os.path.splitext(filename)
                     if ext in extensions:  # Exact match for extensions
+                        print(f"filename: {filename}")
                         file_path = os.path.join(root, filename)
                         outfile.write(f"<{file_path}>\n\n")
                         with open(file_path, "r") as infile:
