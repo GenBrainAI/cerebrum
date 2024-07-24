@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="e4e6a445-319a-4606-be5d-5c15be1d016f" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/notebooks/egbert_test.ipynb" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/server/tools/file_tool.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/server/tools/jira_tool.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/test_jira_egbert.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crewAI-examples" beforeDir="false" afterPath="$PROJECT_DIR$/crewAI-examples" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/crewai" beforeDir="false" afterPath="$PROJECT_DIR$/crewai" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/server/apis/task_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/apis/task_api.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/server/controllers/agents_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/controllers/agents_controller.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/server/controllers/jira.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/controllers/jira.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/server/controllers/operator.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/controllers/operator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/server/tools/github_tool.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/tools/github_tool.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_agents.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_agents.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_basic_scenario.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_basic_scenario.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_curried.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_persistence.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_persistence.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_toolset.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_toolset.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="HTTP Request" />
+        <option value="Jupyter Notebook" />
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="JsbtTreeLayoutManager">
+    <layout place="tools.popupGrunt">
+      <scroll-view-position x="0" y="0" />
+    </layout>
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 1
+}</component>
+  <component name="ProjectId" id="2hkhMVB81DulwItq6ZlcwfASvMm" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "FastAPI.Unnamed.executor": "Run",
+    "FastAPI.cerebrum.executor": "Debug",
+    "HTTP Request.test | #2.executor": "Run",
+    "Python tests.pytest for test_agents.test_create_agents_and_tasks.executor": "Debug",
+    "Python tests.pytest for test_agents.test_run_agent_process.executor": "Run",
+    "Python tests.pytest for test_basic_scenario.test_scenario.executor": "Run",
+    "Python tests.pytest for test_jira_egbert.test_jira.executor": "Debug",
+    "Python tests.pytest for test_jira_egbert.test_scenario.executor": "Run",
+    "Python tests.pytest in test_agents.py.executor": "Run",
+    "Python tests.pytest in test_basic_scenario.py.executor": "Run",
+    "Python tests.pytest in tests.executor": "Run",
+    "Python.jira.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "/home/egbert/Documents/codedealers/cerebrum/src/server/main.py",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.github.copilot.settings.ApplicationConfigurable",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RunManager" selected="Python tests.pytest for test_jira_egbert.test_jira">
+    <configuration name="test | #2" type="HttpClient.HttpRequestRunConfigurationType" factoryName="HTTP Request" temporary="true" nameIsGenerated="true" path="$PROJECT_DIR$/test.http" index="2" requestIdentifier="#2" runType="Run single request">
+      <method v="2" />
+    </configuration>
+    <configuration name="cerebrum" type="Python.FastAPI">
+      <option name="additionalOptions" value="--port 8080" />
+      <option name="file" value="$PROJECT_DIR$/src/server/main.py" />
+      <module name="cerebrum" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="$PROJECT_DIR$/venv/bin/python" />
+      <option name="SDK_NAME" value="Python 3.11 (cerebrum)" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="launchJavascriptDebuger" value="false" />
+      <method v="2" />
+    </configuration>
+    <configuration name="pytest for test_agents.test_create_agents_and_tasks" type="tests" factoryName="py.test" temporary="true" nameIsGenerated="true">
+      <module name="cerebrum" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tests" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;test_agents.test_create_agents_and_tasks&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="pytest for test_jira_egbert.test_jira" type="tests" factoryName="py.test" temporary="true" nameIsGenerated="true">
+      <module name="cerebrum" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tests" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;test_jira_egbert.test_jira&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="pytest in test_basic_scenario.py" type="tests" factoryName="py.test" temporary="true" nameIsGenerated="true">
+      <module name="cerebrum" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tests" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/tests/test_basic_scenario.py&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="pytest in tests" type="tests" factoryName="py.test" temporary="true" nameIsGenerated="true">
+      <module name="cerebrum" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tests" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="_new_keywords" value="&quot;&quot;" />
+      <option name="_new_parameters" value="&quot;&quot;" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/tests&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="FastAPI.cerebrum" />
+      <item itemvalue="HTTP Request.test | #2" />
+      <item itemvalue="Python tests.pytest for test_agents.test_create_agents_and_tasks" />
+      <item itemvalue="Python tests.pytest in test_basic_scenario.py" />
+      <item itemvalue="Python tests.pytest for test_jira_egbert.test_jira" />
+      <item itemvalue="Python tests.pytest in tests" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python tests.pytest for test_jira_egbert.test_jira" />
+        <item itemvalue="Python tests.pytest for test_agents.test_create_agents_and_tasks" />
+        <item itemvalue="Python tests.pytest in test_basic_scenario.py" />
+        <item itemvalue="Python tests.pytest in tests" />
+        <item itemvalue="HTTP Request.test | #2" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-1d06a55b98c1-0b3e54e931b4-JavaScript-PY-241.18034.82" />
+        <option value="bundled-python-sdk-975db3bf15a3-2767605e8bc2-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-241.18034.82" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="e4e6a445-319a-4606-be5d-5c15be1d016f" name="Changes" comment="" />
+      <created>1718143936772</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1718143936772</updated>
+      <workItem from="1718143938165" duration="1043000" />
+      <workItem from="1718145252966" duration="687000" />
+      <workItem from="1718187021072" duration="11000" />
+      <workItem from="1718187262670" duration="14000" />
+      <workItem from="1718208849619" duration="2819000" />
+      <workItem from="1718235470031" duration="1840000" />
+      <workItem from="1718237702151" duration="5627000" />
+      <workItem from="1718328655143" duration="867000" />
+      <workItem from="1718460705295" duration="93000" />
+      <workItem from="1719494679665" duration="14420000" />
+      <workItem from="1719582981869" duration="11000" />
+      <workItem from="1719583039223" duration="6571000" />
+      <workItem from="1719926104270" duration="31717000" />
+      <workItem from="1720185641464" duration="8000" />
+      <workItem from="1720720590274" duration="4275000" />
+      <workItem from="1721039971294" duration="45000" />
+      <workItem from="1721146471656" duration="10784000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.History.Properties">
+    <option name="COLUMN_ID_ORDER">
+      <list>
+        <option value="Default.Root" />
+        <option value="Default.Author" />
+        <option value="Default.Date" />
+        <option value="Default.Subject" />
+        <option value="GitHub.CommitStatus" />
+      </list>
+    </option>
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/server/controllers/jira.py</url>
+          <line>78</line>
+          <option name="timeStamp" value="2" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/server/controllers/operator.py</url>
+          <line>84</line>
+          <option name="timeStamp" value="5" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/server/apis/task_api.py</url>
+          <line>227</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/src/server/controllers/jira.py</url>
+          <line>60</line>
+          <option name="timeStamp" value="17" />
+        </line-breakpoint>
+      </breakpoints>
+      <default-breakpoints>
+        <breakpoint type="python-exception">
+          <properties notifyOnTerminate="true" exception="BaseException">
+            <option name="notifyOnTerminate" value="true" />
+          </properties>
+        </breakpoint>
+      </default-breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_in_test_agents_py.coverage" NAME="pytest in test_agents.py Coverage Results" MODIFIED="1719506292086" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/cerebrum$cerebrum.coverage" NAME="cerebrum Coverage Results" MODIFIED="1721152780663" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/cerebrum$jira.coverage" NAME="jira Coverage Results" MODIFIED="1719506451816" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/server/controllers" />
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_for_test_agents_test_run_agent_process.coverage" NAME="pytest for test_agents.test_run_agent_process Coverage Results" MODIFIED="1719505329043" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_for_test_basic_scenario_test_scenario.coverage" NAME="pytest for test_basic_scenario.test_scenario Coverage Results" MODIFIED="1719513097956" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_for_test_jira_egbert_test_jira.coverage" NAME="pytest for test_jira_egbert.test_jira Coverage Results" MODIFIED="1721157719725" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/cerebrum$Unnamed.coverage" NAME="cerebrum Coverage Results" MODIFIED="1718242108532" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_for_test_jira_egbert_test_scenario.coverage" NAME="pytest for test_jira_egbert.test_scenario Coverage Results" MODIFIED="1719506914419" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_for_test_agents_test_create_agents_and_tasks.coverage" NAME="pytest for test_agents.test_create_agents_and_tasks Coverage Results" MODIFIED="1721149257194" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_in_tests.coverage" NAME="pytest in tests Coverage Results" MODIFIED="1720122033616" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/cerebrum$pytest_in_test_basic_scenario_py.coverage" NAME="pytest in test_basic_scenario.py Coverage Results" MODIFIED="1721148285750" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+  </component>
+</project>

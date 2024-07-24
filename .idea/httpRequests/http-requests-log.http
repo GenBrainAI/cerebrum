@@ -1,0 +1,44 @@
+POST http://localhost:8080/task/3696b5db-37f9-4ab2-a9ba-684945a79644/2d1fa4c2-9001-425e-b53e-64b154afdd6e/run
+accept: application/json
+content-type: application/json
+Content-Length: 39
+User-Agent: IntelliJ HTTP Client/PyCharm 2024.1.4
+Accept-Encoding: br, deflate, gzip, x-gzip
+
+{
+  "input": {
+    "name": "John"
+  }
+}
+
+<> 2024-07-04T163803.404.json
+
+###
+
+POST http://localhost:8080/task/3696b5db-37f9-4ab2-a9ba-684945a79644/2d1fa4c2-9001-425e-b53e-64b154afdd6e/run
+accept: application/json
+content-type: application/json
+Content-Length: 39
+User-Agent: IntelliJ HTTP Client/PyCharm 2024.1.4
+Accept-Encoding: br, deflate, gzip, x-gzip
+
+{
+  "input": {
+    "name": "John"
+  }
+}
+
+<> 2024-07-04T163732.404.json
+
+###
+
+POST http://localhost:8080/task/3696b5db-37f9-4ab2-a9ba-684945a79644/2d1fa4c2-9001-425e-b53e-64b154afdd6e/run
+User-Agent: IntelliJ HTTP Client/PyCharm 2024.1.4
+Accept-Encoding: br, deflate, gzip, x-gzip
+Accept: */*
+content-length: 0
+
+<> 2024-07-04T163702.422.json
+
+###
+

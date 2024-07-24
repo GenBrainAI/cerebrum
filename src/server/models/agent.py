@@ -24,6 +24,7 @@ class AgentModel(BaseModel):
     goal: str
     backstory: str
     tools: List[ToolModel]
+    class_tools: List[str]
 
 class TaskModel(BaseModel):
     description: str
