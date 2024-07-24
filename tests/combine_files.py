@@ -13,7 +13,7 @@ def combine_files(extensions, directory=".", recursive=False, exclude_items=None
     if exclude_items is None:
         exclude_items = []
 
-    with open("combined_output.txt", "w") as outfile:
+    with open("combined_tests.txt", "w") as outfile:
         if recursive:
             print("Recursive")
             for root, dirs, files in os.walk(directory):
@@ -48,4 +48,6 @@ if __name__ == "__main__":
     file_extensions = ['.py', '.ipynb']
     exclude_items = ['crewai', 'crewAI-examples', 'tests', 'experimental', '__pycache__', 'combine_files.py']
     combine_files(file_extensions, recursive=True, exclude_items=exclude_items)
-    print("Files combined successfully into 'combined_output.txt'")
+    print("Files combined successfully into 'combined_tests.txt'")
+
+ 
