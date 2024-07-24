@@ -33,3 +33,10 @@ apscheduler
 pyautogen
 pytest-asyncio
 anthropic
+google-generativeai
+google-cloud-aiplatform
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+groq
+langchain-anthropic
