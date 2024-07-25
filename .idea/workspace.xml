@@ -4,19 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e4e6a445-319a-4606-be5d-5c15be1d016f" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/src/server/apis/curried_proxy_api.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/notebooks/egbert_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/notebooks/egbert_test.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/apis/agents_api.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/apis/agents_api.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/controllers/agents_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/controllers/agents_controller.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/models/agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/models/agent.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/models/task.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/models/task.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/tools/file_tool.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/tools/file_tool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/tools/jira_tool.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/tools/jira_tool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/tools/tool_factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/tools/tool_factory.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_jira_egbert.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_jira_egbert.py" afterDir="false" />
-    </list>
+    <list default="true" id="e4e6a445-319a-4606-be5d-5c15be1d016f" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -217,7 +205,7 @@
       <workItem from="1720720590274" duration="4275000" />
       <workItem from="1721039971294" duration="45000" />
       <workItem from="1721146471656" duration="10784000" />
-      <workItem from="1721844198032" duration="8750000" />
+      <workItem from="1721844198032" duration="9085000" />
     </task>
     <servers />
   </component>
@@ -263,11 +251,6 @@
           <url>file://$PROJECT_DIR$/src/server/tools/file_tool.py</url>
           <line>10</line>
           <option name="timeStamp" value="30" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/src/server/controllers/agents_controller.py</url>
-          <line>99</line>
-          <option name="timeStamp" value="43" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
