@@ -4,10 +4,13 @@ from fastapi import HTTPException
 from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from langchain.tools import BaseTool as LangChainBaseTool
+
+
 # from llama_index.tools import BaseTool as LlamaIndexBaseTool
 
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
+from ..tools.file_tool import FileTool
 from ..tools.github_tool import GithubTool
 from ..controllers.curried_proxy import CurriedProxy
 
@@ -24,7 +27,8 @@ TOOLS = {
     "GithubTool": GithubTool(
         access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
         repo_name=os.getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
-    )
+    ),
+    "save_file": FileTool()
 }
 
 def create_crewai_tool(tool):
@@ -43,7 +47,6 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
     for agent_data in request.agents:
         tools = [create_crewai_tool(TOOLS[tool.name]) for tool in agent_data.tools if tool.name in TOOLS]
 
-        # Add tools from curried_proxy
         tools.extend(curried_proxy.export_to_crewai())
 
         agent = Agent(
@@ -77,13 +80,16 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
 async def run_crewai(task_id: str):
     task = persistence_model.tasks.read(task_id)
     crewai_config = persistence_model.crewai_config.read(task.crewai_info_id)
-
     # Create CurriedProxy instance
-    curried_proxy = CurriedProxy()
+    curried_proxy = persistence_model.curried_proxies.read(task.curried_proxy_id)
 
     # Add tools from task and tasksmanager
     tasksmanager = persistence_model.tasksmanagers.read(task.tasksmanager_id)
-    toolset_ids = task.toolsets + tasksmanager.toolsets
+    if task.toolsets:
+        toolset_ids = task.toolsets + tasksmanager.toolsets
+    else:
+        toolset_ids = tasksmanager.toolsets
+
     for toolset_id in toolset_ids:
         toolset = persistence_model.toolsets.read(toolset_id)
         for tool_id in toolset.tool_ids:

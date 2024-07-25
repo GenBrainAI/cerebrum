@@ -34,4 +34,5 @@ def test_jira(client: TestClient):
         schedule_interval=0,
     ))
 
-    ticket_handler.fetch_new_tickets()
+    tickets = ticket_handler.fetch_new_tickets()
+    print(tickets)

@@ -27,6 +27,7 @@ class Task(BaseModel):
     messages: Optional[List[Message]] = Field(default=None, alias="messages")
     toolsets: Optional[List[str]] = Field(default=None, json_schema_extra={"alias": "toolsets"})
     curried_tools: Optional[List[str]] = Field(default=None, json_schema_extra={"alias": "tools"})
+    curried_proxy_id: Optional[str] = Field(default=None, json_schema_extra={"alias": "curried_proxy_id"})
     ## agentinc framework, if no agentic framework, then use the default one
  
     # open interperter

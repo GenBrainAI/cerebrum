@@ -1,20 +1,19 @@
-from datetime import datetime
+from typing import Callable
+
+from src.server.controllers.curried_proxy import PythonFunctionTool
 
 
-def save_file(content: str, type: str, path="/tmp") -> str:
-    # Determine file extension based on type
-    extension_map = {
-        'text': '.txt',
-        'markdown': '.md',
-        'html': '.html'
-    }
-    extension = extension_map.get(type, '.txt')
+class FileTool(PythonFunctionTool):
+    @staticmethod
+    def save_file(file_path: str, file_content: str) -> str:
 
-    # Create a unique file name
-    file_name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}{extension}"
+        # Write content to the file
+        with open(file_path, 'w') as file:
+            file.write(file_content)
 
-    # Write content to the file
-    with open(f"{path}/{file_name}", 'w') as file:
-        file.write(content)
+        print(f"File written: {file_path}")
+        return f"File written: {file_path}"
 
-    return f"File written: {file_name}"
+    description: str = "creates a txt, .md or .html file and stores the content on the given path with the given name"
+    name: str = "file_tool"
+    function: Callable = save_file
