@@ -52,7 +52,7 @@ jobs:
           echo "JIRA_API_KEY=${{ secrets.JIRA_API_KEY}}" >> .env
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
           echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" >> .env
-           cat .env  # For debugging purposes
+           # cat .env  # For debugging purposes
 
       - name: Configure Docker
         run: |
