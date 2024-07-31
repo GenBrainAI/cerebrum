@@ -4,7 +4,7 @@ import os
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
-def get_completion(messages, model="gpt-4", temperature=0.7):
+def get_completion(messages, model="gpt-4o", temperature=0.7):
     response = client.chat.completions.create(model=model,
                                               messages=messages,
                                               temperature=temperature)

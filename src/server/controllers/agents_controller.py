@@ -24,7 +24,7 @@ TOOLS = {
     ),
     "GithubTool": GithubTool(
         access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
-        repo_name=os.getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
+        repo_name=os.getenv("GITHUB_REPO_NAME", "moshebeeri/sharing")
     )
 }
 
