@@ -17,6 +17,7 @@ class GithubTool:
 
         if self.repo is None:
             raise Exception(f"Could not access repository {repo_name} with provided token.")
+            print(f"Could not access repository {repo_name} with provided token.")
 
         print(f"github connected to {self.repo} success")
 

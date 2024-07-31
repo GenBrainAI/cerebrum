@@ -1,6 +1,7 @@
 # src/server/controllers/agents_controller.py
 
 import os
+from dotenv import load_dotenv
 from fastapi import HTTPException
 from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
@@ -13,7 +14,7 @@ from ..tools.github_tool import GithubTool
 from ..controllers.curried_proxy import CurriedProxy
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-
+load_dotenv()
 # Define available tools
 TOOLS = {
     "WebsiteSearchTool": WebsiteSearchTool(),
@@ -24,7 +25,7 @@ TOOLS = {
     ),
     "GithubTool": GithubTool(
         access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
-        repo_name=os.getenv("GITHUB_REPO_NAME", "moshebeeri/sharing")
+        repo_name=os.getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
     )
 }
 
