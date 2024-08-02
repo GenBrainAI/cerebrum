@@ -49,7 +49,7 @@ def test_run_task_with_calculator():
     # Create tasksmanager
     tasksmanager_data = {
         "name": "Complex Numbers Expert",
-        "model": "gpt-4-1106-preview",
+        "model": "gpt-4o-1106-preview",
         "description": "TasksManager for with complex numbers expertise",
     }
 

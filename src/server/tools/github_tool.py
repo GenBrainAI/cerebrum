@@ -1,5 +1,6 @@
 from typing import Optional
 
+from crewai_tools import tool
 from github import Github
 
 
@@ -33,7 +34,7 @@ class GithubTool:
         return self.repo.read_file(file_path)
 
     async def create_branch(self, branch_name: str) -> str:
-        return self.github_repo.create_branch(branch_name)
+        return self.repo.create_branch(branch_name)
 
     async def commit_file_changes(self, file_path: str, commit_message: str, file_content: str) -> Optional[str]:
         return self.repo.commit_file_changes(file_path, commit_message, file_content)
@@ -41,3 +42,5 @@ class GithubTool:
     async def create_pull_request(self, branch_name: str, title: str, body: str = '') -> Optional[str]:
         return self.repo.create_pull_request(branch_name, title, body)
 
+    async def clone(self, path: str) -> Optional[str]:
+        return self.repo.clone(path)

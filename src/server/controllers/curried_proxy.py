@@ -13,7 +13,10 @@ from src.server.models.function import ResolvedSchema
 import inspect
 
 
-class PythonFunctionTool(BaseModel):
+class PythonFunctionTool(BaseTool):
+    def _run(self, *args: Any, **kwargs: Any) -> Any:
+        pass
+
     name: str
     function: Callable
     description: str = ""
@@ -222,6 +225,7 @@ class CurriedProxy(BaseModel):
             "properties": {},
             "required": []
         }
+
         for param_type, params in parameters.items():
             if param_type == 'requestBody':
                 schema["properties"]["requestBody"] = self._convert_schema(params)
