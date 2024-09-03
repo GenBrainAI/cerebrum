@@ -5,7 +5,6 @@ from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from langchain.tools import BaseTool as LangChainBaseTool
 
-
 # from llama_index.tools import BaseTool as LlamaIndexBaseTool
 
 from ..persistence.persistence_model_factory import PersistenceModelFactory
@@ -31,8 +30,9 @@ TOOLS = {
     "save_file": FileTool()
 }
 
+
 def create_crewai_tool(tool):
-    if isinstance(tool, (LangChainBaseTool)): #, LlamaIndexBaseTool)):
+    if isinstance(tool, (LangChainBaseTool)):  #, LlamaIndexBaseTool)):
         # Wrap LangChain or LlamaIndex tools
         return tool
     elif callable(tool):
@@ -42,10 +42,20 @@ def create_crewai_tool(tool):
         # Assume it's already a CrewAI compatible tool
         return tool
 
+
 async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
     agents = []
     for agent_data in request.agents:
         tools = [create_crewai_tool(TOOLS[tool.name]) for tool in agent_data.tools if tool.name in TOOLS]
+
+        # Get class tools
+        for tool in tools:
+            if isinstance(tool, GithubTool):
+                tools.remove(tool)
+                for attr_name in dir(tool):
+                    attr = getattr(tool, attr_name)
+                    if callable(attr) and not attr_name.startswith("__"):
+                        curried_proxy.add_tool(attr_name, attr)
 
         tools.extend(curried_proxy.export_to_crewai())
 
@@ -76,6 +86,7 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
     )
 
     return crew
+
 
 async def run_crewai(task_id: str):
     task = persistence_model.tasks.read(task_id)
@@ -116,4 +127,3 @@ async def run_crewai(task_id: str):
 #     autogen = create_autogen(autogen_config)
 #     result = autogen.run()
 #     return result
-

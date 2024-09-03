@@ -7,13 +7,8 @@
     <list default="true" id="e4e6a445-319a-4606-be5d-5c15be1d016f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/notebooks/egbert_test.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/notebooks/egbert_test.ipynb" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/experimental/brain.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/experimental/brain.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/apis/curried_proxy_api.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/server/controllers/agents_controller.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/controllers/agents_controller.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/controllers/curried_proxy.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/controllers/curried_proxy.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/server/tools/file_tool.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/tools/file_tool.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/server/tools/github_tool.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/server/tools/github_tool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_toolset.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_toolset.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -45,32 +40,37 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;FastAPI.Unnamed.executor&quot;: &quot;Run&quot;,
-    &quot;FastAPI.cerebrum.executor&quot;: &quot;Debug&quot;,
-    &quot;HTTP Request.test | #2.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest for test_agents.test_create_agents_and_tasks.executor&quot;: &quot;Debug&quot;,
-    &quot;Python tests.pytest for test_agents.test_run_agent_process.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest for test_basic_scenario.test_scenario.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest for test_jira_egbert.test_jira.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest for test_jira_egbert.test_scenario.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest in test_agents.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest in test_basic_scenario.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest in tests.executor&quot;: &quot;Run&quot;,
-    &quot;Python.jira.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;feat/jira-task-handler&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/home/egbert/Documents/codedealers/cerebrum/src/server/main.py&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.github.copilot.settings.ApplicationConfigurable&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "FastAPI.Unnamed.executor": "Run",
+    "FastAPI.cerebrum.executor": "Debug",
+    "HTTP Request.test | #2.executor": "Run",
+    "Python tests.pytest for test_agents.test_create_agents_and_tasks.executor": "Debug",
+    "Python tests.pytest for test_agents.test_run_agent_process.executor": "Run",
+    "Python tests.pytest for test_basic_scenario.test_scenario.executor": "Run",
+    "Python tests.pytest for test_jira_egbert.test_jira.executor": "Run",
+    "Python tests.pytest for test_jira_egbert.test_scenario.executor": "Run",
+    "Python tests.pytest in test_agents.py.executor": "Run",
+    "Python tests.pytest in test_basic_scenario.py.executor": "Run",
+    "Python tests.pytest in tests.executor": "Run",
+    "Python.jira.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "feat/jira-task-handler",
+    "last_opened_file_path": "/home/egbert/Documents/codedealers/cerebrum/src/server/main.py",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.github.copilot.settings.ApplicationConfigurable",
+    "vue.rearranger.settings.migration": "true"
+  },
+  "keyToStringList": {
+    "DatabaseDriversLRU": [
+      "mongo"
+    ]
   }
-}</component>
+}]]></component>
   <component name="RunManager" selected="FastAPI.cerebrum">
     <configuration name="test | #2" type="HttpClient.HttpRequestRunConfigurationType" factoryName="HTTP Request" temporary="true" nameIsGenerated="true" path="$PROJECT_DIR$/test.http" index="2" requestIdentifier="#2" runType="Run single request">
       <method v="2" />
@@ -220,7 +220,8 @@
       <workItem from="1722009972384" duration="8453000" />
       <workItem from="1722341489992" duration="1730000" />
       <workItem from="1722597642587" duration="16000" />
-      <workItem from="1722617097071" duration="370000" />
+      <workItem from="1722617097071" duration="2020000" />
+      <workItem from="1723366795131" duration="87000" />
     </task>
     <servers />
   </component>
@@ -278,19 +279,9 @@
           <option name="timeStamp" value="40" />
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/src/server/tools/github_tool.py</url>
-          <line>8</line>
-          <option name="timeStamp" value="45" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/src/server/apis/agents_api.py</url>
           <line>15</line>
           <option name="timeStamp" value="46" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/src/server/controllers/agents_controller.py</url>
-          <line>50</line>
-          <option name="timeStamp" value="47" />
         </line-breakpoint>
       </breakpoints>
       <default-breakpoints>
@@ -304,7 +295,7 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/cerebrum$pytest_in_test_agents_py.coverage" NAME="pytest in test_agents.py Coverage Results" MODIFIED="1719506292086" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
-    <SUITE FILE_PATH="coverage/cerebrum$cerebrum.coverage" NAME="cerebrum Coverage Results" MODIFIED="1722617311967" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/cerebrum$cerebrum.coverage" NAME="cerebrum Coverage Results" MODIFIED="1722617498757" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
     <SUITE FILE_PATH="coverage/cerebrum$jira.coverage" NAME="jira Coverage Results" MODIFIED="1719506451816" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/src/server/controllers" />
     <SUITE FILE_PATH="coverage/cerebrum$pytest_for_test_agents_test_run_agent_process.coverage" NAME="pytest for test_agents.test_run_agent_process Coverage Results" MODIFIED="1719505329043" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
     <SUITE FILE_PATH="coverage/cerebrum$pytest_for_test_basic_scenario_test_scenario.coverage" NAME="pytest for test_basic_scenario.test_scenario Coverage Results" MODIFIED="1719513097956" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
