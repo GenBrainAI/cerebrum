@@ -8,6 +8,7 @@ from fastapi import (
     Query,
 )
 
+from ..controllers.agents_controller import run_crewai
 from ..models.task import Task
 from ..models.list_tasks_managers import ListTasksManagers
 from ..models.custom_exceptions import *

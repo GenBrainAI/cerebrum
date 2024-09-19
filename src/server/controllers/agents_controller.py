@@ -1,15 +1,15 @@
-# src/server/controllers/agents_controller.py
-
 import os
 from dotenv import load_dotenv
 from fastapi import HTTPException
 from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from langchain.tools import BaseTool as LangChainBaseTool
+
 # from llama_index.tools import BaseTool as LlamaIndexBaseTool
 
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
+from ..tools.file_tool import FileTool
 from ..tools.github_tool import GithubTool
 from ..controllers.curried_proxy import CurriedProxy
 
@@ -26,11 +26,13 @@ TOOLS = {
     "GithubTool": GithubTool(
         access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
         repo_name=os.getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
-    )
+    ),
+    "save_file": FileTool()
 }
 
+
 def create_crewai_tool(tool):
-    if isinstance(tool, (LangChainBaseTool)): #, LlamaIndexBaseTool)):
+    if isinstance(tool, (LangChainBaseTool)):  #, LlamaIndexBaseTool)):
         # Wrap LangChain or LlamaIndex tools
         return tool
     elif callable(tool):
@@ -40,14 +42,23 @@ def create_crewai_tool(tool):
         # Assume it's already a CrewAI compatible tool
         return tool
 
+
 async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
     agents = []
     for agent_data in request.agents:
         tools = [create_crewai_tool(TOOLS[tool.name]) for tool in agent_data.tools if tool.name in TOOLS]
-        
-        # Add tools from curried_proxy
+
+        # Get class tools
+        for tool in tools:
+            if isinstance(tool, GithubTool):
+                tools.remove(tool)
+                for attr_name in dir(tool):
+                    attr = getattr(tool, attr_name)
+                    if callable(attr) and not attr_name.startswith("__"):
+                        curried_proxy.add_tool(attr_name, attr)
+
         tools.extend(curried_proxy.export_to_crewai())
-        
+
         agent = Agent(
             role=agent_data.role,
             goal=agent_data.goal,
@@ -76,22 +87,26 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
 
     return crew
 
+
 async def run_crewai(task_id: str):
     task = persistence_model.tasks.read(task_id)
     crewai_config = persistence_model.crewai_config.read(task.crewai_info_id)
-    
     # Create CurriedProxy instance
-    curried_proxy = CurriedProxy()
-    
+    curried_proxy = persistence_model.curried_proxies.read(task.curried_proxy_id)
+
     # Add tools from task and tasksmanager
     tasksmanager = persistence_model.tasksmanagers.read(task.tasksmanager_id)
-    toolset_ids = task.toolsets + tasksmanager.toolsets
+    if task.toolsets:
+        toolset_ids = task.toolsets + tasksmanager.toolsets
+    else:
+        toolset_ids = tasksmanager.toolsets
+
     for toolset_id in toolset_ids:
         toolset = persistence_model.toolsets.read(toolset_id)
         for tool_id in toolset.tool_ids:
             tool = persistence_model.tools.read(tool_id)
             curried_proxy.add_tool(f"{toolset.name}_{tool.function.name}", tool)
-    
+
     crew = await create_crew(crewai_config.create_crew, curried_proxy)
     result = crew.kickoff()
     return result
@@ -112,4 +127,3 @@ async def run_crewai(task_id: str):
 #     autogen = create_autogen(autogen_config)
 #     result = autogen.run()
 #     return result
-

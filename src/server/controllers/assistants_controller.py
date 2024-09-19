@@ -1,4 +1,3 @@
-
 import asyncio
 import json
 import os
@@ -11,6 +10,7 @@ from src.server.models.tasks_manager import TasksManager
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from .rest_proxy_controller import RestProxyController
 
+
 class AssistantsController:
     def __init__(self, openai_api_key):
         self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY", openai_api_key))
@@ -18,9 +18,10 @@ class AssistantsController:
         self.proxy = RestProxyController()
 
     async def async_function_proxy(self, name, arguments, settings):
-      return await self.proxy.multiset_proxy(name, arguments, settings)
+        return await self.proxy.multiset_proxy(name, arguments, settings)
 
-    async def create_assistant(self, tasksmanager_id, model, name, deprecation, instructions, tools_id, file_ids, metadata=None):
+    async def create_assistant(self, tasksmanager_id, model, name, deprecation, instructions, tools_id, file_ids,
+                               metadata=None):
         tools = await self.retrieve_tools(tools_id)
         assistant = await self.client.beta.assistants.create(
             model=model,
@@ -36,7 +37,7 @@ class AssistantsController:
         return assistant
 
     async def delete_assistant(self, assistant_id):
-        self.client.beta.assistants.delete(assistant_id=assistant_id)
+        await self.client.beta.assistants.delete(assistant_id=assistant_id)
         self.persistence.collection("assistant").delete(assistant_id)
 
     async def upsert_assistant(self, assistant_id, tasksmanager_id, tools_id, assistant):
@@ -146,8 +147,9 @@ class AssistantsController:
         })
         return await self.handle_tools_actions(run, tools, thread_id)
 
-    async def create_message_and_run(self, tasksmanager_id, thread_id, role, content, file_ids, assistant_id, instructions,
-                                    model, tools_id):
+    async def create_message_and_run(self, tasksmanager_id, thread_id, role, content, file_ids, assistant_id,
+                                     instructions,
+                                     model, tools_id):
         await self.create_message(tasksmanager_id, thread_id, role, content, file_ids)
         return await self.create_thread_and_run(tasksmanager_id, assistant_id, instructions, model, tools_id)
 

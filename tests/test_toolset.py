@@ -49,7 +49,7 @@ def test_run_task_with_calculator():
     # Create tasksmanager
     tasksmanager_data = {
         "name": "Complex Numbers Expert",
-        "model": "gpt-4-1106-preview",
+        "model": "gpt-4o-1106-preview",
         "description": "TasksManager for with complex numbers expertise",
     }
 
@@ -58,6 +58,7 @@ def test_run_task_with_calculator():
     tasksmanager_id = tasksmanager_response.json()["id"]
 
     # Create a task that uses the calculator toolset
+    # Create task
     system_message = Message(
         role="system",
         content="You are an complex numbers helper that call complex numbers calculator when ever you can."
@@ -76,7 +77,7 @@ def test_run_task_with_calculator():
     # Run task with user message
     user_message = Message(
         role="user",
-        content="Please add those two complex numbers 1+2i and 3+4i"
+        content="Please add hose two complex numbers 1+2i and 3+4i"
     )
 
     mock_response = httpx.Response(200, json={"result": {'real': 4, 'imag': 6}})
@@ -94,18 +95,14 @@ def test_run_task_with_calculator():
         mock_post.assert_called_once_with(
             url='http://example_complex_calculator.com/complex/add',
             params={},
-            headers={
-                "Authorization": "Baerer: 123",
-                "Content-Type": "application/json",
-                "Accept": "*/*"
-            },
+            headers={"Content-Type": "application/json", "Accept": "*/*"},
             json={'num1': {'real': 1, 'imag': 2}, 'num2': {'real': 3, 'imag': 4}}
         )
 
 
 @pytest.mark.unit
 def test_get_tasksmanager_toolsets():
-    with open(find_file("tests/calculator/complex_calc.yml"), "r") as file:
+    with open(find_file("tests/calculator/calculator.yaml"), "r") as file:
         swagger_string = file.read()
 
     toolset_data = {

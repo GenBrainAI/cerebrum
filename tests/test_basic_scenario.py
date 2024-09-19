@@ -36,13 +36,15 @@ def test_scenario(client: TestClient):
         role="system",
         content="You are an astronomy expert ready to answer questions about the solar system."
     )
+
     task_data = {
         "name": "Solar System Questions",
-        "description": "Answer questions about the solar system, alway anser distance in Miles.",
+        "description": "Answer questions about the solar system",
         "tasksmanager_id": tasksmanager_id,
         "messages": [system_message.dict()],
         "toolsets": [toolset_id]
     }
+
     task_response = client.post("/task", json=task_data)
     assert task_response.status_code == 201
     task_id = task_response.json()["id"]
