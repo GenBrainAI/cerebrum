@@ -1,6 +1,5 @@
 from typing import Optional
 
-from crewai_tools import tool
 from github import Github
 
 
