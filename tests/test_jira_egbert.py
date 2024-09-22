@@ -1,5 +1,5 @@
-import requests
-from fastapi.testclient import TestClient
+# import requests
+# from fastapi.testclient import TestClient
 
 from src.server.controllers.jira import JiraTicketHandler, JiraConfig
 from src.server.models.message import Message

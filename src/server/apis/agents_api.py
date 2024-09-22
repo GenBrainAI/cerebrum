@@ -12,14 +12,15 @@ persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 @router.post("/agent/crewai")
 async def create_crewai(request: CreateCrewRequest):
     try:
-
         curried_proxy = CurriedProxy()
         for agent in request.agents:
-            for tool in agent.class_tools:
-                factory = ToolFactory(tool.name, curried_proxy)
-                factory.set_curried_proxy()
-            for tool in agent.tools:
-                curried_proxy.add_tool(tool.name, tool)
+            if agent.class_tools is not None:
+                for tool in agent.class_tools:
+                    factory = ToolFactory(tool.name, curried_proxy)
+                    factory.set_curried_proxy()
+            if agent.tools is not None:
+                for tool in agent.tools:
+                    curried_proxy.add_tool(tool.name, tool)
 
         await create_crew(request, curried_proxy)
         crewai_config = CrewAIConfig(create_crew=request)

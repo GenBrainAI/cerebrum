@@ -49,7 +49,7 @@ def test_run_task_with_calculator():
     # Create tasksmanager
     tasksmanager_data = {
         "name": "Complex Numbers Expert",
-        "model": "gpt-4o-1106-preview",
+        "model": "gpt-4o-mini",
         "description": "TasksManager for with complex numbers expertise",
     }
 
@@ -95,7 +95,7 @@ def test_run_task_with_calculator():
         mock_post.assert_called_once_with(
             url='http://example_complex_calculator.com/complex/add',
             params={},
-            headers={"Content-Type": "application/json", "Accept": "*/*"},
+            headers={'Authorization': 'Baerer: 123', 'Content-Type': 'application/json', 'Accept': '*/*'},
             json={'num1': {'real': 1, 'imag': 2}, 'num2': {'real': 3, 'imag': 4}}
         )
 

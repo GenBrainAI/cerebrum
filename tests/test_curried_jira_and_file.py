@@ -22,10 +22,9 @@ def cleanup_curried_proxy(curried_proxy):
     for tool_name in curried_proxy.list_tools():
         curried_proxy.remove_tool(tool_name)
 
-
 async def test_add_and_use_file_tool(curried_proxy):
     curried_proxy.add_tool("file_tool", save_file)
-    result = await curried_proxy.curried_proxy("file_tool")({"content": "text", "type": "text"})
+    result = await curried_proxy.curried_proxy("file_tool")({"file_path": "text", "file_content": "text"})
 
     assert "File written:" in result
 
@@ -37,13 +36,14 @@ async def test_add_and_use_jira_fetch_ticket(curried_proxy):
 
 
 async def test_fetch_and_write_file(curried_proxy):
+    
     curried_proxy.add_tool("file_tool", save_file)
     curried_proxy.add_tool("jira_tool", fetch_jira_tickets)
 
     tickets = await curried_proxy.curried_proxy("jira_tool")({"project_key": "cer"})
     for ticket in tickets:
-        result = await curried_proxy.curried_proxy("file_tool")({"content": ticket['fields']['summary'], "type": "text"})
+        result = await curried_proxy.curried_proxy("file_tool")({"file_path": "/tmp/test.txt", "file_content": ticket['fields']['summary']})
         assert "File written:" in result
         filename = result.split(":")[1].strip()
-        with open(f"/tmp/{filename}", 'r') as file:
+        with open(filename, 'r') as file:
             assert ticket['fields']['summary'] in file.read()
