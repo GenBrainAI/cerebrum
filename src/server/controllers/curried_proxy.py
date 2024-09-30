@@ -13,10 +13,7 @@ from src.server.models.function import ResolvedSchema
 import inspect
 
 
-class PythonFunctionTool(BaseTool):
-    def _run(self, *args: Any, **kwargs: Any) -> Any:
-        pass
-
+class PythonFunctionTool(BaseModel):
     name: str
     function: Callable
     description: str = ""
@@ -53,10 +50,10 @@ class CurriedProxy(BaseModel):
         try:
             if isinstance(tool, PythonFunctionTool):
                 return await self._call_python_function(tool.function, arguments)
-            elif isinstance(tool, Tool):
-                return await self._call_api_function(tool, arguments)
+            elif hasattr(tool, '__call__'):
+                return await tool(arguments.get('method'), arguments.get('arguments', {}))
             else:
-                raise ValueError(f"Unknown tool type for {name}")
+                raise ValueError(f"Tool '{name}' is not callable.")
         except Exception as e:
             return {"error": str(e)}
 
@@ -123,19 +120,18 @@ class CurriedProxy(BaseModel):
         if isinstance(tool, Tool):
             self.tools_dict[safe_name] = tool
         elif callable(tool):
-            self.tools_dict[safe_name] = PythonFunctionTool(name=safe_name, function=tool,
-                                                            description=tool.__doc__ or "")
-        elif isinstance(tool, object):
-            for method_name, method in inspect.getmembers(tool, predicate=inspect.ismethod):
-                if not method_name.startswith('_'):
-                    full_name = self.generate_safe_name(f"{name}.{method_name}")
-                    self.tools_dict[full_name] = PythonFunctionTool(
-                        name=full_name,
-                        function=method,
-                        description=method.__doc__ or ""
-                    )
+            self.tools_dict[safe_name] = PythonFunctionTool(name=safe_name, function=tool, description=tool.__doc__ or "")
         else:
-            raise ValueError(f"Unsupported tool type: {type(tool)}")
+            self.tools_dict[safe_name] = tool
+        # elif isinstance(tool, object):
+        #     for method_name, method in inspect.getmembers(tool, predicate=inspect.ismethod):
+        #         if not method_name.startswith('_'):
+        #             full_name = f"{safe_name}.{method_name}"
+        #             self.tools_dict[full_name] = PythonFunctionTool(
+        #                 name=full_name,
+        #                 function=method,
+        #                 description=method.__doc__ or ""
+        #             )
 
     def remove_tool(self, name: str):
         self.tools_dict.pop(name, None)

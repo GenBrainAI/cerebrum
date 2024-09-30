@@ -9,7 +9,7 @@ class ToolFactory:
         tools: dict = {
             'save_file': FileTool,
             'fetch_jira_tickets': fetch_jira_tickets,
-            # 'github': GithubTool('access_token', 'repo_name')
+            'GithubTool': GithubTool('access_token', 'repo_name')
         }
         self.tool = tools[name]
         self.name = name
