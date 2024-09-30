@@ -1,7 +1,7 @@
-from typing import Optional
-
+from typing import Optional, Any, Dict
 from github import Github
-
+from github.Repository import Repository
+import inspect
 
 class GithubTool:
     def __init__(self, access_token: str, repo_name: str):
@@ -11,42 +11,46 @@ class GithubTool:
             raise ValueError("Repository name cannot be None")
 
         try:
-            self.g = Github(access_token)
-            self.repo = self.g.get_repo(repo_name)
+            self.github = Github(access_token)
+            self.repo = self.github.get_repo(repo_name)
         except Exception as e:
-            print(f"Failed to get repository: {e}")
-            self.repo = None
+            print(f"Failed to initialize GitHub connection: {e}")
+            raise
 
-        if self.repo is None:
-            raise Exception(f"Could not access repository {repo_name} with provided token.")
-            print(f"Could not access repository {repo_name} with provided token.")
+        print(f"GitHub connected to {self.repo.full_name} successfully")
 
-        print(f"github connected to {self.repo} success")
+        self.tools: Dict[str, Dict[str, Any]] = {}
+        self._generate_tools()
 
-    async def ls(self, path: str = '') -> list:
-        """List the contents of a directory in the repository"""
-        return self.repo.ls(path)
+    def _generate_tools(self):
+        for name, method in inspect.getmembers(self.repo, predicate=inspect.ismethod):
+            if not name.startswith('_'):  # Exclude private methods
+                docstring = inspect.getdoc(method) or "No description available."
+                signature = inspect.signature(method)
+                
+                parameters = []
+                for param_name, param in signature.parameters.items():
+                    if param_name != 'self':
+                        param_desc = {
+                            "name": param_name,
+                            "type": str(param.annotation) if param.annotation != inspect.Parameter.empty else "Any",
+                            "default": str(param.default) if param.default != inspect.Parameter.empty else None,
+                        }
+                        parameters.append(param_desc)
 
-    async def get_readme(self, path: str = '') -> Optional[str]:
-        """Get the README file of the repository"""
-        return self.repo.get_readme(path)
+                self.tools[name] = {
+                    "method": method,
+                    "description": docstring,
+                    "parameters": parameters
+                }
 
-    async def read_file(self, file_path: str) -> Optional[str]:
-        """Read the contents of a file in the repository"""
-        return self.repo.read_file(file_path)
+    def get_tool_descriptions(self):
+        return {name: {"description": info["description"], "parameters": info["parameters"]} 
+                for name, info in self.tools.items()}
 
-    async def create_branch(self, branch_name: str) -> str:
-        """Create a new branch in the repository"""
-        return self.repo.create_branch(branch_name)
-
-    async def commit_file_changes(self, file_path: str, commit_message: str, file_content: str) -> Optional[str]:
-        """Commit changes to a file in the repository"""
-        return self.repo.commit_file_changes(file_path, commit_message, file_content)
-
-    async def create_pull_request(self, branch_name: str, title: str, body: str = '') -> Optional[str]:
-        """Create a pull request in the repository"""
-        return self.repo.create_pull_request(branch_name, title, body)
-
-    async def clone(self, path: str) -> Optional[str]:
-        """Clone the repository to the specified path"""
-        return self.repo.clone(path)
+    async def __call__(self, method_name: str, arguments: Dict[str, Any]) -> Any:
+        if method_name not in self.tools:
+            raise ValueError(f"Method '{method_name}' not found.")
+        
+        method = self.tools[method_name]["method"]
+        return method(**arguments)
