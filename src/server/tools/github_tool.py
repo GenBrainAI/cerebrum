@@ -2,14 +2,10 @@ from typing import Optional, Any, Dict
 from github import Github
 from github.Repository import Repository
 import inspect
+from .base_class_tool import BaseClassTool
 
-class GithubTool:
+class GithubTool(BaseClassTool):
     def __init__(self, access_token: str, repo_name: str):
-        if access_token is None:
-            raise ValueError("Access token cannot be None")
-        if repo_name is None:
-            raise ValueError("Repository name cannot be None")
-
         try:
             self.github = Github(access_token)
             self.repo = self.github.get_repo(repo_name)

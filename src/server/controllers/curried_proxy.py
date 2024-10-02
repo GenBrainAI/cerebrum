@@ -7,10 +7,11 @@ from typing import Dict, Any, List, Callable, Union
 from crewai_tools import BaseTool
 from pydantic import BaseModel, Field
 from src.server.models.toolset import Tool
-from src.server.models.function import Function, ServerInfo
+from src.server.models.function import Function
 from src.server.models.toolset_credentials import ToolsetCredentials
 from src.server.models.function import ResolvedSchema
 import inspect
+from ..tools.base_class_tool import BaseClassTool
 
 
 class PythonFunctionTool(BaseModel):
@@ -48,10 +49,12 @@ class CurriedProxy(BaseModel):
     async def multiset_proxy(self, name: str, arguments: Dict[str, Any]) -> Any:
         tool = self.tools_dict[name]
         try:
-            if isinstance(tool, PythonFunctionTool):
-                return await self._call_python_function(tool.function, arguments)
-            elif hasattr(tool, '__call__'):
+            if isinstance(tool, BaseClassTool):
                 return await tool(arguments.get('method'), arguments.get('arguments', {}))
+            elif isinstance(tool, PythonFunctionTool):
+                return await self._call_python_function(tool.function, arguments)
+            elif callable(tool):
+                return await tool(**arguments)
             else:
                 raise ValueError(f"Tool '{name}' is not callable.")
         except Exception as e:
@@ -115,23 +118,14 @@ class CurriedProxy(BaseModel):
     def curried_proxy(self, name: str):
         return partial(self.multiset_proxy, name)
 
-    def add_tool(self, name: str, tool: Union[Tool, Callable, object]):
+    def add_tool(self, name: str, tool: Union[BaseClassTool, Callable, object]):
         safe_name = self.generate_safe_name(name)
-        if isinstance(tool, Tool):
+        if isinstance(tool, BaseClassTool):
             self.tools_dict[safe_name] = tool
         elif callable(tool):
             self.tools_dict[safe_name] = PythonFunctionTool(name=safe_name, function=tool, description=tool.__doc__ or "")
         else:
             self.tools_dict[safe_name] = tool
-        # elif isinstance(tool, object):
-        #     for method_name, method in inspect.getmembers(tool, predicate=inspect.ismethod):
-        #         if not method_name.startswith('_'):
-        #             full_name = f"{safe_name}.{method_name}"
-        #             self.tools_dict[full_name] = PythonFunctionTool(
-        #                 name=full_name,
-        #                 function=method,
-        #                 description=method.__doc__ or ""
-        #             )
 
     def remove_tool(self, name: str):
         self.tools_dict.pop(name, None)

@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 from src.server.controllers.curried_proxy import CurriedProxy
 from src.server.tools.github_tool import GithubTool
 from datetime import datetime
@@ -6,6 +7,8 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
+
+@pytest.mark.asyncio
 async def test_github_tool(client: TestClient):
     # Load environment variables
     env_path = Path(__file__).parents[1] / '.env'
@@ -21,14 +24,17 @@ async def test_github_tool(client: TestClient):
 
     # Get tool descriptions (for LLM use)
     tool_descriptions = github_tool.get_tool_descriptions()
-    print("Available GitHub tools:", list(tool_descriptions.keys()))
+    assert "get_contents" in tool_descriptions, "Tool descriptions should include 'get_contents'"
 
     # Get README content
     readme_content = await curried_proxy.curried_proxy("github")({
         "method": "get_contents",
         "arguments": {"path": "README.md"}
     })
-    assert readme_content is not None, "Failed to read README.md"
+    # readme_content.decoded_content is a bytes object, so we need to decode it to a string
+    readme_content = readme_content.decoded_content.decode()
+    assert isinstance(readme_content, str), f"Unexpected response type: {type(readme_content)}"
+    assert "GenBrain.ai" in readme_content, "README content doesn't contain expected text"
 
     # Update README content
     current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -62,5 +68,3 @@ async def test_github_tool(client: TestClient):
 
     print(f"Successfully closed pull request: {pr_result.number}")
 
-# Run the test
-# test_github_tool(TestClient())

@@ -4,18 +4,13 @@ import json
 import logging
 import os
 import google.generativeai as genai
-from google.oauth2 import service_account
-from google.auth.transport.requests import Request
 from typing import List, Dict, Any
 from openai import AsyncOpenAI
 from anthropic import AsyncAnthropic
-from groq import AsyncGroq
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
-from groq import AsyncGroq
 import google.generativeai as genai
 from google.generativeai.types import FunctionDeclaration
 
@@ -29,8 +24,6 @@ from langchain.schema import (
 )
 
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..models.function import Function, ResolvedSchema
-from ..models.toolset import Tool
 from ..controllers.curried_proxy import CurriedProxy
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
