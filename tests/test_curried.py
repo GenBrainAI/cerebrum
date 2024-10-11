@@ -11,7 +11,7 @@ from src.server.persistence.persistence_model_factory import PersistenceModelFac
 pytestmark = pytest.mark.asyncio
 
 
-class MockGithubTool:
+class MockGitHubTool:
     async def ls(self, path: str = '') -> list:
         return ['file1.txt', 'file2.py']
 
@@ -154,7 +154,7 @@ async def test_add_and_use_function_tool(curried_proxy):
 
 
 async def test_add_and_use_class_methods(curried_proxy):
-    github_tool = MockGithubTool()
+    github_tool = MockGitHubTool()
     curried_proxy.add_tool("github", github_tool)
 
     ls_result = await curried_proxy.curried_proxy("githubls")({})
@@ -172,7 +172,7 @@ async def test_persistence_integration():
     created_proxy = persistence_model.curried_proxies.create(curried_proxy)
 
     created_proxy.add_tool("fibonacci", fibonacci)
-    github_tool = MockGithubTool()
+    github_tool = MockGitHubTool()
     created_proxy.add_tool("github", github_tool)
 
     persistence_model.curried_proxies.update(str(created_proxy.id), created_proxy)
@@ -228,7 +228,7 @@ async def test_export_to_crewai(curried_proxy, mock_tool):
 def test_list_tools(curried_proxy, mock_tool):
     curried_proxy.add_tool("mock_api", mock_tool)
     curried_proxy.add_tool("fibonacci", fibonacci)
-    github_tool = MockGithubTool()
+    github_tool = MockGitHubTool()
     curried_proxy.add_tool("github", github_tool)
 
     tool_list = curried_proxy.list_tools()

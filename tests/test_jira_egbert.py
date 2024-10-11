@@ -18,7 +18,7 @@
 #             "class_tools": [],
 #             "tools": [
 #                 {"name": "save_file", "description": "Tool for storing files"},
-#                 {"name": "GithubTool", "description": "Tool for storing files"},
+#                 {"name": "GitHubTool", "description": "Tool for storing files"},
 #             ],
 #         }
 #     ],

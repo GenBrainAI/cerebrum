@@ -10,7 +10,7 @@ from langchain.tools import BaseTool as LangChainBaseTool
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
 from ..tools.file_tool import FileTool
-from ..tools.github_tool import GithubTool
+from ..tools.github_tool import GitHubTool
 from ..controllers.curried_proxy import CurriedProxy
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
@@ -23,7 +23,7 @@ TOOLS = {
         file_path='job_description_example.md',
         description='A tool to read the job description example file.'
     ),
-    "GithubTool": GithubTool(
+    "GitHubTool": GitHubTool(
         access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
         repo_name=os.getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
     ),
@@ -50,7 +50,7 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy):
 
         # Get class tools
         for tool in tools:
-            if isinstance(tool, GithubTool):
+            if isinstance(tool, GitHubTool):
                 tools.remove(tool)
                 for attr_name in dir(tool):
                     attr = getattr(tool, attr_name)
