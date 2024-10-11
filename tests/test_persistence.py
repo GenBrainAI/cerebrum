@@ -1,12 +1,26 @@
 import pytest
-from src.server.main import app
 from starlette.testclient import TestClient
+from src.server.main import app
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.models.persistence_models import StorageLocation, StorageType
 from src.server.utils.task_utils import find_file
 
-client = TestClient(app)
 
-def test_create_entities_and_serialize_deserialize():
+@pytest.fixture(autouse=True)
+def clean_persistence_model():
+    # Reset the persistence model before each test
+    PersistenceModelFactory._instance = None
+    yield
+    # Clean up after the test
+    PersistenceModelFactory._instance = None
+
+@pytest.fixture
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_create_entities_and_serialize_deserialize(client):
     # Define where the state will be saved (local file system for simplicity)
     local_storage = StorageLocation(type=StorageType.file, location="/tmp", state_name="test_state.json")
 
