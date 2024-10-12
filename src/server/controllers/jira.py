@@ -1,12 +1,12 @@
-from crewai_tools import BaseTool
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import requests
 from requests.auth import HTTPBasicAuth
 import json
-import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
-from typing import List, Optional, Any
+from ..persistence.persistence_model_factory import PersistenceModelFactory
+
+persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
 app = FastAPI(
     title="Jira Ticket Fetcher API",
@@ -148,9 +148,3 @@ def delete_jira_config(handler_id: str):
 @app.get("/jira/configurations", tags=["Configuration"], summary="Get All Jira Configurations")
 def get_jira_configurations():
     return persistence_model.jira_ticket_handler.read_all()
-
-# if __name__ == "__main__":
-#     # Load all saved Jira configurations and start their schedulers
-    
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)

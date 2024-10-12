@@ -5,10 +5,7 @@
 # from src.server.models.message import Message
 
 # request_data = {
-#     "company_description": "File creator",
-#     "company_domain": "files.com",
-#     "hiring_needs": "We are looking for someone who can store an create files",
-#     "specific_benefits": "Remote work, flexible hours, stock options",
+#     "description": "File creator",
 #     "agents": [
 #         {
 #             "role": "File maker",

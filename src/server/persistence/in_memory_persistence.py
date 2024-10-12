@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from .in_memory_crud import InMemoryCrud, CrewAIConfigCrud, ToolCrud, ToolsetCrud,\
                              TasksManagerCrud, TaskCrud, MessageCrud, CurriedProxyCrud
 from .persistence_model import PersistenceModelBase
-
+from typing import Dict
 class InMemoryPersistenceModel(PersistenceModelBase):
     def __init__(self):
         super(InMemoryPersistenceModel, self).__init__()

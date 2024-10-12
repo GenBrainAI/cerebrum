@@ -893,18 +893,9 @@ components:
     CreateCrewRequest:
       type: object
       properties:
-        company_description:
+        description:
           type: string
-          description: A description of the company.
-        company_domain:
-          type: string
-          description: The domain of the company.
-        hiring_needs:
-          type: string
-          description: The hiring needs of the company.
-        specific_benefits:
-          type: string
-          description: Specific benefits offered by the company.
+          description: A description of the crew.
         agents:
           type: array
           items:

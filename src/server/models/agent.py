@@ -31,10 +31,7 @@ class TaskModel(BaseModel):
 
 
 class CreateCrewRequest(BaseModel):
-    company_description: str
-    company_domain: str
-    hiring_needs: str
-    specific_benefits: str
+    description: str
     agents: List[AgentModel]
     tasks: List[TaskModel]
 

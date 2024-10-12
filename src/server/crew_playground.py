@@ -22,10 +22,7 @@ def save_crew():
         )
     }
     request_data = {
-        "company_description": "A tech company specializing in AI solutions.",
-        "company_domain": "ai-tech.com",
-        "hiring_needs": "Senior AI Engineer",
-        "specific_benefits": "Remote work, flexible hours, stock options",
+        "description": "A tech company specializing in AI solutions.",
         "agents": [
             {
                 "role": "Research Analyst",
