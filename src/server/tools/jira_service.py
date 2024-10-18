@@ -1,6 +1,6 @@
 import requests
 from requests.auth import HTTPBasicAuth
-from typing import List, Dict
+from typing import List, Dict, Any
 
 class JiraService:
     def __init__(self, jira_url: str, username: str, api_token: str):
@@ -37,3 +37,11 @@ class JiraService:
                 response.raise_for_status()
                 return True
         return False
+    
+    def fetch_ticket_details(self, ticket_id: str) -> Dict[str, Any]:
+        """Fetch details of a specific Jira ticket."""
+        url = f"{self.base_url}/rest/api/2/issue/{ticket_id}"
+        response = requests.get(url, auth=self.auth)
+        response.raise_for_status()
+        data = response.json()
+        return data
