@@ -10,11 +10,26 @@ from typing import List, Optional
 from pydantic import BaseModel
 from pydantic import Field
 
+class ToolSpec(BaseModel):
+    name: str
+    type: str = "function"
+
+class ToolsetSpec(BaseModel):
+    id: str
+    name: str
+
+class ObjectToolSpec(BaseModel):
+    name: str
+    object_type: str  # e.g., "github_tool"
+
+class ToolsProxyCollection(BaseModel):
+    toolsets: List[ToolsetSpec] = Field(default_factory=list)
+    functions: List[ToolSpec] = Field(default_factory=list)
+    objects: List[ObjectToolSpec] = Field(default_factory=list)
 
 class ToolModel(BaseModel):
     name: str
     description: str
-
 
 class AgentModel(BaseModel):
     role: str
@@ -34,6 +49,7 @@ class CreateCrewRequest(BaseModel):
     description: str
     agents: List[AgentModel]
     tasks: List[TaskModel]
+    tools_proxy_collection: Optional[ToolsProxyCollection] = None
 
 
 class CrewAIConfig(BaseModel):
