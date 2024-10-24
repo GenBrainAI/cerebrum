@@ -1,0 +1,7 @@
+microservices:
+  auth-service:
+    repository: GenBrainAI/auth-service
+    terraform_path: terraform/network-policies.tf
+  user-service:
+    repository: GenBrainAI/user-service
+    terraform_path: terraform/network-policies.tf
