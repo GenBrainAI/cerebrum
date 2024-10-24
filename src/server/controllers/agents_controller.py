@@ -16,6 +16,7 @@ from ..tools.github_tool import GitHubTool
 from ..controllers.curried_proxy import CurriedProxy
 from ..tools.github_tool import GitHubTool
 from ..tools.jira_tool import JiraTool
+from ..tools.microservices_tool import MicroservicesTool
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 load_dotenv()
@@ -31,7 +32,8 @@ TOOLS = {
         access_token=os.getenv("GITHUB_ACCESS_TOKEN"),
         repo_name=os.getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
     ),
-    "save_file": FileTool()
+    "save_file": FileTool(),
+    "microservices_tool": MicroservicesTool()
 }
 
 
