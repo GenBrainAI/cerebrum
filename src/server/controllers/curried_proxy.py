@@ -6,10 +6,10 @@ from uuid import UUID, uuid4
 from typing import Dict, Any, List, Callable, Union
 from crewai_tools import BaseTool
 from pydantic import BaseModel, Field
-from src.server.models.toolset import Tool
-from src.server.models.function import Function, ServerInfo
-from src.server.models.toolset_credentials import ToolsetCredentials
-from src.server.models.function import ResolvedSchema
+from ..models.toolset import Tool
+from ..models.function import Function, ServerInfo
+from ..models.toolset_credentials import ToolsetCredentials
+from ..models.function import ResolvedSchema
 import inspect
 
 

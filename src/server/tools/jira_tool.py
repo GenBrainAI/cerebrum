@@ -18,3 +18,10 @@ def fetch_jira_tickets(project_key: str = "CER"):
     
     # Transform tickets to match the expected format
     return [{'fields': {'summary': ticket.get('fields', {}).get('summary', '')}} for ticket in tickets]
+
+class JiraTool:
+    name: str = "JiraTool"
+    description: str = "A tool to fetch Jira tickets"
+
+    def _run(self, project_key: str = "CER"):
+        return fetch_jira_tickets(project_key)
