@@ -1,3 +1,4 @@
+from typing import List
 from ..persistence.persistence_model import PersistenceModelBase
 from .operator import ToolsOperator
 from ..models.message import Message
@@ -8,7 +9,7 @@ class TaskRunner:
         self.persistence_model = persistence_model
         self.operator = ToolsOperator()
 
-    async def completion(self, tasksmanager_id: str, task_id: str, messages: [Message], model: str = None) -> str:
+    async def completion(self, tasksmanager_id: str, task_id: str, messages: List[Message], model: str = None) -> str:
         tasksmanager = self.persistence_model.tasksmanagers.read(tasksmanager_id)
         if not tasksmanager:
             raise ValueError("tasksmanager not found")

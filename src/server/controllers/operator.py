@@ -18,7 +18,7 @@ from langchain_core.runnables import RunnablePassthrough
 from groq import AsyncGroq
 import google.generativeai as genai
 from google.generativeai.types import FunctionDeclaration
-
+import re
 
 from fastapi import HTTPException
 from langchain.schema import (
@@ -47,7 +47,7 @@ class ToolsOperator:
             self.client = AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         elif self.api_provider == "gemini":
             genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
-            self.client = genai.GenerativeModel('gemini-1.5-pro-001')
+            self.client = genai.GenerativeModel('gemini-1.5-pro')
         elif self.api_provider == "groq":
             from groq import AsyncGroq
             self.client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -260,17 +260,17 @@ class ToolsOperator:
             functions = [tool['function'] for tool in tools] if tools else None
 
             response = await self.client.chat.completions.create(
-                model="llama3-8b-8192",  # Groq's Llama3-8b-8192 model
+                model=model or "llama3-8b-8192",  # Groq's Llama3-8b-8192 model
                 messages=groq_messages,
                 functions=functions
             )
 
-            return await self._process_llm_response(response, curried_proxy)
+            return await self._process_llm_response(response, curried_proxy, groq_messages)
         except Exception as e:
             logging.error(f"Error in Groq completion: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    async def _process_llm_response(self, response, curried_proxy):
+    async def _process_llm_response(self, response, curried_proxy, messages):
         choice = response.choices[0]
         message = choice.message
 
