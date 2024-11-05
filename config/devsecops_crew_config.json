@@ -1,0 +1,96 @@
+{
+  "description": "A crew for implementing microservice communication changes in terraform configurations",
+  "agents": [
+      {
+          "role": "Infrastructure Analyzer",
+          "goal": "Analyze the required communication changes and determine terraform modifications",
+          "backstory": "You are an expert in Kubernetes networking and terraform configurations who understands microservices communication patterns.",
+          "tools": [
+              {"name": "get_microservice_repo", "description": "Get the GitHub repository for a microservice"},
+              {"name": "get_terraform_path", "description": "Get terraform configuration path for a microservice"},
+              {"name": "github_get_file_contents", "description": "Get terraform configuration from GitHub"}
+          ]
+      },
+      {
+          "role": "Terraform Engineer",
+          "goal": "Implement the required terraform changes for network policies",
+          "backstory": "You are a skilled terraform engineer specializing in Kubernetes network policies and security.",
+          "tools": [
+              {"name": "github_create_branch", "description": "Create a new branch in GitHub"},
+              {"name": "github_get_file_contents", "description": "Get current terraform configuration"},
+              {"name": "github_update_file", "description": "Update terraform configuration"},
+              {"name": "terraform_tool.analyze", "description": "Analyze terraform configuration"},
+              {"name": "terraform_tool.modify_network_policy", "description": "Modify network policies"}
+          ]
+      },
+      {
+          "role": "Code Reviewer",
+          "goal": "Review terraform changes, create PR, and update ticket",
+          "backstory": "You are a senior infrastructure reviewer focused on security and best practices.",
+          "tools": [
+              {"name": "github_create_pull_request", "description": "Create a GitHub pull request"},
+              {"name": "jira_update_ticket_status", "description": "Update Jira ticket status"}
+          ]
+      }
+  ],
+  "tasks": [
+      {
+          "description": "Analyze microservices communication and get current terraform config. Input: {source_service}, {target_service}, {communication_type}",
+          "expected_output": "JSON containing current terraform config and required changes for network policies",
+          "agent_role": "Infrastructure Analyzer"
+      },
+      {
+          "description": "Create feature branch and implement terraform changes",
+          "expected_output": "JSON containing branch name and modified terraform configuration",
+          "agent_role": "Terraform Engineer"
+      },
+      {
+          "description": "Review changes, create PR, and update Jira ticket",
+          "expected_output": "JSON containing PR URL and ticket update status",
+          "agent_role": "Code Reviewer"
+      }
+  ],
+  "tools_proxy_collection": {
+      "toolsets": [],
+      "functions": [
+          {"name": "get_microservice_repo", "type": "function"}
+      ],
+      "objects": [
+          {
+              "name": "github_tool",
+              "object_type": "github_tool",
+              "methods": [
+                  "create_branch",
+                  "get_file_contents",
+                  "update_file",
+                  "create_pull_request"
+              ]
+          },
+          {
+              "name": "terraform_tool",
+              "object_type": "terraform_tool",
+              "methods": [
+                  "analyze",
+                  "modify_network_policy"
+              ]
+          },
+          {
+              "name": "jira_tool",
+              "object_type": "jira_tool",
+              "methods": [
+                  "update_ticket_status"
+              ]
+          },
+          {
+              "name": "microservices_tool",
+              "object_type": "microservices_tool",
+              "methods": [
+                  "get_repository",
+                  "get_terraform_path",
+                  "list_microservices",
+                  "add_microservice"
+              ]
+          }
+      ]
+  }
+}

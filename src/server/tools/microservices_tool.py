@@ -31,6 +31,10 @@ class MicroservicesTool:
                 'user-service': {
                     'repository': 'GenBrainAI/user-service',
                     'terraform_path': 'terraform/network-policies.tf'
+                },
+                'payment-service': {
+                    'repository': 'GenBrainAI/payment-service',
+                    'terraform_path': 'terraform/network-policies.tf'
                 }
             }
         }
