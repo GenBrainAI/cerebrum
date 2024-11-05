@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from ..models.agent import CreateCrewRequest, CrewAIConfig
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..controllers.agents_controller import create_crew, run_crewai
+from ..controllers.agents_controller import create_crew
 from ..controllers.curried_proxy import CurriedProxy
 from ..tools.tool_factory import ToolFactory
 
