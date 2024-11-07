@@ -64,7 +64,7 @@
             "run",
             "src/chat.py",
             "--server.port",
-            "8501"
+            "8001"
         ],
         "justMyCode": true
     },
@@ -78,8 +78,5 @@
         },
         "justMyCode": false
     }
-
-
-         
   ]
 }
