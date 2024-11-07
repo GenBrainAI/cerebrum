@@ -163,16 +163,22 @@ class ToolsOperator:
         return [{"role": "user" if msg.role == "user" else "assistant", "content": msg.content} for msg in messages]
 
     def _messages_to_openai(self, messages):
-        openai_messages = []
-        for message in messages:
-            openai_messages.append(
+        try:
+            openai_messages = []
+            for message in messages:
+                openai_messages.append(
                 {
                     "role": message.role,
                     "content": message.content,
                 }
             )
 
-        return openai_messages
+            return openai_messages
+        except Exception as e:
+            logging.error(f"Error in OpenAI messages conversion: {e}")
+            #print the message dictionary
+            print(messages)
+            raise HTTPException(status_code=500, detail=str(e))
 
     async def _langchain_completion(self, model: str, messages: List[Dict[str, Any]], curried_proxy: CurriedProxy) -> str:
         try:
