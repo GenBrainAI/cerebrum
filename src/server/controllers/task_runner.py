@@ -8,6 +8,8 @@ from ..persistence.persistence_model import PersistenceModelBase
 from ..controllers.operator import ToolsOperator
 from ..controllers.curried_proxy import CurriedProxy
 from .crew_runner import run_crew_task
+from ..models.task import Task
+from ..models.tasks_manager import TasksManager
 
 class TaskRunner:
     def __init__(self, persistence_model: PersistenceModelBase):
@@ -24,7 +26,7 @@ class TaskRunner:
                     if tool:
                         curried_proxy.add_tool(f"{toolset.name}_{tool.function.name}", tool)
 
-    def _get_or_create_curried_proxy(self, task: Any, tasksmanager: Any) -> CurriedProxy:
+    def _get_or_create_curried_proxy(self, task: Task, tasksmanager: TasksManager) -> CurriedProxy:
         """Get existing curried proxy or create a new one with tools."""
         curried_proxy = None
         if task.curried_proxy_id:
@@ -33,10 +35,19 @@ class TaskRunner:
         if not curried_proxy:
             curried_proxy = CurriedProxy()
             
-        # Add tools from both tasksmanager and task using simple addition
-        self._add_tools_to_proxy(curried_proxy, tasksmanager.toolsets + task.toolsets)
+        # Handle None values by defaulting to empty lists
+        tasksmanager_toolsets = getattr(tasksmanager, 'toolsets', []) or []
+        task_toolsets = getattr(task, 'toolsets', []) or []
+        
+        # Add tools from both tasksmanager and task
+        self._add_tools_to_proxy(curried_proxy, tasksmanager_toolsets + task_toolsets)
                 
         return curried_proxy
+
+    async def debug_run_task(self, tasksmanager_id: str, task_id: str, running_extra_params: Optional[Dict] = None) -> Dict:
+
+        print(f"Running task {task_id} with tasksmanager {tasksmanager_id} and running_extra_params {running_extra_params}")
+        return {"response": "test"}
 
     async def run_task(self, tasksmanager_id: str, task_id: str, running_extra_params: Optional[Dict] = None) -> Dict:
         """Unified method to run a task, handling both CrewAI and standard tasks."""

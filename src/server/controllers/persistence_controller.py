@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
+from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
 from typing import Optional, Any
 from enum import Enum
@@ -7,6 +8,8 @@ import json
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..models.persistence_models import StorageLocation, StorageType
 
+# Add near the top of the file, after the imports
+s3_client = boto3.client('s3')
 
 def save_to_storage(location: StorageLocation) -> str:
     persistence_model = PersistenceModelFactory.persistence_model("inmemory")

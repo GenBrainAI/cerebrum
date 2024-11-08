@@ -40,3 +40,6 @@ google-auth-oauthlib
 google-auth-httplib2
 groq
 langchain-anthropic
+streamlit
+typing-extensions
+python-jose

@@ -54,8 +54,29 @@
         "env": {
             "PYTHONPATH": "${workspaceFolder}/src"
         }
+    },
+    {
+        "name": "Python: Streamlit",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "streamlit",
+        "args": [
+            "run",
+            "src/chat.py",
+            "--server.port",
+            "8001"
+        ],
+        "justMyCode": true
+    },
+    {
+        "name": "Python: Attach to Streamlit",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": {
+            "host": "localhost",
+            "port": 5678
+        },
+        "justMyCode": false
     }
-
-         
   ]
 }
