@@ -3,14 +3,16 @@ from functools import partial
 import inspect
 import httpx
 from uuid import UUID, uuid4
-from typing import Dict, Any, List, Callable, Union
+from typing import Dict, Any, List, Callable, Union, Optional
 from crewai_tools import BaseTool
 from pydantic import BaseModel, Field
 from ..models.toolset import Tool
 from ..models.function import Function, ServerInfo
 from ..models.toolset_credentials import ToolsetCredentials
 from ..models.function import ResolvedSchema
+from ..models.curried_proxy_info import ToolInfo, CurriedProxyInfo
 import inspect
+
 
 
 class PythonFunctionTool(BaseTool):
@@ -26,13 +28,95 @@ class CurriedProxy(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tools_dict: Dict[str, Union[Tool, PythonFunctionTool]] = Field(default_factory=dict)
     name_counter: Dict[str, int] = Field(default_factory=dict)
+    info: Optional[CurriedProxyInfo] = None
 
     class Config:
         arbitrary_types_allowed = True
 
+    def to_info(self) -> CurriedProxyInfo:
+        """Convert current CurriedProxy to CurriedProxyInfo"""
+        tools = []
+        for name, tool in self.tools_dict.items():
+            if isinstance(tool, Tool):
+                tool_info = ToolInfo(
+                    name=name,
+                    type='tool',
+                    tool_data=tool.dict()
+                )
+            else:  # PythonFunctionTool
+                # Get the class info if it's a method
+                if hasattr(tool.function, '__self__'):
+                    tool_info = ToolInfo(
+                        name=name,
+                        type='function',
+                        tool_data={
+                            'name': tool.name,
+                            'description': tool.description,
+                            'function_module': tool.function.__self__.__class__.__module__,
+                            'function_name': tool.function.__name__,
+                            'class_name': tool.function.__self__.__class__.__name__,
+                            'is_method': True
+                        }
+                    )
+                else:
+                    tool_info = ToolInfo(
+                        name=name,
+                        type='function',
+                        tool_data={
+                            'name': tool.name,
+                            'description': tool.description,
+                            'function_module': tool.function.__module__,
+                            'function_name': tool.function.__name__,
+                            'is_method': False
+                        }
+                    )
+            tools.append(tool_info)
+            
+        return CurriedProxyInfo(
+            id=self.id,
+            tools=tools,
+            name_counter=self.name_counter
+        )
+
+    @classmethod
+    def from_info(cls, info: CurriedProxyInfo) -> 'CurriedProxy':
+        """Construct CurriedProxy from CurriedProxyInfo"""
+        from importlib import import_module
+        
+        proxy = cls(id=info.id)
+        proxy.name_counter = info.name_counter
+        proxy.info = info
+        
+        for tool_info in info.tools:
+            if tool_info.type == 'tool':
+                # Reconstruct Tool instance
+                tool = Tool(**tool_info.tool_data)
+                proxy.tools_dict[tool_info.name] = tool
+            else:
+                # Reconstruct PythonFunctionTool
+                module = import_module(tool_info.tool_data['function_module'])
+                
+                if tool_info.tool_data.get('is_method', False):
+                    # Get the class and create an instance
+                    class_name = tool_info.tool_data['class_name']
+                    class_ = getattr(module, class_name)
+                    instance = class_()
+                    function = getattr(instance, tool_info.tool_data['function_name'])
+                else:
+                    # Regular function
+                    function = getattr(module, tool_info.tool_data['function_name'])
+                
+                tool = PythonFunctionTool(
+                    name=tool_info.tool_data['name'],
+                    description=tool_info.tool_data['description'],
+                    function=function
+                )
+                proxy.tools_dict[tool_info.name] = tool
+                
+        return proxy
     def generate_safe_name(self, original_name: str) -> str:
-        # Remove non-alphanumeric characters and replace spaces with underscores
-        safe_name = re.sub(r'[^\w\s-]', '', original_name).strip().replace(' ', '_')
+        # Remove non-alphanumeric characters (except dots) and replace spaces with underscores
+        safe_name = re.sub(r'[^\w\s\.-]', '', original_name).strip().replace(' ', '_')
 
         # Ensure the name starts with a letter or underscore
         if not safe_name[0].isalpha() and safe_name[0] != '_':
@@ -49,7 +133,23 @@ class CurriedProxy(BaseModel):
         return safe_name
 
     async def multiset_proxy(self, name: str, arguments: Dict[str, Any]) -> Any:
-        tool = self.tools_dict[name]
+        # Extract class name and method name if present
+        name_parts = name.split('.')
+        if len(name_parts) == 2:
+            # If the name includes class prefix, use it
+            lookup_name = name
+        else:
+            # Try to find the tool by just the method name
+            lookup_name = name
+
+        tool = self.tools_dict.get(lookup_name)
+        if tool is None and len(name_parts) == 2:
+            # Try without class prefix as fallback
+            tool = self.tools_dict.get(name_parts[1])
+            
+        if tool is None:
+            raise ValueError(f"Tool not found: {name}")
+
         try:
             if isinstance(tool, PythonFunctionTool):
                 return await self._call_python_function(tool.function, arguments)
@@ -59,6 +159,7 @@ class CurriedProxy(BaseModel):
                 raise ValueError(f"Unknown tool type for {name}")
         except Exception as e:
             return {"error": str(e)}
+
 
     async def _call_python_function(self, func: Callable, arguments: Dict[str, Any]) -> Any:
         if inspect.iscoroutinefunction(func):
@@ -119,16 +220,19 @@ class CurriedProxy(BaseModel):
         return partial(self.multiset_proxy, name)
 
     def add_tool(self, name: str, tool: Union[Tool, Callable, object]):
-        safe_name = self.generate_safe_name(name)
         if isinstance(tool, Tool):
+            safe_name = self.generate_safe_name(name)
             self.tools_dict[safe_name] = tool
         elif callable(tool):
+            safe_name = self.generate_safe_name(name)
             self.tools_dict[safe_name] = PythonFunctionTool(name=safe_name, function=tool,
-                                                            description=tool.__doc__ or "")
+                                                          description=tool.__doc__ or "")
         elif isinstance(tool, object):
+            class_name = tool.__class__.__name__
             for method_name, method in inspect.getmembers(tool, predicate=inspect.ismethod):
                 if not method_name.startswith('_'):
-                    full_name = self.generate_safe_name(f"{name}.{method_name}")
+                    # Create fully qualified method name with class name
+                    full_name = self.generate_safe_name(f"{class_name}.{method_name}")
                     self.tools_dict[full_name] = PythonFunctionTool(
                         name=full_name,
                         function=method,

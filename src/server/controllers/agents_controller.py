@@ -5,6 +5,9 @@ from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from langchain.tools import BaseTool as LangChainBaseTool
 from crewai_tools import BaseTool
+from langchain_community.llms import Ollama
+from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
@@ -32,7 +35,19 @@ TOOLS = {
     "microservices_tool": MicroservicesTool()
 }
 
+
+class CrewLLM:
+    def __init__(self):
+        self.OpenAIGPT35 = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.7)
+        self.OpenAIGPT4 = ChatOpenAI(model_name="gpt-4", temperature=0.7)
+        self.Ollama = Ollama(model="llama3.2:latest")
+        # self.AzureChatOpenAI35 = AzureChatOpenAI(
+        #     openai_api_version=os.environ.get("AZURE_OPENAI_VERSION", "api-version=2024-10-21"),
+        #     azure_deployment=os.environ.get("AZURE_OPENAI_DEPLOYMENT", "o1-mini"))
+
+
 async def create_crew(request: CreateCrewRequest, curried_proxy) -> Crew:
+    llm = CrewLLM()
     """Create a CrewAI crew from the given configuration."""
     try:
         agents = []
@@ -51,7 +66,8 @@ async def create_crew(request: CreateCrewRequest, curried_proxy) -> Crew:
                 goal=agent_data.goal,
                 backstory=agent_data.backstory,
                 tools=agent_tools,
-                verbose=True
+                verbose=True,
+                llm=llm.OpenAIGPT4
             )
             agents.append(agent)
 

@@ -1,4 +1,7 @@
 openai
+langchain
+langchain_community
+langchain-anthropic
 prance
 pydantic
 pydantic[email]
@@ -39,7 +42,6 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 groq
-langchain-anthropic
 streamlit
 typing-extensions
 python-jose
