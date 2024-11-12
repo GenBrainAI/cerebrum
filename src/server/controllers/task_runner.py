@@ -80,26 +80,37 @@ class TaskRunner:
             logging.error(f"Error running task {task_id}: {str(e)}", exc_info=True)
             raise
 
+# src/server/controllers/task_runner.py
+
     async def _run_standard_task(self, task: Any, tasksmanager: Any, running_extra_params: Optional[Dict] = None) -> Dict:
         """Execute a task using standard completion with tool support."""
         try:
             # Get or create curried proxy with tools
             curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
             
-            # Convert running_extra_params to messages if provided
-            messages = []
+            # Initialize message list with system messages
+            messages = task.get_system_messages()
+
+            # Handle running_extra_params
             if running_extra_params:
+                # Handle messages if present
                 if 'messages' in running_extra_params:
-                    messages.extend(running_extra_params['messages'])
-                else:
-                    # Convert parameters to a message
-                    content = "\n".join([f"{k}: {v}" for k, v in running_extra_params.items()])
+                    input_messages = running_extra_params['messages']
+                    # Convert each message to Message object if it's not already
+                    for msg in input_messages:
+                        if isinstance(msg, Message):
+                            messages.append(msg)
+                        elif isinstance(msg, dict):
+                            messages.append(Message(**msg))
+                        else:
+                            raise ValueError(f"Invalid message format: {msg}")
+
+                # Handle other parameters by converting them to a message
+                other_params = {k: v for k, v in running_extra_params.items() if k != 'messages'}
+                if other_params:
+                    content = "\n".join([f"{k}: {v}" for k, v in other_params.items()])
                     messages.append(Message(role="user", content=content))
-            
-            # Add existing task messages if any
-            if task.messages:
-                messages = task.messages + messages
-            
+
             # Run completion with tools
             response = await self.completion(
                 tasksmanager_id=tasksmanager.id,
@@ -113,8 +124,8 @@ class TaskRunner:
 
         except Exception as e:
             logging.error(f"Error running standard task: {str(e)}", exc_info=True)
-            raise
-
+            raise    
+    
     async def completion(
         self, 
         tasksmanager_id: str, 

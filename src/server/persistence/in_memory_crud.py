@@ -10,6 +10,7 @@ from ..models.task import Task
 from ..models.message import Message
 from ..models.agent import CrewAIConfig
 from ..controllers.curried_proxy import CurriedProxy
+from ..models.curried_proxy_info import CurriedProxyInfo
 from uuid import uuid4
 from datetime import datetime
 
@@ -100,4 +101,26 @@ class CurriedProxyCrud(InMemoryCrud[CurriedProxy]):
     def __init__(self):
         super().__init__(CurriedProxy)
 
+    def to_json(self) -> str:
+        """
+        Convert the storage to JSON using CurriedProxyInfo
+        """
+        info_dict = {}
+        for proxy_id, proxy in self.storage.items():
+            info_dict[proxy_id] = proxy.to_info().dict()
+        return json.dumps(info_dict, default=pydantic_encoder)
 
+    def from_json(self, json_str: str):
+        """
+        Restore CurriedProxy instances from JSON using CurriedProxyInfo
+        """
+        try:
+            info_dict = json.loads(json_str)
+            self.storage = {}
+            for proxy_id, info_data in info_dict.items():
+                proxy_info = CurriedProxyInfo(**info_data)
+                proxy = CurriedProxy.from_info(proxy_info)
+                self.storage[proxy_id] = proxy
+        except Exception as e:
+            print(f"Error deserializing CurriedProxy: {str(e)}")
+            raise e

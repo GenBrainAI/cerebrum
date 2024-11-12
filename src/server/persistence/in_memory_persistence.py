@@ -14,7 +14,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tasks = TaskCrud()
         self._messages = MessageCrud()
         self._crewai_config = CrewAIConfigCrud()
-        self._curried_proxies = CurriedProxyCrud()  # Add this line
+        self._curried_proxies = CurriedProxyCrud()
 
         # For general dict non pydantic
         self.collections: Dict[str, InMemoryCrud[BaseModel]] = {}
@@ -29,7 +29,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
                 "tasks": self._tasks.to_json(),
                 "messages": self._messages.to_json(),
                 "crewai_config": self._crewai_config.to_json(),
-                "curried_proxies": self._curried_proxies.to_json(),  # Add this line
+                "curried_proxies": self._curried_proxies.to_json(),
             }
             json_str = json.dumps(obj, indent=4)
             return json_str
@@ -45,7 +45,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tasksmanagers.from_json(data["tasksmanagers"])
         self._tasks.from_json(data["tasks"])
         self._crewai_config.from_json(data["crewai_config"])
-        self._curried_proxies.from_json(data["curried_proxies"])  # Add this line
+        self._curried_proxies.from_json(data["curried_proxies"])
 
     @property
     def tools(self) -> ToolCrud:

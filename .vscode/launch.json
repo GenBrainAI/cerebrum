@@ -66,7 +66,7 @@
             "--server.port",
             "8001"
         ],
-        "justMyCode": true
+        "justMyCode": false
     },
     {
         "name": "Python: Attach to Streamlit",

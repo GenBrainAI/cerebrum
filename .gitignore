@@ -144,3 +144,5 @@ cython_debug/
 .history
 combined_tests.txt
 combined_code.txt
+chroma.sqlite3
+

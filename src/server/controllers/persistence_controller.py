@@ -12,34 +12,54 @@ from ..models.persistence_models import StorageLocation, StorageType
 s3_client = boto3.client('s3')
 
 def save_to_storage(location: StorageLocation) -> str:
-    persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-    json_str = persistence_model.to_json()
+    try:
+        # Create and serialize persistence model
+        persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+        json_str = persistence_model.to_json()
 
-    if location.type == StorageType.s3:
-        try:
+        # Handle different storage types
+        if location.type == StorageType.s3:
             response = s3_client.put_object(
                 Bucket=location.location,
                 Key=location.state_name,
                 Body=json_str
             )
             return f"Saved to S3 at {location.location}/{location.state_name}"
-        except ClientError as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    elif location.type == StorageType.file:
-        try:
+            
+        elif location.type == StorageType.file:
             filename = f'{location.location}/{location.state_name}'
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(json_str)
             return f"Saved to local file: {filename}"
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        raise HTTPException(status_code=501, detail="Storage type not implemented")
+            
+        else:
+            raise HTTPException(status_code=501, detail="Storage type not implemented")
+
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'NoSuchBucket':
+            raise HTTPException(status_code=404, detail=f"S3 bucket '{location.location}' not found")
+        elif error_code == 'AccessDenied':
+            raise HTTPException(status_code=403, detail="Access denied to S3 bucket")
+        raise HTTPException(status_code=500, detail=f"S3 error: {str(e)}")
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid model configuration: {str(e)}")
+        
+    except PermissionError:
+        raise HTTPException(status_code=403, detail=f"Permission denied writing to {filename}")
+        
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=f"IO error writing to file: {str(e)}")
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 def load_from_storage(location: StorageLocation) -> str:
-    persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-    if location.type == StorageType.s3:
-        try:
+    try:
+        persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+        
+        if location.type == StorageType.s3:
             response = s3_client.get_object(
                 Bucket=location.location,
                 Key=location.state_name
@@ -47,21 +67,35 @@ def load_from_storage(location: StorageLocation) -> str:
             state_data = response['Body'].read().decode('utf-8')
             persistence_model.from_json(json_str=state_data)
             return state_data
-        except ClientError as e:
-            if e.response['Error']['Code'] == 'NoSuchKey':
-                raise HTTPException(status_code=404, detail="State not found")
-            raise HTTPException(status_code=500, detail=str(e))
-    elif location.type == StorageType.file:
-        try:
+            
+        elif location.type == StorageType.file:
             filename = f'{location.location}/{location.state_name}'
             with open(filename, 'r', encoding='utf-8') as f:
                 json_str = f.read()
                 persistence_model.from_json(json_str=json_str)
                 return json_str
-        except (IOError, json.JSONDecodeError) as e:
-            raise HTTPException(status_code=500, detail=str(e))
-        except Exception as e:
-            print(e)
-            raise HTTPException(status_code=500, detail=str(e))
-    else:
-        raise HTTPException(status_code=501, detail="Storage type not implemented")
+                
+        else:
+            raise HTTPException(status_code=501, detail="Storage type not implemented")
+            
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == 'NoSuchKey':
+            raise HTTPException(status_code=404, detail="State not found")
+        elif error_code == 'NoSuchBucket':
+            raise HTTPException(status_code=404, detail=f"S3 bucket '{location.location}' not found")
+        elif error_code == 'AccessDenied':
+            raise HTTPException(status_code=403, detail="Access denied to S3 bucket")
+        raise HTTPException(status_code=500, detail=f"S3 error: {str(e)}")
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid model configuration: {str(e)}")
+        
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
+        
+    except IOError as e:
+        raise HTTPException(status_code=500, detail=f"IO error reading file: {str(e)}")
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")

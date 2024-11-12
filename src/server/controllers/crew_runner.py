@@ -1,6 +1,31 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
+import asyncio
+import json
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..controllers.curried_proxy import CurriedProxy
+
+def format_response(response: Union[str, Dict[str, Any], Any]) -> str:
+    """Format the crew response into a string."""
+    if isinstance(response, str):
+        return response
+    elif isinstance(response, dict):
+        try:
+            return json.dumps(response)
+        except TypeError:
+            # Handle non-serializable objects in the dict
+            serializable_dict = {}
+            for key, value in response.items():
+                try:
+                    json.dumps(value)  # Test if value is JSON serializable
+                    serializable_dict[key] = value
+                except (TypeError, ValueError):
+                    serializable_dict[key] = "N/S"  # Non-serializable
+            return json.dumps(serializable_dict)
+    else:
+        try:
+            return str(response)
+        except Exception:
+            return "N/S"  # Non-serializable object
 
 async def run_crew_task(task_id: str, task_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Execute a CrewAI task."""
@@ -27,9 +52,19 @@ async def run_crew_task(task_id: str, task_input: Optional[Dict[str, Any]] = Non
         from .agents_controller import create_crew
         crew = await create_crew(crewai_config.create_crew, curried_proxy)
         
-        # Execute the crew with the provided input
-        await crew.kickoff(task_input)
+        # Execute the crew with the provided input using run_in_executor
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, crew.kickoff, task_input or {})
         
-        return {"response": "run_crew_task kicked off successfully"}
+        # Format the result into a string response
+        formatted_result = format_response(result)
+        
+        return {
+            "response": formatted_result,
+            "status": "success"
+        }
     except Exception as e:
-        return {"response": f"run_crew_task failed with error: {str(e)}"}
+        return {
+            "response": f"run_crew_task failed with error: {str(e)}",
+            "status": "error"
+        }
