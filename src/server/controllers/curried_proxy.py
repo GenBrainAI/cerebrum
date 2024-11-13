@@ -2,6 +2,7 @@ import re
 from functools import partial
 import inspect
 import httpx
+import asyncio
 from uuid import UUID, uuid4
 from typing import Dict, Any, List, Callable, Union, Optional
 from crewai_tools import BaseTool
@@ -215,7 +216,7 @@ class CurriedProxy(BaseModel):
             response = await getattr(client, method)(**request_kwargs)
 
         return response.json()
-
+    
     def curried_proxy(self, name: str):
         return partial(self.multiset_proxy, name)
 
@@ -259,7 +260,13 @@ class CurriedProxy(BaseModel):
             proxy: CurriedProxy
 
             def _run(self, **kwargs: Any) -> Any:
-                return self.proxy.curried_proxy(self.name)(kwargs)
+                proxy_func = self.proxy.curried_proxy(self.name)
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                return loop.run_until_complete(proxy_func(kwargs))
 
         custom_tool = CustomTool(
             name=name,
