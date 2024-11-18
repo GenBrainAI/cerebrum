@@ -13,6 +13,7 @@ from ..models.toolset_credentials import ToolsetCredentials
 from ..models.function import ResolvedSchema
 from ..models.curried_proxy_info import ToolInfo, CurriedProxyInfo
 import inspect
+from importlib import import_module
 
 
 
@@ -34,6 +35,7 @@ class CurriedProxy(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
+    @classmethod
     def to_info(self) -> CurriedProxyInfo:
         """Convert current CurriedProxy to CurriedProxyInfo"""
         tools = []
@@ -82,7 +84,6 @@ class CurriedProxy(BaseModel):
     @classmethod
     def from_info(cls, info: CurriedProxyInfo) -> 'CurriedProxy':
         """Construct CurriedProxy from CurriedProxyInfo"""
-        from importlib import import_module
         
         proxy = cls(id=info.id)
         proxy.name_counter = info.name_counter
