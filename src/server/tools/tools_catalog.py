@@ -1,6 +1,5 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Type, Union, get_type_hints
-from enum import Enum
 import inspect
 import docstring_parser
 from os import getenv
@@ -18,8 +17,6 @@ from ..tools.microservices_tool import MicroservicesTool
 from ..tools.sms_tool import SMSTool
 from ..models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
 from ..models.toolset import Tool
-import builtins
-import importlib
 from ..models.function import ResolvedSchema
 
 load_dotenv()

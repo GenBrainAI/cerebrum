@@ -49,13 +49,13 @@ class CurriedProxy(BaseModel):
         """Create a curried function for the named tool."""
         return lambda args: self.multiset_proxy(name, args)
 
-    def add_tool(self, name: str, tool: Union[callable, object, CrewAITool, LangChainTool, Tool]) -> None:
+    def add_tool(self, name: str, tool: Union[callable, object, CrewAITool, LangChainTool, RagTool, Tool]) -> None:
         """Add a tool to the proxy using the catalog.
         
         Args:
             name: Name for the tool
             tool: The tool to add - can be a Tool instance from OpenAPI, callable,
-                CrewAI tool, LangChain tool, or class instance
+                CrewAI tool, LangChain tool, RagTool, or class instance
         """
         try:
             if isinstance(tool, Tool):
