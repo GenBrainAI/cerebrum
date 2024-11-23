@@ -120,7 +120,7 @@ async def run_task(
         # Prepare running parameters
         running_extra_params = run_task_body.running_extra_params or {}
         if run_task_body.messages:
-            running_extra_params['messages'] = run_task_body.messages #[msg.dict() for msg in ]
+            running_extra_params['messages'] = run_task_body.messages
         
         # Run the task using the TaskRunner
         response = await task_runner.run_task(

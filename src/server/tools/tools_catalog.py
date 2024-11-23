@@ -1,8 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Type, Union, get_type_hints
-from enum import Enum
 import inspect
-from dataclasses import dataclass
 import docstring_parser
 from os import getenv
 from dotenv import load_dotenv
@@ -13,48 +11,17 @@ from crewai_tools import (
     SerperDevTool
 )
 from langchain.tools import BaseTool as LangChainTool
+from crewai_tools.tools.rag.rag_tool import RagTool
 from ..tools.file_tool import FileTool
 from ..tools.github_tool import GitHubTool
 from ..tools.microservices_tool import MicroservicesTool
 from ..tools.sms_tool import SMSTool
-import builtins
+from ..models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
+from ..models.toolset import Tool
+from ..models.function import ResolvedSchema
 
 load_dotenv()
 
-class ToolType(Enum):
-    PYTHON_FUNCTION = "python_function"
-    CLASS_METHOD = "class_method"
-    CREWAI_TOOL = "crewai_tool"
-    LANGCHAIN_TOOL = "langchain_tool"
-    OPENAPI_TOOL = "openapi_tool"
-
-@dataclass
-class ParameterInfo:
-    """Information about a tool parameter."""
-    name: str
-    type_hint: Optional[Type]
-    description: str
-    default: Any = None
-    required: bool = True
-
-@dataclass
-class ReturnInfo:
-    """Information about a tool's return value."""
-    type_hint: Optional[Type]
-    description: str
-
-@dataclass
-class ToolMetadata:
-    """Metadata for a registered tool."""
-    name: str
-    description: str
-    tool_type: ToolType
-    parameters: List[ParameterInfo]
-    returns: ReturnInfo
-    original_obj: Any
-    class_name: Optional[str] = None
-    method_name: Optional[str] = None
-    async_tool: bool = False
 
 class ToolsCatalog:
     """Singleton catalog for all available tools."""
@@ -129,7 +96,7 @@ class ToolsCatalog:
             
             parameters.append(ParameterInfo(
                 name=param_name,
-                type_hint=param_type,
+                type_hint=str(param_type) if param_type else None,
                 description=param_doc,
                 default=param.default if param.default != inspect.Parameter.empty else None,
                 required=param.default == inspect.Parameter.empty
@@ -137,7 +104,7 @@ class ToolsCatalog:
             
         # Get return info
         return_info = ReturnInfo(
-            type_hint=return_type,
+            type_hint=str(return_type) if return_type else None,
             description=docstring.returns.description if docstring.returns else ""
         )
         
@@ -162,7 +129,15 @@ class ToolsCatalog:
         return tool_name
 
     def register_class(self, cls: Type, name: Optional[str] = None) -> List[str]:
-        """Register a class and its methods as tools."""
+        """Register a class and its methods as tools.
+        
+        Args:
+            cls: The class to register
+            name: Optional custom name for the class prefix
+            
+        Returns:
+            List of registered tool names
+        """
         registered_names = []
         class_name = name or cls.__name__
         
@@ -189,17 +164,19 @@ class ToolsCatalog:
             self._tools[qualified_name] = metadata
             registered_names.append(qualified_name)
             
-        # Also register the class itself under its base name if provided
-        if name:
-            self._tools[name] = self._tools[f"{class_name}.{registered_names[0].split('.')[-1]}"]
-
+            # Also store under unqualified name if this is a single method class
+            if len(inspect.getmembers(cls, predicate=lambda x: inspect.isfunction(x) and not x.__name__.startswith('_'))) == 1:
+                self._tools[method_name] = metadata
+                registered_names.append(method_name)
+        
         return registered_names
+
 
     def register_ai_tool(self, tool: Union[CrewAITool, LangChainTool], name: Optional[str] = None) -> str:
         """Register a CrewAI or LangChain tool."""
         tool_name = name or tool.name
         
-        if isinstance(tool, CrewAITool):
+        if isinstance(tool, (CrewAITool, RagTool)):
             tool_type = ToolType.CREWAI_TOOL
         else:
             tool_type = ToolType.LANGCHAIN_TOOL
@@ -234,20 +211,44 @@ class ToolsCatalog:
         return list(self._tools.keys())
 
     def get_tool_instance(self, name: str) -> Any:
-        """Get or create an instance of a tool."""
-        # First check if we have a direct instance
+        """Get or create an instance of a tool.
+        
+        Args:
+            name: Name of the tool to retrieve
+            
+        Returns:
+            Tool instance or callable
+            
+        Raises:
+            KeyError: If tool not found
+        """
+        # First check direct instance
         if name in self._instances:
             return self._instances[name]
 
-        # Then check metadata
+        # Check metadata
         metadata = self._tools.get(name)
         if not metadata:
+            # Try checking if this is a class method using full qualification
+            if '.' in name:
+                class_name, method_name = name.split('.')
+                # Check if we have an instance for this class
+                instance = self._instances.get(class_name)
+                if instance:
+                    return getattr(instance, method_name)
             raise KeyError(f"Tool '{name}' not found in catalog")
 
         if metadata.tool_type == ToolType.CLASS_METHOD:
             # Create class instance if needed
             if metadata.class_name not in self._instances:
-                cls = metadata.original_obj.__class__
+                # Need to get the class from the method
+                method = metadata.original_obj
+                if hasattr(method, '__self__'):
+                    # Method is bound to an instance
+                    cls = method.__self__.__class__
+                else:
+                    # Method is unbound, get class from the method's module
+                    cls = getattr(inspect.getmodule(method), metadata.class_name)
                 self._instances[metadata.class_name] = cls()
             
             # Return bound method
@@ -255,7 +256,7 @@ class ToolsCatalog:
             return getattr(instance, metadata.method_name)
         
         return metadata.original_obj
-
+    
     def to_dict(self) -> Dict:
         """Convert catalog to a dictionary for serialization."""
         return {
@@ -288,28 +289,33 @@ class ToolsCatalog:
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'ToolsCatalog':
-        """Create a catalog from a serialized dictionary."""
+        """Create a catalog from a serialized dictionary.
+        
+        Args:
+            data: Dictionary containing serialized tool data
+            
+        Returns:
+            New ToolsCatalog instance with deserialized tools
+        """
         catalog = cls()
         
         for name, tool_data in data["tools"].items():
             parameters = []
             for p in tool_data["parameters"]:
-                try:
-                    type_hint = None
-                    if p["type_hint"]:
-                        type_hint = cls._get_type_from_string(p["type_hint"])
-                except (AttributeError, NameError, TypeError):
-                    type_hint = None
+                # Keep type_hint as string
+                type_hint = p["type_hint"] if p["type_hint"] else None
+                
                 parameters.append(ParameterInfo(
                     name=p["name"],
-                    type_hint=type_hint,
+                    type_hint=type_hint,  # Pass the string directly
                     description=p["description"],
                     default=p["default"],
                     required=p["required"]
                 ))
             
+            # Keep return type hint as string
             returns = ReturnInfo(
-                type_hint=cls._get_type_from_string(tool_data["returns"]["type_hint"]) if tool_data["returns"]["type_hint"] else None,
+                type_hint=tool_data["returns"]["type_hint"],
                 description=tool_data["returns"]["description"]
             )
             
@@ -319,7 +325,7 @@ class ToolsCatalog:
                 tool_type=ToolType(tool_data["tool_type"]),
                 parameters=parameters,
                 returns=returns,
-                original_obj=None,  # Will need to be reconstructed
+                original_obj=None,  # Will be reconstructed later if needed
                 class_name=tool_data["class_name"],
                 method_name=tool_data["method_name"],
                 async_tool=tool_data["async_tool"]
@@ -329,18 +335,89 @@ class ToolsCatalog:
         
         return catalog
 
-    def _get_type_from_string(type_hint_str: str):
-        try:
-            module_parts = type_hint_str.split('.')
-            if len(module_parts) > 1:
-                module_name = '.'.join(module_parts[:-1])
-                type_name = module_parts[-1]
-                module = importlib.import_module(module_name)
-                return getattr(module, type_name)
-            else:
-                return getattr(builtins, type_hint_str)
-        except (AttributeError, NameError, ImportError):
-            return None
+    def _get_type_from_string(cls, type_hint_str: str) -> str:
+        """Convert a type string to its string representation.
         
+        Args:
+            type_hint_str: String representation of a type
+            
+        Returns:
+            Normalized string representation of the type
+        """
+        # Handle commonly used type hints
+        type_mapping = {
+            'str': 'str',
+            'int': 'int',
+            'float': 'float',
+            'bool': 'bool',
+            'list': 'List',
+            'dict': 'Dict',
+            'any': 'Any',
+            'List': 'List',
+            'Dict': 'Dict',
+            'Any': 'Any',
+            'Union': 'Union',
+            'Optional': 'Optional'
+        }
+        
+        # Check if it's a simple type
+        if type_hint_str in type_mapping:
+            return type_mapping[type_hint_str]
+            
+        # Handle generic types (like List[str], Dict[str, Any], etc.)
+        if '[' in type_hint_str:
+            base_type = type_hint_str.split('[')[0]
+            if base_type in type_mapping:
+                return type_hint_str  # Return the full generic type string
+                
+        # Default to the original string if no mapping found
+        return type_hint_str
+
+    def register_openapi_tool(self, tool: Tool, name: Optional[str] = None) -> str:
+        """Register an OpenAPI tool from a Tool model instance."""
+        tool_name = name or tool.function.name
+        function = tool.function
+
+        # Extract structured parameters for LLM understanding
+        parameters = []
+        if function.parameters:
+            for param_location, params in function.parameters.items():
+                if param_location == 'requestBody':
+                    if isinstance(params, ResolvedSchema) and params.properties:
+                        # For request body, include the full structure
+                        parameters.append(ParameterInfo(
+                            name="requestBody",
+                            type_hint=str(params),  # Include full schema structure
+                            description="Request body following schema",
+                            required=True
+                        ))
+                else:
+                    # Handle path, query, and header parameters
+                    for param_name, param_schema in params.items():
+                        parameters.append(ParameterInfo(
+                            name=param_name,
+                            type_hint=param_schema.schema.type if hasattr(param_schema.schema, 'type') else 'Any',
+                            description=param_schema.description or '',
+                            required=getattr(param_schema, 'required', False)
+                        ))
+
+        metadata = ToolMetadata(
+            name=tool_name,
+            description=function.description or "",
+            tool_type=ToolType.OPENAPI_TOOL,
+            parameters=parameters,  # Structured parameters for LLM understanding
+            schema=function.parameters,  # Original OpenAPI schema
+            returns=ReturnInfo(
+                type_hint='Dict[str, Any]',
+                description=function.responses['200'].description if function.responses and '200' in function.responses else "Successful response"
+            ),
+            original_obj=tool,
+            async_tool=True
+        )
+
+        self._tools[tool_name] = metadata
+        return tool_name
+
+
 # Create the global instance
 tools_catalog = ToolsCatalog()

@@ -34,7 +34,7 @@ def test_run_task_with_calculator():
         swagger_string = file.read()
 
     toolset_data = {
-        "name": ("", "Complex Numbers Calculator API"),
+        "name": ("", "ComplexNumbersCalculator"),
         "description": ("", "Provides Complex Numbers calculator functionalities"),
         "credentials": ("", '{"auth_type":"Baerer","auth_key":"123"}'),
         "swagger_str": ("", swagger_string)
@@ -77,7 +77,7 @@ def test_run_task_with_calculator():
     # Run task with user message
     user_message = Message(
         role="user",
-        content="Please add hose two complex numbers 1+2i and 3+4i"
+        content="Please add those two complex numbers 1+2i and 3+4i"
     )
 
     mock_response = httpx.Response(200, json={"result": {'real': 4, 'imag': 6}})

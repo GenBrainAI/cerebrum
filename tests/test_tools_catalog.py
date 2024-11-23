@@ -154,10 +154,24 @@ async def test_tool_metadata(mock_environment):
     assert websearch_metadata.tool_type == ToolType.CREWAI_TOOL
     assert websearch_metadata.description
     
-    # Test Python class metadata
-    github_metadata = catalog.get_tool("GitHubTool")
-    assert github_metadata.tool_type in [ToolType.CLASS_METHOD, ToolType.PYTHON_FUNCTION]
-    assert github_metadata.description
+    # Test Python class method metadata - using one of the actual registered methods
+    github_method_metadata = catalog.get_tool("GitHubTool.create_branch")  # or any other GitHub tool method
+    assert github_method_metadata.tool_type == ToolType.CLASS_METHOD
+    assert github_method_metadata.description
+    assert github_method_metadata.class_name == "GitHubTool"
+    assert github_method_metadata.method_name == "create_branch"
+    
+    # List all GitHub tool methods to verify registration
+    github_tools = [name for name in catalog.list_tools() if name.startswith("GitHubTool.")]
+    assert len(github_tools) > 0, "No GitHub tool methods found in catalog"
+    
+    # Verify each GitHub tool method has correct metadata
+    for tool_name in github_tools:
+        metadata = catalog.get_tool(tool_name)
+        assert metadata is not None
+        assert metadata.tool_type == ToolType.CLASS_METHOD
+        assert metadata.class_name == "GitHubTool"
+
 
 @pytest.mark.asyncio
 async def test_tool_execution(mock_github):

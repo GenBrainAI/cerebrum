@@ -87,10 +87,7 @@ class ToolsOperator:
                 tools=tools if tools else None,
                 tool_choice="auto" if tools else None
             )
-            # if tools else await self.client.chat.completions.create(
-            #     model=model,
-            #     messages=messages
-            # )
+
             choice = response.choices[0]
             chat_completion_message = choice.message.content
 
