@@ -5,10 +5,8 @@ import httpx
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field
 from crewai_tools import BaseTool as CrewAITool
-from langchain.tools import BaseTool as LangChainTool
 from crewai_tools.tools.rag.rag_tool import RagTool
-from crewai_tools.tools.base_tool import BaseTool as CrewAIBaseTool
-
+from langchain.tools import BaseTool as LangChainTool
 from ..tools.tools_catalog import ToolsCatalog, tools_catalog, ParameterInfo
 from ..models.tools_descriptors import ToolMetadata, ToolType
 from ..models.toolset import Tool
@@ -51,43 +49,36 @@ class CurriedProxy(BaseModel):
         """Create a curried function for the named tool."""
         return lambda args: self.multiset_proxy(name, args)
 
-def add_tool(self, name: str, tool: Union[callable, object, CrewAITool, LangChainTool, Tool]) -> None:
-    """Add a tool to the proxy using the catalog.
-    
-    Args:
-        name: Name for the tool
-        tool: The tool to add - can be a Tool instance from OpenAPI, callable,
-            CrewAI tool, LangChain tool, or class instance
-    """
-    try:
-        if isinstance(tool, Tool):
-            tool_name = self.catalog.register_openapi_tool(tool, name)
-            tool_names = [tool_name]
-        elif isinstance(tool, (CrewAIBaseTool, RagTool, LangChainTool)):
-            # Handle all CrewAI tool types including RagTool
-            tool_name = self.catalog.register_ai_tool(tool, name)
-            tool_names = [tool_name]
-        elif callable(tool) and not inspect.isclass(tool):
-            tool_name = self.catalog.register_function(tool, name)
-            tool_names = [tool_name]
-        elif inspect.isclass(tool):
-            tool_names = self.catalog.register_class(tool, name)
-        else:
-            # For class instances or objects
-            # Check if it's an instance of any CrewAI tool base class first
-            if isinstance(tool, (CrewAIBaseTool, RagTool)):
+    def add_tool(self, name: str, tool: Union[callable, object, CrewAITool, LangChainTool, Tool]) -> None:
+        """Add a tool to the proxy using the catalog.
+        
+        Args:
+            name: Name for the tool
+            tool: The tool to add - can be a Tool instance from OpenAPI, callable,
+                CrewAI tool, LangChain tool, or class instance
+        """
+        try:
+            if isinstance(tool, Tool):
+                tool_name = self.catalog.register_openapi_tool(tool, name)
+                tool_names = [tool_name]
+            elif isinstance(tool, (CrewAITool, LangChainTool, RagTool)):
                 tool_name = self.catalog.register_ai_tool(tool, name)
                 tool_names = [tool_name]
+            elif callable(tool) and not inspect.isclass(tool):
+                tool_name = self.catalog.register_function(tool, name)
+                tool_names = [tool_name]
+            elif inspect.isclass(tool):
+                tool_names = self.catalog.register_class(tool, name)
             else:
+                # For class instances or objects
                 tool_names = self.catalog.register_class(tool.__class__, name)
-            
-        for tool_name in tool_names:
-            if tool_name not in self.tool_names:
-                self.tool_names.append(tool_name)
                 
-    except Exception as e:
-        raise ValueError(f"Failed to add tool {name}: {str(e)}")
-
+            for tool_name in tool_names:
+                if tool_name not in self.tool_names:
+                    self.tool_names.append(tool_name)
+                    
+        except Exception as e:
+            raise ValueError(f"Failed to add tool {name}: {str(e)}")
 
     def remove_tool(self, name: str) -> None:
         """Remove a tool from the proxy."""

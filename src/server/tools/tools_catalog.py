@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Type, Union, get_type_hints
+from enum import Enum
 import inspect
 import docstring_parser
 from os import getenv
@@ -11,13 +12,14 @@ from crewai_tools import (
     SerperDevTool
 )
 from langchain.tools import BaseTool as LangChainTool
-from crewai_tools.tools.rag.rag_tool import RagTool
 from ..tools.file_tool import FileTool
 from ..tools.github_tool import GitHubTool
 from ..tools.microservices_tool import MicroservicesTool
 from ..tools.sms_tool import SMSTool
 from ..models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
 from ..models.toolset import Tool
+import builtins
+import importlib
 from ..models.function import ResolvedSchema
 
 load_dotenv()
@@ -171,12 +173,11 @@ class ToolsCatalog:
         
         return registered_names
 
-
     def register_ai_tool(self, tool: Union[CrewAITool, LangChainTool], name: Optional[str] = None) -> str:
         """Register a CrewAI or LangChain tool."""
         tool_name = name or tool.name
         
-        if isinstance(tool, (CrewAITool, RagTool)):
+        if isinstance(tool, CrewAITool):
             tool_type = ToolType.CREWAI_TOOL
         else:
             tool_type = ToolType.LANGCHAIN_TOOL
