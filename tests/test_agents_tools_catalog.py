@@ -1,17 +1,15 @@
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, patch, PropertyMock
+
 from fastapi import HTTPException
 
 from src.server.apis.agents_api import initialize_agent_tools
 from src.server.models.agent import AgentModel, ToolModel, CreateCrewRequest, TaskModel
 from src.server.controllers.curried_proxy import CurriedProxy
 from src.server.tools.tools_catalog import (
-    ToolsCatalog,
     ToolMetadata,
     ToolType,
     ReturnInfo,
-    ParameterInfo,
-    tools_catalog
 )
 from src.server.apis.agents_api import create_crewai
 
@@ -35,6 +33,7 @@ def mock_tools_catalog():
     mock_catalog = Mock()
     mock_catalog.get_tool.return_value = test_tool_metadata
     mock_catalog.get_tool_instance.return_value = lambda x: x
+    mock_catalog.list_tools.return_value = {"TestTool", "TestTool.method1", "TestTool.method2"}
     
     return mock_catalog
 
@@ -52,19 +51,23 @@ async def test_initialize_agent_tools_successful(mock_tools_catalog):
     
     curried_proxy = CurriedProxy()
     
+    # Create a set of available tools including our test tool
+    available_tools = {"TestTool", "TestTool.method1", "TestTool.method2"}
+    
     # Patch the tools_catalog instance methods
     with patch('src.server.apis.agents_api.tools_catalog') as mock_catalog:
         # Set up the mock methods
         mock_catalog.get_tool = mock_tools_catalog.get_tool
         mock_catalog.get_tool_instance = mock_tools_catalog.get_tool_instance
+        mock_catalog.list_tools.return_value = available_tools
         
         # Test the function
         await initialize_agent_tools(agent, curried_proxy)
         
         # Verify the tool was properly added
-        assert "TestTool" in curried_proxy.list_tools()
         mock_catalog.get_tool.assert_called_once_with("TestTool")
         mock_catalog.get_tool_instance.assert_called_once_with("TestTool")
+        assert "TestTool" in curried_proxy.list_tools()
 
 @pytest.mark.asyncio
 async def test_initialize_agent_tools_unknown_tool():
@@ -110,34 +113,36 @@ async def test_initialize_agent_tools_with_class_tools():
     mock_tool_instance = Mock()
     mock_tool_class = Mock(return_value=mock_tool_instance)
     
-    # Patch both the ToolFactory class and its instance methods
-    with patch('src.server.apis.agents_api.ToolFactory') as MockToolFactory:
-        # Setup the mock tool factory instance
+    # Patch both the ToolFactory class and tools_catalog
+    # Note the updated import path for ToolFactory
+    with patch('src.server.tools.tool_factory.ToolFactory') as MockToolFactory, \
+         patch('src.server.apis.agents_api.tools_catalog') as mock_catalog:
+        
+        # Setup the mock tool factory
         mock_factory_instance = Mock()
         MockToolFactory.return_value = mock_factory_instance
         mock_factory_instance.set_curried_proxy = Mock()
         
-        # Register the mock tool
+        # Set up ToolFactory.TOOLS as a class attribute
         MockToolFactory.TOOLS = {'TestClassTool': mock_tool_class}
+        
+        # Setup mock catalog
+        mock_catalog.list_tools.return_value = {"TestClassTool"}
         
         # Test the function
         await initialize_agent_tools(agent, curried_proxy)
         
         # Verify ToolFactory was constructed correctly
         MockToolFactory.assert_called_once_with("TestClassTool", curried_proxy)
-        
-        # Verify set_curried_proxy was called
         mock_factory_instance.set_curried_proxy.assert_called_once()
         
-        # Add debug outputs
-        print(f"MockToolFactory call count: {MockToolFactory.call_count}")
-        print(f"mock_factory_instance.set_curried_proxy call count: {mock_factory_instance.set_curried_proxy.call_count}")
-
+        # Add some debug prints
+        print(f"MockToolFactory.call_count: {MockToolFactory.call_count}")
+        print(f"mock_factory_instance.set_curried_proxy.call_count: {mock_factory_instance.set_curried_proxy.call_count}")
 
 @pytest.mark.asyncio
 async def test_create_crewai_endpoint():
     """Test the CrewAI creation endpoint."""
-    
     request = CreateCrewRequest(
         description="Test Crew",
         agents=[
@@ -159,33 +164,38 @@ async def test_create_crewai_endpoint():
         ]
     )
     
-    # Create mock config with specific ID
+    # Create mock config with proper id attribute
     mock_config = Mock()
     mock_config.id = "test-config-id"
+    type(mock_config).id = PropertyMock(return_value="test-config-id")
     
-    # Create mock proxy with specific ID
+    # Create mock proxy with proper id attribute
     mock_proxy = Mock()
     mock_proxy.id = "test-proxy-id"
+    type(mock_proxy).id = PropertyMock(return_value="test-proxy-id")
     
-    # Create a mock persistence model with properly configured attributes
+    # Create mock persistence model
     mock_persistence_model = Mock()
     mock_persistence_model.crewai_config = Mock()
     mock_persistence_model.crewai_config.create = Mock(return_value=mock_config)
     mock_persistence_model.curried_proxies = Mock()
     mock_persistence_model.curried_proxies.create = Mock(return_value=mock_proxy)
     
-    # Mock the PersistenceModelFactory to return our mock model
+    # Set up mock factory
     mock_factory = Mock()
-    mock_factory._instance = mock_persistence_model
-    mock_factory.persistence_model = Mock(return_value=mock_persistence_model)
+    mock_factory.persistence_model.return_value = mock_persistence_model
     
-    # Set up all the mocks
-    with patch('src.server.persistence.persistence_model_factory.PersistenceModelFactory', mock_factory), \
-         patch('src.server.controllers.agents_controller.PersistenceModelFactory', mock_factory), \
-         patch('src.server.controllers.agents_controller.create_crew') as mock_create_crew, \
+    # Set up patches
+    with patch('src.server.apis.agents_api.PersistenceModelFactory') as mock_factory_class, \
+         patch('src.server.apis.agents_api.create_crew') as mock_create_crew, \
          patch('src.server.apis.agents_api.tools_catalog') as mock_catalog:
         
-        # Setup mock catalog
+        # Set up mock factory class
+        mock_factory_class.persistence_model = Mock(return_value=mock_persistence_model)
+        mock_factory_class._instance = mock_persistence_model
+        
+        # Setup mock catalog with available tools
+        mock_catalog.list_tools.return_value = {"TestTool"}
         mock_catalog.get_tool.return_value = ToolMetadata(
             name="TestTool",
             description="A test tool",
@@ -200,10 +210,7 @@ async def test_create_crewai_endpoint():
         )
         mock_catalog.get_tool_instance.return_value = lambda x: x
         
-        # Set create_crew to return None (as it's an async function that we don't need to return anything specific)
-        mock_create_crew.return_value = None
-        
-        # Test the endpoint
+        # Run test and verify results
         response = await create_crewai(request)
         
         # Verify response
@@ -212,6 +219,51 @@ async def test_create_crewai_endpoint():
         assert response["curried_proxy_id"] == "test-proxy-id"
         
         # Verify mock calls
-        mock_create_crew.assert_called_once()
         mock_persistence_model.crewai_config.create.assert_called_once()
         mock_persistence_model.curried_proxies.create.assert_called_once()
+        mock_create_crew.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_agent_tool_name_validation():
+    """Test that incorrect tool names are properly caught and reported."""
+    request = CreateCrewRequest(
+        description="Test Crew",
+        agents=[
+            AgentModel(
+                role="TestAgent",
+                goal="Test Goal",
+                backstory="Test Backstory",
+                tools=[
+                    ToolModel(name="SeperDevTool", description="Incorrectly spelled tool")  # Intentional typo
+                ]
+            )
+        ],
+        tasks=[
+            TaskModel(
+                description="Test Task",
+                expected_output="Test Output",
+                agent_role="TestAgent"
+            )
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await create_crewai(request)
+    
+    # Verify the error message contains helpful information
+    error_msg = str(exc_info.value.detail)
+    assert exc_info.value.status_code == 400
+    assert "SeperDevTool" in error_msg
+    assert "SerperDevTool" in error_msg  # Should suggest the correct spelling
+    assert "Did you mean" in error_msg
+
+    # Test with completely invalid tool name
+    request.agents[0].tools[0].name = "NonExistentTool"
+    with pytest.raises(HTTPException) as exc_info:
+        await create_crewai(request)
+    
+    error_msg = str(exc_info.value.detail)
+    assert exc_info.value.status_code == 400
+    assert "NonExistentTool" in error_msg
+    assert "Available tools" in error_msg  # Should list available tools

@@ -138,8 +138,7 @@ async def test_create_crew_missing_agent():
 
     # Mock CurriedProxy
     mock_curried_proxy = create_autospec(CurriedProxy)
-    mock_curried_proxy.get_tool.return_value = mock_tool
-    mock_curried_proxy.create_crewai_tool.return_value = mock_tool
+    mock_curried_proxy.export_to_crewai.return_value = [mock_tool]
 
     create_crew_request = CreateCrewRequest(
         description="Test Crew",
@@ -166,3 +165,83 @@ async def test_create_crew_missing_agent():
     exception = exc_info.value
     assert exception.status_code == 400
     assert exception.detail == "Agent role 'Developer' not found."
+
+##### More tests to come
+
+@pytest.mark.asyncio
+async def test_create_crew_without_proxy():
+    """Test creating a crew without a curried proxy"""
+    create_crew_request = CreateCrewRequest(
+        description="Test Crew",
+        agents=[
+            AgentModel(
+                role="Tester",
+                goal="Test the system",
+                backstory="Experienced QA engineer",
+                tools=[ToolModel(name="test_tool", description="A test tool")]
+            )
+        ],
+        tasks=[
+            TaskModel(
+                description="Run tests",
+                expected_output="Test results",
+                agent_role="Tester"
+            )
+        ]
+    )
+
+    # Call create_crew without a proxy
+    crew = await create_crew(create_crew_request, None)
+
+    # Assertions
+    assert isinstance(crew, Crew)
+    assert len(crew.agents) == 1
+    assert isinstance(crew.agents[0], Agent)
+    assert crew.agents[0].role == "Tester"
+    assert len(crew.agents[0].tools) == 0  # Should have no tools
+    assert len(crew.tasks) == 1
+    assert isinstance(crew.tasks[0], Task)
+    assert crew.tasks[0].description == "Run tests"
+
+@pytest.mark.asyncio
+async def test_create_crew_with_tools():
+    """Test creating a crew with tools properly initialized"""
+    # Create a mock tool
+    mock_tool = MockTool()
+
+    # Mock CurriedProxy
+    mock_curried_proxy = create_autospec(CurriedProxy)
+    mock_curried_proxy.export_to_crewai.return_value = [mock_tool]
+
+    create_crew_request = CreateCrewRequest(
+        description="Test Crew",
+        agents=[
+            AgentModel(
+                role="Tester",
+                goal="Test the system",
+                backstory="Experienced QA engineer",
+                tools=[ToolModel(name="mock_tool", description="A test tool")]
+            )
+        ],
+        tasks=[
+            TaskModel(
+                description="Run tests",
+                expected_output="Test results",
+                agent_role="Tester"
+            )
+        ]
+    )
+
+    # Create the crew
+    crew = await create_crew(create_crew_request, mock_curried_proxy)
+
+    # Verify crew creation
+    assert isinstance(crew, Crew)
+    assert len(crew.agents) == 1
+    assert crew.agents[0].role == "Tester"
+    
+    # Verify tools were properly added
+    mock_curried_proxy.export_to_crewai.assert_called_once()
+    assert len(crew.agents[0].tools) == 1
+    assert isinstance(crew.agents[0].tools[0], BaseTool)
+    assert crew.agents[0].tools[0].name == "mock_tool"
