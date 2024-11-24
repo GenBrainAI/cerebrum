@@ -4,10 +4,18 @@ from typing import Dict, List, Any
 
 class TerraformTool:
     def __init__(self):
+        """
+        Initialize the Terraform Tool with an empty configuration dictionary.
+        """
         self.terraform_config = {}
 
     def parse_terraform_script(self, script_content: str) -> Dict[str, Any]:
-        """Parse a Terraform script and return its content as a dictionary."""
+        """
+        Parse a Terraform script and return its content as a dictionary.
+        
+        :param script_content: The content of the Terraform script to parse
+        :return: Dictionary containing the parsed Terraform configuration
+        """
         try:
             # Simple parser for kubernetes_network_policy resource
             pattern = r'resource\s+"kubernetes_network_policy"\s+"([^"]+)"\s+{([^}]+)}'
@@ -22,7 +30,12 @@ class TerraformTool:
             raise ValueError(f"Error parsing Terraform script: {str(e)}")
 
     def _parse_block(self, block_content: str) -> Dict[str, Any]:
-        """Parse a block of Terraform configuration."""
+        """
+        Parse a block of Terraform configuration.
+        
+        :param block_content: String content of the Terraform block to parse
+        :return: Dictionary containing the parsed block configuration
+        """
         result = {}
         lines = block_content.strip().split('\n')
         for line in lines:
@@ -38,7 +51,13 @@ class TerraformTool:
         return result
 
     def _find_matching_brace(self, lines: List[str], start_index: int) -> int:
-        """Find the index of the matching closing brace."""
+        """
+        Find the index of the matching closing brace.
+        
+        :param lines: List of lines to search through
+        :param start_index: Starting index to begin the search
+        :return: Index of the matching closing brace
+        """
         brace_count = 0
         for i, line in enumerate(lines[start_index:], start=start_index):
             brace_count += line.count('{') - line.count('}')
@@ -47,7 +66,14 @@ class TerraformTool:
         raise ValueError("No matching brace found")
 
     def modify_network_policy(self, microservice_name: str, ingress_rules: List[Dict[str, Any]], egress_rules: List[Dict[str, Any]]) -> None:
-        """Modify the network policy for a specific microservice."""
+        """
+        Modify the network policy for a specific microservice.
+        
+        :param microservice_name: Name of the microservice to modify policy for
+        :param ingress_rules: List of ingress rules to apply
+        :param egress_rules: List of egress rules to apply
+        :return: None
+        """
         policy = self.terraform_config.get(microservice_name, {})
         if not policy:
             policy = {
@@ -67,7 +93,12 @@ class TerraformTool:
         self.terraform_config[microservice_name] = policy
 
     def apply_best_practices(self) -> None:
-        """Apply best practices for Kubernetes network security."""
+        """
+        Apply best practices for Kubernetes network security.
+        Ensures proper policy types are set for ingress and egress rules.
+        
+        :return: None
+        """
         for policy in self.terraform_config.values():
             spec = policy.get("spec", {})
             if "ingress" in spec and spec["ingress"]:
@@ -82,7 +113,11 @@ class TerraformTool:
                     spec["policy_types"].append("Egress")
 
     def generate_terraform_script(self) -> str:
-        """Generate a Terraform script from the current configuration."""
+        """
+        Generate a Terraform script from the current configuration.
+        
+        :return: String containing the generated Terraform script
+        """
         script = ""
         for resource_name, policy in self.terraform_config.items():
             script += f'resource "kubernetes_network_policy" "{resource_name}" {{\n'
@@ -91,7 +126,13 @@ class TerraformTool:
         return script
 
     def _dict_to_hcl(self, d: Dict[str, Any], indent: int = 0) -> str:
-        """Convert a dictionary to HCL format."""
+        """
+        Convert a dictionary to HCL format.
+        
+        :param d: Dictionary to convert to HCL format
+        :param indent: Number of spaces to use for indentation
+        :return: String containing the HCL formatted configuration
+        """
         result = ""
         for key, value in d.items():
             if isinstance(value, dict):
@@ -113,7 +154,11 @@ class TerraformTool:
         return result
 
     def validate_changes(self) -> List[str]:
-        """Validate the changes made to the Terraform configuration."""
+        """
+        Validate the changes made to the Terraform configuration.
+        
+        :return: List of warning messages for any validation issues found
+        """
         warnings = []
         if not self.terraform_config:
             warnings.append("No network policies defined in the Terraform configuration.")

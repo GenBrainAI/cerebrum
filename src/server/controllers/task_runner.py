@@ -18,13 +18,27 @@ class TaskRunner:
 
     def _add_tools_to_proxy(self, curried_proxy: CurriedProxy, toolset_ids: list) -> None:
         """Add tools from toolsets to curried proxy."""
+        import re
+
+        def sanitize_name(name: str) -> str:
+            """Sanitize name to match pattern ^[a-zA-Z0-9_-]+$"""
+            # Replace any character that isn't alphanumeric, hyphen, or underscore with underscore
+            sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+            # Ensure name starts with a letter or underscore
+            if sanitized and sanitized[0].isdigit():
+                sanitized = f"_{sanitized}"
+            return sanitized
+
         for toolset_id in toolset_ids:
             toolset = self.persistence_model.toolsets.read(toolset_id)
             if toolset and toolset.tool_ids:
                 for tool_id in toolset.tool_ids:
                     tool = self.persistence_model.tools.read(tool_id)
                     if tool:
-                        curried_proxy.add_tool(f"{toolset.name}_{tool.function.name}", tool)
+                        # Sanitize the toolset name before concatenation
+                        sanitized_toolset_name = sanitize_name(toolset.name)
+                        tool_name = f"{sanitized_toolset_name}_{tool.function.name}"
+                        curried_proxy.add_tool(tool_name, tool)
 
     def _get_or_create_curried_proxy(self, task: Task, tasksmanager: TasksManager) -> CurriedProxy:
         """Get existing curried proxy or create a new one with tools."""
@@ -80,9 +94,7 @@ class TaskRunner:
             logging.error(f"Error running task {task_id}: {str(e)}", exc_info=True)
             raise
 
-# src/server/controllers/task_runner.py
-
-    async def _run_standard_task(self, task: Any, tasksmanager: Any, running_extra_params: Optional[Dict] = None) -> Dict:
+    async def _run_standard_task(self, task: Task, tasksmanager: TasksManager, running_extra_params: Optional[Dict] = None) -> Dict:
         """Execute a task using standard completion with tool support."""
         try:
             # Get or create curried proxy with tools

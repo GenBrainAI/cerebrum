@@ -35,8 +35,7 @@ TOOLS = {
     ),
     "save_file": FileTool(),
     "microservices_tool": MicroservicesTool(),
-    "SMSTool.send_application_success_sms": SMSTool().send_application_success_sms,
-    "SMSTool.send_sms": SMSTool().send_sms
+    "SMSTool": SMSTool(),
 }
 
 class CrewLLM:
@@ -45,7 +44,7 @@ class CrewLLM:
         self.OpenAIGPT4 = ChatOpenAI(model_name="gpt-4", temperature=0.7)
         self.Ollama = Ollama(model="llama3.2:latest")
 
-async def create_crew(request: CreateCrewRequest, curried_proxy) -> Crew:
+async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy) -> Crew:
     """Create a CrewAI crew from the given configuration."""
     llm = CrewLLM()
     try:

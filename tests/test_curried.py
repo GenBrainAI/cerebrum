@@ -155,7 +155,7 @@ async def test_add_and_use_function_tool(curried_proxy):
 
 async def test_add_and_use_class_methods(curried_proxy):
     github_tool = MockGitHubTool()
-    curried_proxy.add_tool("github", github_tool)
+    curried_proxy.add_tool("MockGitHubTool", github_tool)
 
     ls_result = await curried_proxy.curried_proxy("MockGitHubTool.ls")({})
     assert ls_result == ['file1.txt', 'file2.py']
@@ -173,7 +173,7 @@ async def test_persistence_integration():
 
     created_proxy.add_tool("fibonacci", fibonacci)
     github_tool = MockGitHubTool()
-    created_proxy.add_tool("github", github_tool)
+    created_proxy.add_tool("MockGitHubTool", github_tool)
 
     persistence_model.curried_proxies.update(str(created_proxy.id), created_proxy)
 
@@ -232,8 +232,7 @@ def test_list_tools(curried_proxy, mock_tool):
     curried_proxy.add_tool("github", github_tool)
 
     tool_list = curried_proxy.list_tools()
-    assert set(tool_list) == {'mock_api', 'fibonacci', 'MockGitHubTool.get_readme', 'MockGitHubTool.ls'}
-
+    assert set(tool_list) == {'mock_api', 'fibonacci', 'github.get_readme', 'github.ls'}
 
 def test_remove_tool(curried_proxy, mock_tool):
     curried_proxy.add_tool("mock_api", mock_tool)

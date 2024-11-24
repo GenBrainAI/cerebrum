@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 class ToolInfo(BaseModel):
     """Simplified representation of a tool for serialization"""
     name: str
-    type: str  # 'tool' or 'function'
+    type: str  # 'tool', 'function', 'class_method', 'crewai'
     tool_data: Dict[str, Any]  # Serializable tool data
 
 class CurriedProxyInfo(BaseModel):

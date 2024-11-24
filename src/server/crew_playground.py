@@ -30,7 +30,7 @@ def save_crew():
                 "backstory": "Expert in analyzing company cultures and identifying key values and needs from various sources, including websites and brief descriptions.",
                 "tools": [
                     {"name": "WebsiteSearchTool", "description": "Tool for searching websites"},
-                    {"name": "SeperDevTool", "description": "Development tool for data separation"}
+                    {"name": "SerperDevTool", "description": "Development tool for data separation"}
                 ]
             },
             {
@@ -39,7 +39,7 @@ def save_crew():
                 "backstory": "Skilled in crafting compelling job descriptions that resonate with the company's values and attract the right candidates.",
                 "tools": [
                     {"name": "WebsiteSearchTool", "description": "Tool for searching websites"},
-                    {"name": "SeperDevTool", "description": "Development tool for data separation"},
+                    {"name": "SerperDevTool", "description": "Development tool for data separation"},
                     {"name": "FileReadTool", "description": "Tool for reading files"}
                 ]
             },
@@ -49,7 +49,7 @@ def save_crew():
                 "backstory": "A meticulous editor with an eye for detail, ensuring every piece of content is clear, engaging, and grammatically perfect.",
                 "tools": [
                     {"name": "WebsiteSearchTool", "description": "Tool for searching websites"},
-                    {"name": "SeperDevTool", "description": "Development tool for data separation"},
+                    {"name": "SerperDevTool", "description": "Development tool for data separation"},
                     {"name": "FileReadTool", "description": "Tool for reading files"}
                 ]
             }

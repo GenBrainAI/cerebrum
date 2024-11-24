@@ -6,6 +6,11 @@ from pathlib import Path
 
 class SMSTool:
     def __init__(self, output_dir: str = "sms_logs"):
+        """
+        Initialize the SMS Tool.
+        
+        :param output_dir: Directory path where SMS logs will be stored
+        """
         self.output_dir = output_dir
         # Create the output directory if it doesn't exist
         os.makedirs(self.output_dir, exist_ok=True)
@@ -14,12 +19,9 @@ class SMSTool:
         """
         Simulates sending an SMS by writing to a file.
         
-        Args:
-            phone_number: The recipient's phone number
-            message: The message content
-            
-        Returns:
-            A confirmation message
+        :param phone_number: The recipient's phone number
+        :param message: The message content to be sent
+        :return: String confirmation message with the log file path
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"sms_{timestamp}.txt"
@@ -45,15 +47,12 @@ class SMSTool:
         """
         Sends a formatted SMS for successful job applications.
         
-        Args:
-            phone_number: The recipient's phone number
-            company_name: Name of the company
-            position: Job position title
-            contact_person: Optional contact person name
-            next_steps: Optional next steps information
-            
-        Returns:
-            A confirmation message
+        :param phone_number: The recipient's phone number
+        :param company_name: Name of the company that accepted the application
+        :param position: Job position title that was applied for
+        :param contact_person: Optional contact person name at the company
+        :param next_steps: Optional information about next steps in the process
+        :return: String confirmation message with the log file path
         """
         message = f"Great news! {company_name} has responded positively to your application for the {position} position."
         
