@@ -92,4 +92,5 @@ async def create_crew(request: CreateCrewRequest, curried_proxy: CurriedProxy) -
     except HTTPException:
         raise
     except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))

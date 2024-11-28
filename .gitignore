@@ -146,3 +146,10 @@ combined_tests.txt
 combined_code.txt
 chroma.sqlite3
 
+# ChromaDB
+context_db/
+persistent_state/context/*/
+
+sms_*
+
+docs/*.md

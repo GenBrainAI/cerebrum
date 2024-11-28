@@ -15,6 +15,7 @@ from server.models.task import Task
 from server.models.run_task import RunTask
 from server.controllers.persistence_controller import load_from_storage, save_to_storage
 from server.models.persistence_models import StorageLocation, StorageType
+from server.context.context_ui import render_context_manager
 
 # Initialize persistence model and task runner
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
@@ -501,6 +502,8 @@ def render_main_chat():
     if st.session_state.current_task_id:
         task = persistence_model.tasks.read(st.session_state.current_task_id)
         
+        # TODO: Handle a case where task is none.
+
         # Session management UI
         col1, col2 = st.columns([3, 1])
         
@@ -678,6 +681,10 @@ def main():
     # Render both sidebar and main chat interface
     render_sidebar()
     render_main_chat()
+    
+    # TODO: Render context manager with in a separate tab or page.
+    #render_context_manager()
+
 
 if __name__ == "__main__":
     main()

@@ -45,3 +45,4 @@ groq
 streamlit
 typing-extensions
 python-jose
+tiktoken

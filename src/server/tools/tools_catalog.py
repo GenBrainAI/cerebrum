@@ -73,41 +73,64 @@ class ToolsCatalog:
             # Store the instance in any case
             self._instances[name] = tool
 
+
     def _extract_docstring_info(self, obj: Any) -> tuple[str, List[ParameterInfo], ReturnInfo]:
-        """Extract docstring information from an object."""
-        docstring = docstring_parser.parse(obj.__doc__ or "")
-        type_hints = get_type_hints(obj)
-        return_type = type_hints.get('return')
-        
-        # Get description
-        description = docstring.short_description or ""
-        
-        # Get parameters
-        parameters = []
-        signature = inspect.signature(obj)
-        
-        for param_name, param in signature.parameters.items():
-            if param_name == 'self':  # Skip self parameter
-                continue
+            """Extract docstring information from an object."""
+            docstring = docstring_parser.parse(obj.__doc__ or "")
+            type_hints = get_type_hints(obj)
+            return_type = type_hints.get('return')
+            
+            # Get description
+            description = docstring.short_description or ""
+            
+            # Get parameters
+            parameters = []
+            signature = inspect.signature(obj)
+            
+            for param_name, param in signature.parameters.items():
+                if param_name == 'self':  # Skip self parameter
+                    continue
+                    
+                param_type = type_hints.get(param_name)
+                param_doc = next((p.description for p in docstring.params if p.arg_name == param_name), "")
                 
-            param_type = type_hints.get(param_name)
-            param_doc = next((p.description for p in docstring.params if p.arg_name == param_name), "")
+                # Convert type to string representation properly
+                type_str = None
+                if param_type:
+                    if hasattr(param_type, '__origin__'):  # Handle generic types like List[str]
+                        origin = param_type.__origin__.__name__
+                        args = ', '.join(arg.__name__ if hasattr(arg, '__name__') else str(arg) 
+                                    for arg in param_type.__args__)
+                        type_str = f"{origin}[{args}]"
+                    else:
+                        type_str = param_type.__name__ if hasattr(param_type, '__name__') else str(param_type)
+                
+                parameters.append(ParameterInfo(
+                    name=param_name,
+                    type_hint=type_str,
+                    description=param_doc,
+                    default=param.default if param.default != inspect.Parameter.empty else None,
+                    required=param.default == inspect.Parameter.empty
+                ))
+                
+            # Get return info
+            return_str = None
+            if return_type:
+                if hasattr(return_type, '__origin__'):
+                    origin = return_type.__origin__.__name__
+                    args = ', '.join(arg.__name__ if hasattr(arg, '__name__') else str(arg) 
+                                for arg in return_type.__args__)
+                    return_str = f"{origin}[{args}]"
+                else:
+                    return_str = return_type.__name__ if hasattr(return_type, '__name__') else str(return_type)
+                    
+            return_info = ReturnInfo(
+                type_hint=return_str,
+                description=docstring.returns.description if docstring.returns else ""
+            )
             
-            parameters.append(ParameterInfo(
-                name=param_name,
-                type_hint=str(param_type) if param_type else None,
-                description=param_doc,
-                default=param.default if param.default != inspect.Parameter.empty else None,
-                required=param.default == inspect.Parameter.empty
-            ))
-            
-        # Get return info
-        return_info = ReturnInfo(
-            type_hint=str(return_type) if return_type else None,
-            description=docstring.returns.description if docstring.returns else ""
-        )
-        
-        return description, parameters, return_info
+            return description, parameters, return_info
+
 
     def register_function(self, func: callable, name: Optional[str] = None) -> str:
         """Register a Python function as a tool."""
