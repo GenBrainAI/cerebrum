@@ -45,7 +45,7 @@ def combine_files(extensions, directory=".", recursive=False, exclude_items=None
                     outfile.write("\n\n")
 
 if __name__ == "__main__":
-    file_extensions = ['.py', '.ipynb', '.json']
+    file_extensions = ['.py'] #, '.ipynb', '.json']
     exclude_items = ['crewai', 'crewAI-examples', 'tests', 'experimental', '__pycache__', 'combine_files.py']
     combine_files(file_extensions, recursive=True, exclude_items=exclude_items)
     print("Files combined successfully into 'combined_code.txt'")

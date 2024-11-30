@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 from datetime import datetime
 
-from .context_management import ContextDatabase, CodeCatalog
+from .context_database import ContextDatabase, CodeCatalog
 
 class ContextManagerUI:
     """

@@ -41,13 +41,13 @@ class KnowledgeBase:
         except Exception as e:
             logging.error(f"Error saving knowledge index: {str(e)}")
             raise
-    
+        
     async def add_knowledge(
         self,
         content: str,
         domain: str,
         metadata: Dict[str, Any],
-        tags: List[str] = None
+        tags: Optional[List[str]] = None
     ) -> str:
         """
         Add new knowledge entry with metadata and tags.
@@ -56,6 +56,10 @@ class KnowledgeBase:
         try:
             # Generate unique ID for the entry
             entry_id = f"knowledge_{len(self.knowledge_index['entries'])}_{hash(content)}"
+            
+            # Extract tags from metadata if not provided directly
+            if tags is None and metadata and 'tags' in metadata:
+                tags = metadata['tags']
             
             # Create entry
             entry = {
@@ -87,11 +91,11 @@ class KnowledgeBase:
             self._save_index()
             
             return entry_id
-            
+                
         except Exception as e:
-            logging.error(f"Error adding knowledge entry: {str(e)}")
+            self.logger.error(f"Error adding knowledge entry: {str(e)}")
             raise
-    
+
     async def update_knowledge(
         self,
         entry_id: str,
@@ -136,7 +140,7 @@ class KnowledgeBase:
         except Exception as e:
             logging.error(f"Error updating knowledge entry: {str(e)}")
             raise
-    
+
     def get_knowledge(
         self,
         entry_id: Optional[str] = None,
@@ -151,7 +155,7 @@ class KnowledgeBase:
             entry_id: Specific entry ID to retrieve
             domain: Domain to filter by
             tags: List of tags to filter by (entries must have all tags)
-            
+                
         Returns:
             List of matching knowledge entries
         """
@@ -170,24 +174,25 @@ class KnowledgeBase:
             
             # Filter by tags
             if tags:
-                # Start with entries from first tag
-                if tags[0] in self.knowledge_index["tags"]:
-                    tag_entries = set(self.knowledge_index["tags"][tags[0]])
-                    
-                    # Intersect with other tags
-                    for tag in tags[1:]:
-                        if tag in self.knowledge_index["tags"]:
-                            tag_entries.intersection_update(self.knowledge_index["tags"][tag])
+                # Get entries for the first tag
+                tag_entries = set()
+                for tag in tags:
+                    if tag in self.knowledge_index["tags"]:
+                        # For first tag, initialize the set
+                        if not tag_entries:
+                            tag_entries = set(self.knowledge_index["tags"][tag])
+                        # For subsequent tags, keep only entries that have all tags
                         else:
-                            return []  # If any tag doesn't exist, no results match
-                    
-                    # If we're also filtering by domain, intersect results
-                    if domain:
-                        results.intersection_update(tag_entries)
+                            tag_entries.intersection_update(self.knowledge_index["tags"][tag])
                     else:
-                        results = tag_entries
+                        # If any tag doesn't exist, return empty list
+                        return []
+                
+                # If domain was specified, intersect with domain results
+                if domain:
+                    results.intersection_update(tag_entries)
                 else:
-                    return []  # If first tag doesn't exist, no results
+                    results = tag_entries
             
             # If no filters provided, return all entries
             if not domain and not tags:
@@ -195,11 +200,11 @@ class KnowledgeBase:
             
             # Convert IDs to full entries
             return [self.knowledge_index["entries"][entry_id] for entry_id in results]
-            
+                
         except Exception as e:
-            logging.error(f"Error retrieving knowledge entries: {str(e)}")
+            self.logger.error(f"Error retrieving knowledge entries: {str(e)}")
             raise
-
+        
     def get_domain_summary(self, domain: str) -> Dict[str, Any]:
         """
         Get summary information about a domain.
@@ -354,15 +359,15 @@ class KnowledgeBase:
             }
             
             if not export_path:
-                export_path = self.base_path / f"export_{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                export_path = os.path.join(self.base_path, f"export_{domain}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
             
             with open(export_path, 'w') as f:
                 json.dump(export_data, f, indent=2)
             
-            return str(export_path)
-            
+            return export_path
+                
         except Exception as e:
-            logging.error(f"Error exporting domain: {str(e)}")
+            self.logger.error(f"Error exporting domain: {str(e)}")
             raise
 
     async def import_domain(self, import_path: str, merge: bool = False) -> int:

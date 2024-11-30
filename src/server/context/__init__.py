@@ -4,8 +4,8 @@ from pathlib import Path
 import logging
 from typing import Optional
 
-from .context_management import ContextDatabase, CodeCatalog
-from .vector_store import VectorStore
+from .context_database import ContextDatabase
+from .code_catalog import CodeCatalog
 from .knowledge_base import KnowledgeBase
 
 class ContextManager:
