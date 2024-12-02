@@ -334,22 +334,27 @@ def render_logo(width=150):
 def render_sidebar():
     """Render the sidebar UI"""
     with st.sidebar:
-        # Tools section first (at the top)
-        st.subheader("Tools")
-        if st.button("Context Management", use_container_width=True):
-            try:
-                st.switch_page("pages/context_management.py")
-            except Exception as e:
-                st.error(f"Error navigating to context management: {str(e)}")
-                if st.button("Try Again"):
-                    st.rerun()
 
-        st.divider()
-        
         # Logo and title
         render_logo(width=150)
-        st.title("Cerebrum Chat")
+
+        st.title("Cerebrum")
         
+        st.divider()
+        
+        # # Navigation Links
+        # st.subheader("Navigation")
+        # nav_col1, nav_col2 = st.columns(2)
+        
+        # with nav_col1:
+        #     st.markdown('<a href="/" target="_self" style="text-decoration: none; color: inherit;">💬 Chat</a>', unsafe_allow_html=True)
+            
+        # with nav_col2:
+        #     st.markdown('<a href="/pages/context_management" target="_self" style="text-decoration: none; color: inherit;">🧠 Context</a>', unsafe_allow_html=True)
+        
+        # st.divider()
+
+
         # State Management section
         render_state_management()
         
