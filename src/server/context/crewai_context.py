@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional
 from uuid import UUID
+from fastapi import HTTPException
 
 from crewai import Agent, Task, Crew, Process
 from crewai.knowledge.source.string_knowledge_source import StringKnowledgeSource
@@ -116,7 +117,10 @@ class CrewAIKnowledgeBridge:
                     None
                 )
                 if not agent:
-                    raise ValueError(f"Agent role '{task_config.agent_role}' not found.")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Agent role '{task_config.agent_role}' not found."
+                    )
                     
                 crew_task = Task(
                     description=task_config.description,
@@ -137,9 +141,12 @@ class CrewAIKnowledgeBridge:
             result = crew.kickoff(**(running_extra_params or {}))
             return {"response": str(result)}
             
+        except HTTPException:
+            raise
         except Exception as e:
-            return {"error": f"CrewAI task execution failed: {str(e)}"}
-
+            print(e)
+            raise HTTPException(status_code=500, detail=str(e))
+        
 class CrewAIContextProvider:
     """Context provider specifically for CrewAI integration."""
     

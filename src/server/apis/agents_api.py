@@ -1,7 +1,8 @@
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from ..models.agent import CreateCrewRequest, AgentModel, CrewAIConfig
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..controllers.agents_controller import create_crew
+from ..controllers.agents_controller import create_crew, enhance_crew_with_context
 from ..controllers.curried_proxy import CurriedProxy
 from ..tools.tools_catalog import tools_catalog
 
@@ -9,34 +10,44 @@ router = APIRouter()
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
 @router.post("/agent/crewai")
-async def create_crewai(request: CreateCrewRequest):
-    """Create a CrewAI crew with properly initialized tools."""
+async def create_crewai(
+    request: CreateCrewRequest,
+    task_id: Optional[str] = None ):
+    """
+    Create a CrewAI crew, optionally enhanced with context if task_id is provided.
+    Maintains clear separation between crew creation and context enhancement.
+    """
     try:
-        # Create a new curried proxy for this crew
+        # Create a new curried proxy for tools
         curried_proxy = CurriedProxy()
 
         # Initialize tools for each agent
         for agent in request.agents:
             await initialize_agent_tools(agent, curried_proxy)
 
-        # Create the crew using the configured tools
-        crew = await create_crew(request, curried_proxy)
+        # Create the base crew
+        crew = await create_crew(
+            request=request,
+            curried_proxy=curried_proxy
+        )
         
-        # Get persistence model
-        persistence_model = PersistenceModelFactory.persistence_model()
+        # Optionally enhance with context
+        if task_id:
+            crew = await enhance_crew_with_context(crew, task_id)
         
-        # Store the configuration and curried proxy
-        config = persistence_model.crewai_config.create(CrewAIConfig(create_crew=request))
-        proxy = persistence_model.curried_proxies.create(curried_proxy)
+        # Store configuration and proxy
+        config = CrewAIConfig(create_crew=request)
+        persisted_config = persistence_model.crewai_config.create(config)
+        persisted_proxy = persistence_model.curried_proxies.create(curried_proxy)
 
         return {
             "message": "Crew created",
-            "crew_id": config.id,
-            "curried_proxy_id": proxy.id
+            "crew_id": persisted_config.id,
+            "curried_proxy_id": persisted_proxy.id,
+            "context_enhanced": bool(task_id)
         }
 
     except HTTPException:
-        # Re-raise HTTP exceptions to maintain their status codes
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

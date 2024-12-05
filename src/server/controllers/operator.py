@@ -73,8 +73,9 @@ class ToolsOperator:
             else:
                 raise ValueError(f"Unsupported API provider: {self.api_provider}")
         except Exception as e:
-            logging.error(f"Error in completion: {e}")
-            raise HTTPException(status_code=500, detail="Error in completion")
+            detail = f"Error in completion: {e}"
+            logging.error(detail)
+            raise HTTPException(status_code=500, detail=detail)
 
     async def _openai_completion(self, model, messages, curried_proxy: CurriedProxy):
         tools = curried_proxy.export_to_openai()

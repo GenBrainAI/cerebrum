@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from src.server.apis.agents_api import initialize_agent_tools
 from src.server.models.agent import AgentModel, ToolModel, CreateCrewRequest, TaskModel
 from src.server.controllers.curried_proxy import CurriedProxy
+from src.server.models.agent import CrewAIConfig
 from src.server.tools.tools_catalog import (
     ToolMetadata,
     ToolType,
@@ -140,6 +141,7 @@ async def test_initialize_agent_tools_with_class_tools():
         print(f"MockToolFactory.call_count: {MockToolFactory.call_count}")
         print(f"mock_factory_instance.set_curried_proxy.call_count: {mock_factory_instance.set_curried_proxy.call_count}")
 
+
 @pytest.mark.asyncio
 async def test_create_crewai_endpoint():
     """Test the CrewAI creation endpoint."""
@@ -163,37 +165,23 @@ async def test_create_crewai_endpoint():
             )
         ]
     )
-    
-    # Create mock config with proper id attribute
-    mock_config = Mock()
-    mock_config.id = "test-config-id"
-    type(mock_config).id = PropertyMock(return_value="test-config-id")
-    
-    # Create mock proxy with proper id attribute
+
+    # Create mock proxy
     mock_proxy = Mock()
     mock_proxy.id = "test-proxy-id"
     type(mock_proxy).id = PropertyMock(return_value="test-proxy-id")
-    
-    # Create mock persistence model
-    mock_persistence_model = Mock()
-    mock_persistence_model.crewai_config = Mock()
-    mock_persistence_model.crewai_config.create = Mock(return_value=mock_config)
-    mock_persistence_model.curried_proxies = Mock()
-    mock_persistence_model.curried_proxies.create = Mock(return_value=mock_proxy)
-    
-    # Set up mock factory
-    mock_factory = Mock()
-    mock_factory.persistence_model.return_value = mock_persistence_model
-    
+
+    # Create mock config with fixed ID
+    mock_config = Mock()
+    mock_config.id = "test-config-id"
+    type(mock_config).id = PropertyMock(return_value="test-config-id")
+
     # Set up patches
     with patch('src.server.apis.agents_api.PersistenceModelFactory') as mock_factory_class, \
          patch('src.server.apis.agents_api.create_crew') as mock_create_crew, \
-         patch('src.server.apis.agents_api.tools_catalog') as mock_catalog:
-        
-        # Set up mock factory class
-        mock_factory_class.persistence_model = Mock(return_value=mock_persistence_model)
-        mock_factory_class._instance = mock_persistence_model
-        
+         patch('src.server.apis.agents_api.tools_catalog') as mock_catalog, \
+         patch('src.server.apis.agents_api.persistence_model') as mock_persistence_model:  # Add this line
+
         # Setup mock catalog with available tools
         mock_catalog.list_tools.return_value = {"TestTool"}
         mock_catalog.get_tool.return_value = ToolMetadata(
@@ -209,16 +197,24 @@ async def test_create_crewai_endpoint():
             async_tool=False
         )
         mock_catalog.get_tool_instance.return_value = lambda x: x
-        
+
+        # Mock the create_crew function
+        mock_create_crew.return_value = Mock()
+
+        # Configure the persistence model mocks
+        mock_persistence_model.crewai_config.create.return_value = mock_config
+        mock_persistence_model.curried_proxies.create.return_value = mock_proxy
+
         # Run test and verify results
         response = await create_crewai(request)
-        
+
         # Verify response
         assert response["message"] == "Crew created"
         assert response["crew_id"] == "test-config-id"
         assert response["curried_proxy_id"] == "test-proxy-id"
-        
-        # Verify mock calls
+        assert response["context_enhanced"] is False
+
+        # Verify the correct calls were made
         mock_persistence_model.crewai_config.create.assert_called_once()
         mock_persistence_model.curried_proxies.create.assert_called_once()
         mock_create_crew.assert_called_once()

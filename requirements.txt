@@ -19,6 +19,7 @@ crewai[tools]
 composio-crewai
 composio-openai
 ollama
+langchain-ollama
 llama-index
 autogen
 deepdiff
