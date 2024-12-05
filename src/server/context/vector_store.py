@@ -1,4 +1,5 @@
 import os
+import time
 import chromadb
 from chromadb.utils import embedding_functions
 from chromadb.config import Settings
@@ -10,6 +11,8 @@ from pathlib import Path
 import backoff
 from datetime import datetime
 from dataclasses import dataclass, field
+from openai import OpenAI
+
 
 @dataclass
 class VectorStoreConfig:
@@ -39,16 +42,8 @@ class VectorStore:
         self._initialize_store()
 
     def _setup_logging(self):
-        """Set up logging for the vector store."""
         self.logger = logging.getLogger(__name__)
-        if not self.logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
+        self.logger.setLevel(logging.INFO)
 
     @backoff.on_exception(
         backoff.expo,
@@ -103,66 +98,68 @@ class VectorStore:
             self.logger.error(f"Metadata validation failed: {str(e)}")
             return False
 
-    async def add_items(
-        self,
-        embeddings: np.ndarray,
-        metadatas: List[Dict[str, Any]],
-        contents: List[str],
-        batch_size: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """Add items to the vector store in batches."""
-        batch_size = batch_size or self.config.batch_size
-        stats = {"processed": 0, "failed": 0}
+    @backoff.on_exception(
+        backoff.expo,
+        Exception,
+        max_tries=lambda self: self.config.max_retries
+    )
+    def _safe_embed(self, texts: List[str]) -> np.ndarray:
+        """Safely generate embeddings with retry logic."""
+        try:
+            # Initialize OpenAI client if not already done
+            if not hasattr(self, '_openai_client'):
+                self._openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            
+            # Create embeddings using OpenAI's API
+            response = self._openai_client.embeddings.create(
+                model=self.config.embedding_model,
+                input=texts,
+                encoding_format="float"
+            )
+            
+            # Extract the embedding vectors from the response
+            embeddings = [data.embedding for data in response.data]
+            
+            # Convert to numpy array and return
+            return np.array(embeddings)
+            
+        except Exception as e:
+            self.logger.error(f"Embedding generation failed: {str(e)}")
+            raise
 
-        # Validate input lengths
-        if not (len(embeddings) == len(metadatas) == len(contents)):
-            raise ValueError("Embeddings, metadatas, and contents must have same length")
-
-        for i in range(0, len(contents), batch_size):
-            batch_slice = slice(i, i + batch_size)
-            batch_embeddings = embeddings[batch_slice]
-            batch_metadatas = metadatas[batch_slice]
-            batch_contents = contents[batch_slice]
-
-            try:
-                async with self._semaphore:
-                    # Validate metadata
-                    valid_indices = []
-                    for idx, metadata in enumerate(batch_metadatas):
-                        if await self._validate_metadata(metadata):
-                            valid_indices.append(idx)
-                        else:
-                            stats["failed"] += 1
-
-                    if not valid_indices:
-                        continue
-
-                    # Process valid items
-                    valid_embeddings = batch_embeddings[valid_indices]
-                    valid_metadatas = [batch_metadatas[i] for i in valid_indices]
-                    valid_contents = [batch_contents[i] for i in valid_indices]
-
-                    # Generate IDs
-                    ids = [
-                        f"item_{hash(content)}_{datetime.now().timestamp()}"
-                        for content in valid_contents
-                    ]
-
-                    # Add to collection
-                    self._collection.add(
-                        embeddings=valid_embeddings.tolist(),
-                        metadatas=valid_metadatas,
-                        documents=valid_contents,
-                        ids=ids
-                    )
-
-                    stats["processed"] += len(valid_indices)
-
-            except Exception as e:
-                self.logger.error(f"Error adding batch: {str(e)}")
-                stats["failed"] += len(batch_contents)
-
-        return stats
+    async def add_items(self, embeddings: np.ndarray, metadatas: List[Dict], contents: List[str]) -> Dict[str, Any]:
+        """Add items to vector store."""
+        try:
+            stats = {"processed": 0, "failed": 0, "ids": []}  # Add ids to stats
+            
+            # Validate input lengths
+            if not (len(embeddings) == len(metadatas) == len(contents)):
+                raise ValueError("Embeddings, metadatas, and contents must have same length")
+            
+            # Process in batches
+            for i in range(0, len(contents), self.config.batch_size):
+                batch_slice = slice(i, i + self.config.batch_size)
+                try:
+                    async with self._semaphore:
+                        # Generate IDs
+                        batch_ids = [f"item_{hash(c)}_{datetime.now().timestamp()}" for c in contents[batch_slice]]
+                        
+                        self._collection.add(
+                            embeddings=embeddings[batch_slice].tolist(),
+                            metadatas=metadatas[batch_slice],
+                            documents=contents[batch_slice],
+                            ids=batch_ids
+                        )
+                        stats["processed"] += len(contents[batch_slice])
+                        stats["ids"].extend(batch_ids)  # Store the IDs
+                except Exception as e:
+                    self.logger.error(f"Error adding batch: {str(e)}")
+                    stats["failed"] += len(contents[batch_slice])
+            
+            return stats
+        except Exception as e:
+            self.logger.error(f"Error in add_items: {str(e)}")
+            raise
 
     async def search(
         self,

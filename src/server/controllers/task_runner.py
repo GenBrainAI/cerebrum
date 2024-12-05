@@ -1,20 +1,143 @@
 from typing import Dict, Any, Optional, List
 import logging
-from fastapi import HTTPException
+from datetime import datetime
 
 from ..models.message import Message
-from ..models.run_task import RunTask
-from ..persistence.persistence_model import PersistenceModelBase
+from ..models.tasks_manager import TasksManager
+from ..models.task import Task
 from ..controllers.operator import ToolsOperator
 from ..controllers.curried_proxy import CurriedProxy
-from .crew_runner import run_crew_task
-from ..models.task import Task
-from ..models.tasks_manager import TasksManager
+from ..controllers.crew_runner import run_crew_task
+from ..context.context_provider import ContextProvider
+from ..context.crew_context_enhancer import CrewContextEnhancer, CrewContextConfig
 
 class TaskRunner:
-    def __init__(self, persistence_model: PersistenceModelBase):
+    """Task runner with added context awareness through ContextProvider."""
+
+    def __init__(self, persistence_model):
         self.persistence_model = persistence_model
         self.operator = ToolsOperator()
+        self.context_provider = ContextProvider()
+        self.logger = logging.getLogger(__name__)
+
+    async def run_task(
+        self,
+        tasksmanager_id: str,
+        task_id: str,
+        running_extra_params: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Run a task with integrated context support."""
+        try:
+            # Get task and tasksmanager
+            task: Task = self.persistence_model.tasks.read(task_id)
+            if task is None:
+                raise ValueError(f"Task {task_id} not found")
+
+            tasksmanager = self.persistence_model.tasksmanagers.read(tasksmanager_id)
+            if tasksmanager is None:
+                raise ValueError(f"TasksManager {tasksmanager_id} not found")
+
+            if task.tasksmanager_id != tasksmanager_id:
+                raise ValueError(f"Task {task_id} does not belong to TasksManager {tasksmanager_id}")
+
+            # Determine execution path based on task type
+            if task.crewai_info_id:
+                return await self._run_crewai_task(task, tasksmanager, running_extra_params)
+            else:
+                return await self._run_standard_task(task, tasksmanager, running_extra_params)
+
+        except Exception as e:
+            self.logger.error(f"Error running task {task_id}: {str(e)}", exc_info=True)
+            raise
+
+    async def _run_standard_task(
+        self,
+        task: Task,
+        tasksmanager: TasksManager,
+        running_extra_params: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Execute a standard task with context support."""
+        try:
+            # Get curried proxy for tools
+            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            
+            # Initialize messages with system messages
+            messages = task.get_system_messages()
+
+            # Extract query from running params
+            query = running_extra_params.get("query") if running_extra_params else None
+
+            # Add messages from running params
+            if running_extra_params and "messages" in running_extra_params:
+                messages.extend(running_extra_params["messages"])
+
+            # Prepare messages with context
+            messages = await self.context_provider.prepare_task_messages(
+                task_id=task.id,
+                messages=messages,
+                query=query
+            )
+
+            # Execute completion
+            response = await self.operator.completion(
+                tasksmanager_id=tasksmanager.id,
+                task_id=task.id,
+                messages=messages,
+                model=tasksmanager.model,
+                curried_proxy=curried_proxy
+            )
+
+            return {"response": response}
+
+        except Exception as e:
+            self.logger.error(f"Error in standard task execution: {str(e)}")
+            raise
+
+    async def _run_crewai_task(
+        self,
+        task: Task,
+        tasksmanager: TasksManager,
+        running_extra_params: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """Execute a CrewAI task with context support."""
+        try:
+            # Get contexts for crew task
+            query = running_extra_params.get("query") if running_extra_params else None
+            contexts = await self.context_provider.get_task_contexts(
+                task_id=task.id,
+                query=query
+            )
+
+            # Add contexts to running params
+            context_params = {"contexts": contexts}
+            running_params = {**(running_extra_params or {}), **context_params}
+
+            return await run_crew_task(task.id, running_params)
+
+        except Exception as e:
+            self.logger.error(f"Error in CrewAI task execution: {str(e)}")
+            raise
+
+    def _get_or_create_curried_proxy(
+        self,
+        task: Task,
+        tasksmanager: TasksManager
+    ) -> CurriedProxy:
+        """Get existing curried proxy or create new one with tools."""
+        curried_proxy = None
+        if task.curried_proxy_id:
+            curried_proxy = self.persistence_model.curried_proxies.read(task.curried_proxy_id)
+        
+        if not curried_proxy:
+            curried_proxy = CurriedProxy()
+            
+        # Add tools from both tasksmanager and task
+        tasksmanager_toolsets = getattr(tasksmanager, 'toolsets', []) or []
+        task_toolsets = getattr(task, 'toolsets', []) or []
+        
+        self._add_tools_to_proxy(curried_proxy, tasksmanager_toolsets + task_toolsets)
+                
+        return curried_proxy
 
     def _add_tools_to_proxy(self, curried_proxy: CurriedProxy, toolset_ids: list) -> None:
         """Add tools from toolsets to curried proxy."""
@@ -40,104 +163,6 @@ class TaskRunner:
                         tool_name = f"{sanitized_toolset_name}_{tool.function.name}"
                         curried_proxy.add_tool(tool_name, tool)
 
-    def _get_or_create_curried_proxy(self, task: Task, tasksmanager: TasksManager) -> CurriedProxy:
-        """Get existing curried proxy or create a new one with tools."""
-        curried_proxy = None
-        if task.curried_proxy_id:
-            curried_proxy = self.persistence_model.curried_proxies.read(task.curried_proxy_id)
-        
-        if not curried_proxy:
-            curried_proxy = CurriedProxy()
-            
-        # Handle None values by defaulting to empty lists
-        tasksmanager_toolsets = getattr(tasksmanager, 'toolsets', []) or []
-        task_toolsets = getattr(task, 'toolsets', []) or []
-        
-        # Add tools from both tasksmanager and task
-        self._add_tools_to_proxy(curried_proxy, tasksmanager_toolsets + task_toolsets)
-                
-        return curried_proxy
-
-    async def debug_run_task(self, tasksmanager_id: str, task_id: str, running_extra_params: Optional[Dict] = None) -> Dict:
-
-        print(f"Running task {task_id} with tasksmanager {tasksmanager_id} and running_extra_params {running_extra_params}")
-        return {"response": "test"}
-
-    async def run_task(self, tasksmanager_id: str, task_id: str, running_extra_params: Optional[Dict] = None) -> Dict:
-        """Unified method to run a task, handling both CrewAI and standard tasks."""
-        try:
-            # Validate task and tasksmanager
-            task = self.persistence_model.tasks.read(task_id)
-            if task is None:
-                raise ValueError(f"Task {task_id} not found")
-
-            tasksmanager = self.persistence_model.tasksmanagers.read(tasksmanager_id)
-            if tasksmanager is None:
-                raise ValueError(f"TasksManager {tasksmanager_id} not found")
-
-            if task.tasksmanager_id != tasksmanager_id:
-                raise ValueError(f"Task {task_id} does not belong to TasksManager {tasksmanager_id}")
-
-            # Determine task type and execute accordingly
-            if task.crewai_info_id:
-                # Run using CrewAI
-                logging.info(f"Running task {task_id} with CrewAI")
-                response = await run_crew_task(task.id, running_extra_params)
-            else:
-                # Run using standard completion
-                logging.info(f"Running task {task_id} with standard completion")
-                response = await self._run_standard_task(task, tasksmanager, running_extra_params)
-
-            return response
-
-        except Exception as e:
-            logging.error(f"Error running task {task_id}: {str(e)}", exc_info=True)
-            raise
-
-    async def _run_standard_task(self, task: Task, tasksmanager: TasksManager, running_extra_params: Optional[Dict] = None) -> Dict:
-        """Execute a task using standard completion with tool support."""
-        try:
-            # Get or create curried proxy with tools
-            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
-            
-            # Initialize message list with system messages
-            messages = task.get_system_messages()
-
-            # Handle running_extra_params
-            if running_extra_params:
-                # Handle messages if present
-                if 'messages' in running_extra_params:
-                    input_messages = running_extra_params['messages']
-                    # Convert each message to Message object if it's not already
-                    for msg in input_messages:
-                        if isinstance(msg, Message):
-                            messages.append(msg)
-                        elif isinstance(msg, dict):
-                            messages.append(Message(**msg))
-                        else:
-                            raise ValueError(f"Invalid message format: {msg}")
-
-                # Handle other parameters by converting them to a message
-                other_params = {k: v for k, v in running_extra_params.items() if k != 'messages'}
-                if other_params:
-                    content = "\n".join([f"{k}: {v}" for k, v in other_params.items()])
-                    messages.append(Message(role="user", content=content))
-
-            # Run completion with tools
-            response = await self.completion(
-                tasksmanager_id=tasksmanager.id,
-                task_id=task.id,
-                messages=messages,
-                model=tasksmanager.model,
-                curried_proxy=curried_proxy
-            )
-            
-            return {"response": response}
-
-        except Exception as e:
-            logging.error(f"Error running standard task: {str(e)}", exc_info=True)
-            raise    
-    
     async def completion(
         self, 
         tasksmanager_id: str, 
@@ -146,12 +171,11 @@ class TaskRunner:
         model: Optional[str] = None,
         curried_proxy: Optional[CurriedProxy] = None
     ) -> str:
-        """Execute a standard completion task with optional tools."""
-        result = await self.operator.completion(
+        """Execute a completion task."""
+        return await self.operator.completion(
             tasksmanager_id=tasksmanager_id,
             task_id=task_id,
             messages=messages,
             model=model,
             curried_proxy=curried_proxy
         )
-        return result

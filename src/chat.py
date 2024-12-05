@@ -12,10 +12,8 @@ from server.controllers.task_runner import TaskRunner
 from server.models.message import Message
 from server.models.tasks_manager import TasksManager
 from server.models.task import Task
-from server.models.run_task import RunTask
 from server.controllers.persistence_controller import load_from_storage, save_to_storage
 from server.models.persistence_models import StorageLocation, StorageType
-from server.context.context_ui import render_context_manager
 
 # Initialize persistence model and task runner
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
@@ -336,14 +334,34 @@ def render_logo(width=150):
 def render_sidebar():
     """Render the sidebar UI"""
     with st.sidebar:
+
+        # Logo and title
         render_logo(width=150)
-        st.title("Cerebrum Chat")
+
+        st.title("Cerebrum")
+        
+        st.divider()
+        
+        # # Navigation Links
+        # st.subheader("Navigation")
+        # nav_col1, nav_col2 = st.columns(2)
+        
+        # with nav_col1:
+        #     st.markdown('<a href="/" target="_self" style="text-decoration: none; color: inherit;">💬 Chat</a>', unsafe_allow_html=True)
+            
+        # with nav_col2:
+        #     st.markdown('<a href="/pages/context_management" target="_self" style="text-decoration: none; color: inherit;">🧠 Context</a>', unsafe_allow_html=True)
+        
+        # st.divider()
+
+
+        # State Management section
         render_state_management()
         
-        # Chat selection section
-        st.subheader("Chat Management")
-        
+        # Chat Management section
         tasksmanagers = get_available_tasksmanagers()
+        
+        st.subheader("Chat Management")
         
         # Create New Chat button
         create_new = st.button("Create New Chat")
@@ -484,6 +502,7 @@ def render_sidebar():
                                 st.session_state.current_session_id = session_id
                                 persistence_model.tasks.update(selected_task_obj.id, selected_task_obj)
                                 st.rerun()
+
 
 def render_main_chat():
     """Render the main chat interface"""
@@ -675,16 +694,20 @@ def on_tm_select():
 
 def main():
     """Main application entry point"""
-    st.set_page_config(page_title="Cerebrum Chat", layout="wide")
+    st.set_page_config(
+        page_title="Cerebrum Chat", 
+        layout="wide",
+        menu_items={
+            'Get Help': 'https://github.com/GenBrainAI/cerebrum',
+            'About': 'Cerebrum AI Chat Interface'
+        }
+    )
     initialize_session_state()
     
     # Render both sidebar and main chat interface
     render_sidebar()
     render_main_chat()
-    
-    # TODO: Render context manager with in a separate tab or page.
-    #render_context_manager()
-
 
 if __name__ == "__main__":
     main()
+

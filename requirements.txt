@@ -14,12 +14,12 @@ requests
 python-multipart
 prance
 pytest
-# Include crewai requirements as sub module
-# -r crewai/requirements.txt
+crewai
 crewai[tools]
 composio-crewai
 composio-openai
 ollama
+langchain-ollama
 llama-index
 autogen
 deepdiff

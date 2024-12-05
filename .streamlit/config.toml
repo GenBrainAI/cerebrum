@@ -3,9 +3,16 @@ primaryColor="#BEB09E"
 backgroundColor="#F6F6F3"
 secondaryBackgroundColor="#D6D6D6"
 textColor="#335095"
-font="serif"
+font="sans serif"
 # 335095
 
 [server]
 port = 8501
 address = "localhost"
+enableCORS = false
+enableXsrfProtection = true
+maxUploadSize = 200
+maxMessageSize = 200
+
+[browser]
+gatherUsageStats = false

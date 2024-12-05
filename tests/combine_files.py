@@ -46,7 +46,13 @@ def combine_files(extensions, directory=".", recursive=False, exclude_items=None
 
 if __name__ == "__main__":
     file_extensions = ['.py', '.ipynb']
-    exclude_items = ['crewai', 'crewAI-examples', 'tests', 'experimental', '__pycache__', 'combine_files.py']
+    exclude_items = ['test_curried.py', 'test_curried.py', 
+                     'test_curried_proxy_serialization.py', 
+                     'test_tools_catalog.py', 'test_tools_proxy_collection.py',
+                     'test_tools_catalog_openai_conversion.py', 'test_toolset.py',  
+                     'test_devsecops_automation.py', 
+                     'test_github_tool.py'                   
+                     'experimental', '__pycache__', 'combine_files.py']
     combine_files(file_extensions, recursive=True, exclude_items=exclude_items)
     print("Files combined successfully into 'combined_tests.txt'")
 

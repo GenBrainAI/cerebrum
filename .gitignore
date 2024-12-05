@@ -152,4 +152,4 @@ persistent_state/context/*/
 
 sms_*
 
-docs/*.md
+docs/*
