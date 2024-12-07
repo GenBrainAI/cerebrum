@@ -6,8 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import backoff
 from tqdm.asyncio import tqdm
 import numpy as np
-from .vector_store import VectorStore
-from .vector_store import VectorStoreConfig
+from .vector_store import VectorStore, VectorStoreConfig
 class ContextDatabase:
     """Enhanced version of the context database with better error handling and performance."""
     
@@ -17,23 +16,19 @@ class ContextDatabase:
         self._setup_logging()
         self._initialize_collections()
         self.executor = ThreadPoolExecutor(max_workers=4)
-        self.vector_store = VectorStore(
-            VectorStoreConfig(
-                persist_directory=persist_directory,
-                collection_name="code_context",
-                embedding_model="text-embedding-3-small"
-            )
-        )
 
     def _setup_logging(self):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
 
     def _initialize_collections(self):
-        from .vector_store import VectorStoreConfig
-        config = VectorStoreConfig(persist_directory=self.persist_directory, collection_name="codebase")
-        self.vector_store = VectorStore(config)
-
+        """Initialize vector store with proper configuration."""
+        config = VectorStoreConfig(
+            batch_size=self.batch_size,
+            persist_directory=self.persist_directory,
+            collection_name="codebase"
+        )
+        self.vector_store = VectorStore(base_path=self.persist_directory)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     async def _safe_embed(self, texts: List[str]) -> np.ndarray:

@@ -46,3 +46,7 @@ streamlit
 typing-extensions
 python-jose
 tiktoken
+PyPDF2
+python-docx
+gitpython
+chardet
