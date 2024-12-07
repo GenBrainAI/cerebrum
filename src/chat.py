@@ -109,6 +109,34 @@ def render_state_management():
                     st.error(f"Error saving state: {str(e)}")
 
 
+# In the render_navigation function, add:
+def render_navigation():
+    """Render the horizontal navigation menu."""
+    st.markdown("---")
+    nav_cols = st.columns(5)  # Updated to 5 columns
+    
+    with nav_cols[0]:
+        if st.button("💬 Chat", use_container_width=True):
+            st.session_state.context_view = "chat"
+            
+    with nav_cols[1]:
+        if st.button("🧠 Context", use_container_width=True):
+            st.session_state.context_view = "context"
+            
+    with nav_cols[2]:
+        if st.button("📚 Knowledge", use_container_width=True):
+            st.session_state.context_view = "knowledge"
+            
+    with nav_cols[3]:
+        if st.button("🔄 Vector Store", use_container_width=True):
+            st.session_state.context_view = "vector"
+            
+    with nav_cols[4]:
+        if st.button("⚙️ Settings", use_container_width=True):
+            st.session_state.context_view = "settings"
+        
+    st.markdown("---")
+
 def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None, existing_task_name: Optional[str] = None):
     """Select existing task/tasksmanager or create new ones"""
     tasksmanagers = get_available_tasksmanagers()

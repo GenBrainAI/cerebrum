@@ -153,3 +153,5 @@ persistent_state/context/*/
 sms_*
 
 docs/*
+
+temp_repos/

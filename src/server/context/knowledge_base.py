@@ -413,3 +413,55 @@ class KnowledgeBase:
         except Exception as e:
             logging.error(f"Error importing domain: {str(e)}")
             raise
+
+    async def add_knowledge_with_task(
+        self,
+        content: str,
+        domain: str,
+        metadata: Dict[str, Any],
+        task_id: Optional[str] = None,
+        tasksmanager_id: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> str:
+        """Add knowledge entry with optional task associations."""
+        entry_id = await self.add_knowledge(content, domain, metadata, tags)
+        
+        if task_id or tasksmanager_id:
+            if "task_associations" not in self.knowledge_index:
+                self.knowledge_index["task_associations"] = {}
+            
+            if entry_id not in self.knowledge_index["task_associations"]:
+                self.knowledge_index["task_associations"][entry_id] = {
+                    "tasks": [],
+                    "tasksmanagers": []
+                }
+
+            if task_id:
+                self.knowledge_index["task_associations"][entry_id]["tasks"].append(task_id)
+            
+            if tasksmanager_id:
+                self.knowledge_index["task_associations"][entry_id]["tasksmanagers"].append(tasksmanager_id)
+            
+            self._save_index()
+
+        return entry_id
+
+    def get_task_knowledge(self, task_id: str) -> List[Dict[str, Any]]:
+        """Get all knowledge entries associated with a task."""
+        entries = []
+        for entry_id, associations in self.knowledge_index.get("task_associations", {}).items():
+            if task_id in associations.get("tasks", []):
+                entry = self.knowledge_index["entries"].get(entry_id)
+                if entry:
+                    entries.append(entry)
+        return entries
+
+    def get_tasksmanager_knowledge(self, tasksmanager_id: str) -> List[Dict[str, Any]]:
+        """Get all knowledge entries associated with a tasksmanager."""
+        entries = []
+        for entry_id, associations in self.knowledge_index.get("task_associations", {}).items():
+            if tasksmanager_id in associations.get("tasksmanagers", []):
+                entry = self.knowledge_index["entries"].get(entry_id)
+                if entry:
+                    entries.append(entry)
+        return entries
