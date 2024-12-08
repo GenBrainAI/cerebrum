@@ -10,6 +10,8 @@ from ..controllers.curried_proxy import CurriedProxy
 from ..controllers.crew_runner import run_crew_task
 from ..context.context_provider import ContextProvider
 from ..context.crew_context_enhancer import CrewContextEnhancer, CrewContextConfig
+from ..context.context_analytics import ContextAnalytics
+from ..controllers.task_tree_controller import TaskNode
 
 class TaskRunner:
     """Task runner with added context awareness through ContextProvider."""
@@ -18,6 +20,7 @@ class TaskRunner:
         self.persistence_model = persistence_model
         self.operator = ToolsOperator()
         self.context_provider = ContextProvider()
+        self.context_analytics = ContextAnalytics()
         self.logger = logging.getLogger(__name__)
 
     async def run_task(
@@ -58,36 +61,50 @@ class TaskRunner:
     ) -> Dict[str, Any]:
         """Execute a standard task with context support."""
         try:
-            # Get curried proxy for tools
-            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            # Get contexts
+            contexts = await self.context_provider.get_task_contexts(
+                task_id=task.id,
+                query=running_extra_params.get("query") if running_extra_params else None
+            )
             
-            # Initialize messages with system messages
-            messages = task.get_system_messages()
+            success = False
+            try:
+                # Get curried proxy for tools
+                curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+                
+                # Initialize messages with system messages
+                messages = task.get_system_messages()
 
-            # Extract query from running params
-            query = running_extra_params.get("query") if running_extra_params else None
+                # Add messages from running params
+                if running_extra_params and "messages" in running_extra_params:
+                    messages.extend(running_extra_params["messages"])
 
-            # Add messages from running params
-            if running_extra_params and "messages" in running_extra_params:
-                messages.extend(running_extra_params["messages"])
+                # Prepare messages with context
+                messages = await self.context_provider.prepare_task_messages(
+                    task_id=task.id,
+                    messages=messages,
+                    query=running_extra_params.get("query") if running_extra_params else None
+                )
 
-            # Prepare messages with context
-            messages = await self.context_provider.prepare_task_messages(
-                task_id=task.id,
-                messages=messages,
-                query=query
-            )
+                # Execute completion
+                response = await self.operator.completion(
+                    tasksmanager_id=tasksmanager.id,
+                    task_id=task.id,
+                    messages=messages,
+                    model=tasksmanager.model,
+                    curried_proxy=curried_proxy
+                )
+                
+                success = True
+                return {"response": response}
 
-            # Execute completion
-            response = await self.operator.completion(
-                tasksmanager_id=tasksmanager.id,
-                task_id=task.id,
-                messages=messages,
-                model=tasksmanager.model,
-                curried_proxy=curried_proxy
-            )
-
-            return {"response": response}
+            finally:
+                # Record context usage
+                await self.context_analytics.record_context_usage(
+                    task_id=task.id,
+                    contexts=contexts,
+                    success=success
+                )
 
         except Exception as e:
             self.logger.error(f"Error in standard task execution: {str(e)}")
@@ -179,3 +196,28 @@ class TaskRunner:
             model=model,
             curried_proxy=curried_proxy
         )
+
+    async def run_sequential_tasks(
+        self, 
+        task_ids: List[str], 
+        initial_context: Dict
+    ) -> List[Dict]:
+        """Run tasks in sequence, passing context forward"""
+        responses = []
+        current_context = initial_context.copy()
+        
+        for task_id in task_ids:
+            task = self.persistence_model.tasks.read(task_id)
+            node = TaskNode(task)
+            
+            response = await node.run(current_context)
+            result = {
+                "task_id": task_id,
+                "response": response,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            responses.append(result)
+            current_context["previous_response"] = response
+            
+        return responses

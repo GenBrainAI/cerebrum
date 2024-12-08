@@ -13,6 +13,7 @@ import json
 import logging
 import numpy as np
 import openai
+import traceback
 
 @dataclass
 class VectorStoreConfig:
@@ -26,7 +27,7 @@ class VectorStoreConfig:
     chunk_overlap: int = 100
     embedding_model: str = "text-embedding-3-small"
     embeddings_provider: str = "openai"
-    persist_directory: str = "persistent_state/context/vector_store"
+    persist_directory: str = "context_db"
     collection_name: str = "default"
     metadata_schema: Optional[Dict[str, Any]] = None
 
@@ -42,10 +43,27 @@ class VectorStore:
         # Use persist_directory from config if provided, otherwise use base_path
         persist_dir = self.config.persist_directory if config else base_path
         self.base_path = Path(persist_dir)
+        
+        # Create directory structure
+        print(f"Debug - Creating vector store directory structure at: {self.base_path}")
         self.base_path.mkdir(parents=True, exist_ok=True)
-        self.index_file = self.base_path / "vector_index.json"
+        
+        # Create subdirectories
+        self.metadata_dir = self.base_path / "metadata"
         self.chunks_dir = self.base_path / "chunks"
+        self.items_dir = self.base_path / "items"
+        
+        print(f"Debug - Creating subdirectories:")
+        print(f"  Metadata: {self.metadata_dir}")
+        print(f"  Chunks: {self.chunks_dir}")
+        print(f"  Items: {self.items_dir}")
+        
+        self.metadata_dir.mkdir(exist_ok=True)
         self.chunks_dir.mkdir(exist_ok=True)
+        self.items_dir.mkdir(exist_ok=True)
+        
+        # Initialize index file path
+        self.index_file = self.base_path / "vector_index.json"
         
         # Initialize embeddings configuration
         self.embedding_model = self.config.embedding_model
@@ -124,28 +142,36 @@ class VectorStore:
         try:
             # Handle Streamlit UploadedFile
             if hasattr(file_path_or_obj, 'read'):  # It's a file-like object
-                # Read content once and store it
-                content = file_path_or_obj.read()
+                # Get the filename from the uploaded file
+                filename = getattr(file_path_or_obj, 'name', '')
                 
-                # Reset file pointer for potential future reads
-                if hasattr(file_path_or_obj, 'seek'):
-                    file_path_or_obj.seek(0)
-                
-                # Try to decode if it's bytes
-                if isinstance(content, bytes):
-                    try:
-                        text = content.decode('utf-8')
-                    except UnicodeDecodeError:
-                        # If UTF-8 fails, try to detect encoding
-                        import chardet
-                        detected = chardet.detect(content)
-                        if detected['encoding']:
-                            text = content.decode(detected['encoding'])
-                        else:
-                            raise ValueError("Could not detect file encoding")
-                else:
-                    text = str(content)  # Ensure content is string
+                # Read content based on file type
+                if filename.lower().endswith('.pdf'):
+                    # Handle PDF file
+                    pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_path_or_obj.read()))
+                    text = ""
+                    for page in pdf_reader.pages:
+                        text += page.extract_text() + "\n"
                     
+                    # Reset file pointer
+                    if hasattr(file_path_or_obj, 'seek'):
+                        file_path_or_obj.seek(0)
+                else:
+                    # Handle other file types as before
+                    content = file_path_or_obj.read()
+                    if isinstance(content, bytes):
+                        try:
+                            text = content.decode('utf-8')
+                        except UnicodeDecodeError:
+                            import chardet
+                            detected = chardet.detect(content)
+                            if detected['encoding']:
+                                text = content.decode(detected['encoding'])
+                            else:
+                                raise ValueError("Could not detect file encoding")
+                    else:
+                        text = str(content)
+                        
                 # Generate file ID from content
                 file_hash = hashlib.md5(text.encode()).hexdigest()
                 
@@ -154,22 +180,35 @@ class VectorStore:
                 if not file_path.exists():
                     raise FileNotFoundError(f"File not found: {file_path}")
                 
+                # Handle different file types
+                if file_path.suffix.lower() == '.pdf':
+                    # Handle PDF file
+                    with open(file_path, 'rb') as f:
+                        pdf_reader = PyPDF2.PdfReader(f)
+                        text = ""
+                        for page in pdf_reader.pages:
+                            text += page.extract_text() + "\n"
+                else:
+                    # Handle other file types as before
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            text = f.read()
+                    except UnicodeDecodeError:
+                        with open(file_path, 'rb') as f:
+                            content = f.read()
+                            import chardet
+                            detected = chardet.detect(content)
+                            if detected['encoding']:
+                                text = content.decode(detected['encoding'])
+                            else:
+                                raise ValueError("Could not detect file encoding")
+                
                 # Generate file ID
                 file_hash = hashlib.md5(str(file_path).encode()).hexdigest()
-                
-                # Read file content
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        text = f.read()
-                except UnicodeDecodeError:
-                    with open(file_path, 'rb') as f:
-                        content = f.read()
-                        import chardet
-                        detected = chardet.detect(content)
-                        if detected['encoding']:
-                            text = content.decode(detected['encoding'])
-                        else:
-                            raise ValueError("Could not detect file encoding")
+
+            # Ensure we have valid text content
+            if not text.strip():
+                raise ValueError("No text content could be extracted from the file")
 
             # Create chunks using config settings
             chunks = self._create_chunks(
@@ -192,22 +231,36 @@ class VectorStore:
                 metadata = {}
             
             metadata.update({
-                'file_type': 'text/plain',  # Simplified type handling
+                'file_type': 'application/pdf' if filename.lower().endswith('.pdf') else 'text/plain',
                 'added_at': datetime.now().isoformat(),
                 'chunk_count': len(chunks),
-                'size': len(text.encode('utf-8'))
+                'size': len(text.encode('utf-8')),
+                'filename': filename if hasattr(file_path_or_obj, 'name') else str(file_path_or_obj)
             })
             
             # Store metadata
             metadata_file = self.base_path / 'metadata' / f"{file_hash}.json"
-            metadata_file.parent.mkdir(exist_ok=True)
+            metadata_file.parent.mkdir(exist_ok=True, parents=True)
+            
+            print(f"Debug - Storing file metadata:")
+            print(f"  Path: {metadata_file.absolute()}")
+            print(f"  Hash: {file_hash}")
+            print(f"  Metadata: {metadata}")
+            
+            # Add content to metadata
+            metadata['content'] = text
+            
             with open(metadata_file, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=2)
+            
+            print(f"Debug - Successfully stored metadata at: {metadata_file}")
             
             return file_hash
             
         except Exception as e:
-            raise Exception(f"Error processing file: {str(e)}")
+            print(f"Debug - Error adding file: {str(e)}")
+            print(f"Debug - Full error: {traceback.format_exc()}")
+            raise
     
     def _create_chunks(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
         """Split text into overlapping chunks."""
@@ -438,3 +491,59 @@ class VectorStore:
                 "processed": 0,
                 "failed": len(ids)
             }
+    
+    async def get_filtered_items(
+        self,
+        filters: Dict[str, Any],
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Get items matching filters without semantic search."""
+        try:
+            # If we have file_ids in filters, get those specific files
+            if 'file_ids' in filters.get('filters', {}):
+                results = []
+                for file_id in filters['filters']['file_ids']:
+                    file_info = await self.get_file_info(file_id)
+                    if file_info:
+                        results.append({
+                            "content": file_info.get('content', ''),
+                            "metadata": file_info
+                        })
+                return results[:limit]
+            
+            # Add other filter handling as needed
+            return []
+            
+        except Exception as e:
+            logging.error(f"Error getting filtered items: {str(e)}")
+            return []
+    
+    async def get_file_info(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """Get file information by ID."""
+        try:
+            print(f"Debug - Getting file info for ID: {file_id}")
+            metadata_file = self.base_path / 'metadata' / f"{file_id}.json"
+            print(f"Debug - Looking for metadata file at: {str(metadata_file.absolute())}")
+            
+            # List all files in metadata directory
+            metadata_dir = self.base_path / 'metadata'
+            if metadata_dir.exists():
+                print("Debug - Files in metadata directory:")
+                for f in metadata_dir.glob('*.json'):
+                    print(f"  - {f.name}")
+            else:
+                print(f"Debug - Metadata directory does not exist: {str(metadata_dir)}")
+            
+            if metadata_file.exists():
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+                    print(f"Debug - Found metadata: {metadata}")
+                    return metadata
+            else:
+                print(f"Debug - Metadata file not found: {metadata_file}")
+                return None
+                
+        except Exception as e:
+            print(f"Debug - Error getting file info: {str(e)}")
+            print(f"Debug - Full error: {traceback.format_exc()}")
+            return None

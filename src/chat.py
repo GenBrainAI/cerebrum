@@ -14,6 +14,7 @@ from server.models.tasks_manager import TasksManager
 from server.models.task import Task
 from server.controllers.persistence_controller import load_from_storage, save_to_storage
 from server.models.persistence_models import StorageLocation, StorageType
+from server.context.context_ui import ContextManagerUI
 
 # Initialize persistence model and task runner
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
@@ -533,7 +534,7 @@ def render_sidebar():
 
 
 def render_main_chat():
-    """Render the main chat interface"""
+    """Render the main chat interface with context information."""
     tasksmanagers = get_available_tasksmanagers()
     
     if st.session_state.current_tasksmanager_id is None:
@@ -598,6 +599,40 @@ def render_main_chat():
             persistence_model.tasks.update(task.id, task)
             st.rerun()
     
+    # Add a sidebar section for context
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("Context Settings")
+        
+        # Get task
+        task = persistence_model.tasks.read(st.session_state.current_task_id)
+        
+        # Context toggle
+        use_context = st.toggle(
+            "Use Context Enhancement",
+            value=getattr(task, 'use_context', True),
+            key="context_toggle"
+        )
+        
+        inherit_context = st.toggle(
+            "Inherit Manager Context",
+            value=getattr(task, 'inherit_manager_context', True),
+            key="inherit_toggle",
+            disabled=not use_context
+        )
+        
+        # Update task if settings change
+        if (getattr(task, 'use_context', True) != use_context or 
+            getattr(task, 'inherit_manager_context', True) != inherit_context):
+            task.use_context = use_context
+            task.inherit_manager_context = inherit_context
+            persistence_model.tasks.update(task.id, task)
+        
+        # Show context information in a tab
+        if use_context and st.toggle("Show Context Details", key="show_context"):
+            context_ui = ContextManagerUI()
+            asyncio.run(context_ui.render_context_section(task.id))
+
     # Display chat messages
     if st.session_state.messages is not None:
         for msg in st.session_state.messages:

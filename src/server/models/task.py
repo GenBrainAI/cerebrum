@@ -77,6 +77,8 @@ class Task(BaseModel):
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
     config: Optional[Dict[str, Any]] = Field(default=None)
+    use_context: bool = Field(default=True)
+    inherit_manager_context: bool = Field(default=True)
 
     def create_session(self, name: Optional[str] = None) -> str:
         """Create a new chat session"""
