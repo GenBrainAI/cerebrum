@@ -31,6 +31,13 @@ class ContextManagerUI:
         self.context_provider = ContextProvider()
         self.persistence_model = PersistenceModelFactory.persistence_model()
         
+        # Initialize context analytics
+        try:
+            from src.server.context.context_analytics import ContextAnalytics
+            self.context_analytics = ContextAnalytics()
+        except ImportError:
+            self.context_analytics = None
+        
         # Initialize or load code catalog state
         if 'code_catalog_state' not in st.session_state:
             st.session_state.code_catalog_state = self.code_catalog.get_state()
@@ -237,7 +244,24 @@ class ContextManagerUI:
     
     async def render_knowledge_view(self):
         """Render the knowledge base management view."""
+        # Initialize session state for knowledge view
+        if 'knowledge_filter_type' not in st.session_state:
+            st.session_state.knowledge_filter_type = "All"
+        if 'selected_filter_task' not in st.session_state:
+            st.session_state.selected_filter_task = None
+        if 'selected_filter_tm' not in st.session_state:
+            st.session_state.selected_filter_tm = None
+
         st.subheader("Knowledge Base Management")
+
+        # Get available tasks and managers first
+        persistence_model = PersistenceModelFactory.persistence_model()
+        tasks = persistence_model.tasks.list()
+        tasksmanagers = persistence_model.tasksmanagers.list()
+        
+        # Create options dictionaries
+        task_options = {f"{t.name} ({t.id})": t.id for t in tasks} if tasks else {}
+        tm_options = {f"{tm.name} ({tm.id})": tm.id for tm in tasksmanagers} if tasksmanagers else {}
 
         # Add knowledge section
         st.subheader("Add Knowledge Entry")
@@ -267,30 +291,28 @@ class ContextManagerUI:
         tasksmanager_id = None
 
         if associate_type == "Task":
-            # Get available tasks from persistence model
-            persistence_model = PersistenceModelFactory.persistence_model()
-            tasks = persistence_model.tasks.list()
-            if tasks:
-                task_options = {f"{t.name} ({t.id})": t.id for t in tasks}
+            if task_options:
                 selected_task = st.selectbox(
                     "Select Task",
-                    options=list(task_options.keys())
+                    options=list(task_options.keys()),
+                    key="add_task_select"
                 )
                 if selected_task:
                     task_id = task_options[selected_task]
+            else:
+                st.info("No tasks available")
 
         elif associate_type == "Tasks Manager":
-            # Get available tasksmanagers from persistence model
-            persistence_model = PersistenceModelFactory.persistence_model()
-            tasksmanagers = persistence_model.tasksmanagers.list()
-            if tasksmanagers:
-                tm_options = {f"{tm.name} ({tm.id})": tm.id for tm in tasksmanagers}
+            if tm_options:
                 selected_tm = st.selectbox(
                     "Select Tasks Manager",
-                    options=list(tm_options.keys())
+                    options=list(tm_options.keys()),
+                    key="add_tm_select"
                 )
                 if selected_tm:
                     tasksmanager_id = tm_options[selected_tm]
+            else:
+                st.info("No task managers available")
 
         # File upload option
         uploaded_file = st.file_uploader(
@@ -359,7 +381,7 @@ class ContextManagerUI:
                     contents=[content]
                 )
                 
-                st.success(f"Knowledge entry added with ID: {entry_id}")
+                st.success(f"Knowledge entry added successfully!")
             except Exception as e:
                 st.error(f"Error adding knowledge: {str(e)}")
 
@@ -367,39 +389,57 @@ class ContextManagerUI:
         st.markdown("---")
         st.subheader("Browse Knowledge")
         
+        def on_filter_change():
+            """Callback for filter type change"""
+            # Reset selected filters when type changes
+            st.session_state.selected_filter_task = None
+            st.session_state.selected_filter_tm = None
+        
         # Add task/tasksmanager filter
         filter_by = st.radio(
             "Filter by:",
-            ["All", "Task", "Tasks Manager", "Domain & Tags"]
+            ["All", "Task", "Tasks Manager", "Domain & Tags"],
+            key="knowledge_filter_type",
+            on_change=on_filter_change
         )
 
         entries = []
         if filter_by == "Task":
-            task_id = st.selectbox(
-                "Select Task",
-                options=list(task_options.keys())
-            )
-            if task_id:
-                entries = self.knowledge_base.get_task_knowledge(task_options[task_id])
+            if task_options:
+                selected_task = st.selectbox(
+                    "Select Task",
+                    options=[""] + list(task_options.keys()),
+                    key="selected_filter_task"
+                )
+                if selected_task:
+                    entries = self.knowledge_base.get_task_knowledge(task_options[selected_task])
+            else:
+                st.info("No tasks available to filter by")
         elif filter_by == "Tasks Manager":
-            tm_id = st.selectbox(
-                "Select Tasks Manager",
-                options=list(tm_options.keys())
-            )
-            if tm_id:
-                entries = self.knowledge_base.get_tasksmanager_knowledge(tm_options[tm_id])
+            if tm_options:
+                selected_tm = st.selectbox(
+                    "Select Tasks Manager",
+                    options=[""] + list(tm_options.keys()),
+                    key="selected_filter_tm"
+                )
+                if selected_tm:
+                    entries = self.knowledge_base.get_tasksmanager_knowledge(tm_options[selected_tm])
+            else:
+                st.info("No task managers available to filter by")
         else:
             # Existing domain and tag filtering
             col1, col2 = st.columns(2)
             with col1:
                 selected_domain = st.selectbox(
                     "Filter by Domain",
-                    options=["All"] + list(self.knowledge_base.knowledge_index.get("domains", {}).keys())
+                    options=["All"] + list(self.knowledge_base.knowledge_index.get("domains", {}).keys()),
+                    key="selected_domain"
                 )
             with col2:
                 selected_tags = st.multiselect(
                     "Filter by Tags",
-                    options=list(self.knowledge_base.knowledge_index.get("tags", {}).keys())
+                    options=list(self.knowledge_base.knowledge_index.get("tags", {}).keys()),
+                    key="selected_tags"
                 )
             
             entries = self.knowledge_base.get_knowledge(
@@ -407,7 +447,7 @@ class ContextManagerUI:
                 tags=selected_tags if selected_tags else None
             )
 
-        # Display entries with task associations
+        # Display entries
         for entry in entries:
             entry_id = entry.get('id')
             metadata = entry.get('metadata', {})
@@ -428,7 +468,7 @@ class ContextManagerUI:
                 
                 with col2:
                     st.empty()  # Add some spacing
-                    if st.button("🗑️", key=f"delete_{entry_id}"):
+                    if st.button("��️", key=f"delete_{entry_id}"):
                         try:
                             await self.knowledge_base.delete_knowledge(entry_id)
                             st.success("Entry deleted!")
@@ -893,8 +933,13 @@ class ContextManagerUI:
         # Get current contexts
         contexts = await self.context_provider.get_task_contexts(task_id)
         
-        # Get analytics
-        analytics_data = await self.context_analytics.get_task_analytics(task_id)
+        # Get analytics if available
+        analytics_data = None
+        if self.context_analytics:
+            try:
+                analytics_data = await self.context_analytics.get_task_analytics(task_id)
+            except Exception as e:
+                st.warning("Analytics data not available")
         
         # Create tabs for different views
         tab1, tab2 = st.tabs(["Active Contexts", "Usage Analytics"])
@@ -920,8 +965,8 @@ class ContextManagerUI:
         
         with tab2:
             if not analytics_data:
-                st.info("No usage data available")
-            else:
+                st.info("No usage analytics available")
+            elif analytics_data.get('total_usage'):
                 # Usage metrics
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -931,28 +976,27 @@ class ContextManagerUI:
                     success_rate = total['successful_enhancements'] / total['views'] if total['views'] > 0 else 0
                     st.metric("Success Rate", f"{success_rate:.1%}")
                 with col3:
-                    st.metric("Last Used", total['last_used'].strftime("%Y-%m-%d %H:%M") if total['last_used'] else "Never")
+                    last_used = total.get('last_used')
+                    st.metric("Last Used", last_used.strftime("%Y-%m-%d %H:%M") if last_used else "Never")
                 
                 # Usage by type
-                st.subheader("Usage by Context Type")
-                for type_name, metrics in analytics_data['usage_by_type'].items():
-                    with st.expander(type_name.title()):
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Views", metrics['views'])
-                            st.metric("Success Rate", 
-                                    f"{metrics['successful_enhancements'] / metrics['views']:.1%}" 
-                                    if metrics['views'] > 0 else "N/A")
-                        with col2:
-                            if metrics['average_relevance'] > 0:
-                                st.metric("Avg. Relevance", f"{metrics['average_relevance']:.2f}")
+                if 'usage_by_type' in analytics_data:
+                    st.subheader("Usage by Context Type")
+                    for type_name, metrics in analytics_data['usage_by_type'].items():
+                        with st.expander(type_name.title()):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Views", metrics['views'])
+                                st.metric("Success Rate", 
+                                        f"{metrics['successful_enhancements'] / metrics['views']:.1%}" 
+                                        if metrics['views'] > 0 else "N/A")
+                            with col2:
+                                if metrics.get('average_relevance', 0) > 0:
+                                    st.metric("Avg. Relevance", f"{metrics['average_relevance']:.2f}")
 
     async def render_task_context_associations(self):
         """Render UI for managing task-context associations."""
         st.header("Task Context Associations")
-        
-        # Debug information
-       # st.write("Debug Info:")
         
         # Get available tasks and context data with error handling
         try:
@@ -960,10 +1004,8 @@ class ContextManagerUI:
             tasksmanagers = self.persistence_model.tasksmanagers.list()
             
             if not tasks and not tasksmanagers:
-                # Check if state is loaded
                 if 'state_location' in st.session_state:
                     st.warning("State is loaded but no tasks or task managers found.")
-                    st.write("State location:", st.session_state.state_location)
                 else:
                     st.info("👋 No tasks available. Create tasks in the chat interface to manage their contexts.")
                 return
@@ -978,13 +1020,6 @@ class ContextManagerUI:
                 if tm_id not in tasks_by_manager:
                     tasks_by_manager[tm_id] = []
                 tasks_by_manager[tm_id].append(task)
-            
-            # Debug: Show task manager IDs and names
-            # st.write("Task Managers:")
-            # for tm_id, tm in tasksmanagers_dict.items():
-            #     st.write(f"- {tm.name} (ID: {tm_id})")
-            #     if tm_id in tasks_by_manager:
-            #         st.write(f"  Tasks: {len(tasks_by_manager[tm_id])}")
 
             # Create tabs for task managers
             if tasks_by_manager:
@@ -998,7 +1033,7 @@ class ContextManagerUI:
                     tabs = st.tabs(tab_labels)
                     
                     for tab, (tm_id, tm_tasks) in zip(tabs, tasks_by_manager.items()):
-                        if tm_id in tasksmanagers_dict:  # Only render if task manager exists
+                        if tm_id in tasksmanagers_dict:
                             with tab:
                                 await self._render_taskmanager_contexts(tm_id, tm_tasks)
                 else:
@@ -1008,7 +1043,6 @@ class ContextManagerUI:
 
         except Exception as e:
             st.error(f"Error loading tasks and task managers: {str(e)}")
-            st.write("Error details:", str(e))
             import traceback
             st.code(traceback.format_exc())
 
@@ -1153,24 +1187,17 @@ class ContextManagerUI:
                 else:
                     st.info("No task-specific contexts added yet")
 
-            # Add debug output
-            st.write("Debug - Task Contexts:", task_contexts)  # Add this line to see what contexts are being returned
 
     async def _show_add_context_dialog(self, target_id: str):
         """Show dialog for adding new context."""
         st.subheader("Add New Context")
         
-        # Debug widget to verify target_id
-        st.write(f"Debug - target_id: {target_id}")
-        
-        # Use a unique form key for each task
+        # Create form
         form_key = f"add_context_form_{target_id}"
-        st.write(f"Debug - form_key: {form_key}")
         
         # Create form
         with st.form(key=form_key):
-            # Rename variable to match parameter name
-            type = st.selectbox(  # Changed from context_type to type
+            type = st.selectbox(
                 "Context Type",
                 options=["vector", "knowledge", "system"]
             )
@@ -1178,10 +1205,9 @@ class ContextManagerUI:
             metadata = {}
             
             # Different inputs based on type
-            if type == "vector":  # Updated reference
+            if type == "vector":
                 try:
                     vector_files = await self.context_db.vector_store.list_files()
-                    st.write(f"Debug - Found {len(vector_files)} vector files")
                     
                     if not vector_files:
                         st.warning("No files in vector store. Please add files in the Vector Store management section.")
@@ -1199,33 +1225,22 @@ class ContextManagerUI:
                                     "file_ids": [id for id, _ in selected_files]
                                 }
                             }
-                            st.write("Debug - Selected files:", metadata)
                 except Exception as e:
                     st.error(f"Error loading vector files: {str(e)}")
             
             # Priority setting
             priority = st.number_input("Priority", min_value=0, value=50)
             
-            # Debug - Show current form state
-            st.write("Debug - Current form state:", {
-                "type": type,  # Updated to match parameter name
-                "metadata": metadata,
-                "priority": priority
-            })
-            
             # Submit button
             submitted = st.form_submit_button("Add Context")
         
         # Handle form submission
         if submitted:
-            st.write("Debug - Form was submitted!")
-            
-            if not metadata and type == "vector":  # Updated reference
+            if not metadata and type == "vector":
                 st.error("Please select at least one file")
                 return
             
             try:
-                # Create context reference with correct parameter name
                 context_id = await self.context_provider.add_context_to_task(
                     task_id=target_id,
                     type=type,
@@ -1234,7 +1249,7 @@ class ContextManagerUI:
                     metadata=metadata
                 )
                 
-                st.success(f"Context added successfully! ID: {context_id}")
+                st.success(f"Context added successfully!")
                 
                 # Clear dialog state and rerun
                 st.session_state.active_dialog = None
@@ -1242,7 +1257,6 @@ class ContextManagerUI:
                 
             except Exception as e:
                 st.error(f"Error adding context: {str(e)}")
-                st.write("Debug - Error details:", str(e))
                 import traceback
                 st.code(traceback.format_exc())
 

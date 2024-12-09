@@ -261,10 +261,13 @@ def create_new_session(task_id: str) -> str:
     session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     task = persistence_model.tasks.read(task_id)
     if task:
-        if not hasattr(task, 'chat_sessions'):
-            task.chat_sessions = {}
-        task.chat_sessions[session_id] = []
-        persistence_model.tasks.update(task_id, task)
+        # Create a copy of the task to modify
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' not in task_dict:
+            task_dict['chat_sessions'] = {}
+        task_dict['chat_sessions'][session_id] = []
+        # Update the task with the modified dictionary
+        persistence_model.tasks.update(task_id, task_dict)
     return session_id
 
 def save_session_messages(task_id: str, session_id: str, messages: List[Dict]):
@@ -274,31 +277,45 @@ def save_session_messages(task_id: str, session_id: str, messages: List[Dict]):
         
     task = persistence_model.tasks.read(task_id)
     if task:
-        if not hasattr(task, 'chat_sessions'):
-            task.chat_sessions = {}
-        task.chat_sessions[session_id] = [msg.dict() if hasattr(msg, 'dict') else msg for msg in messages]
-        persistence_model.tasks.update(task_id, task)
+        # Create a copy of the task to modify
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' not in task_dict:
+            task_dict['chat_sessions'] = {}
+        task_dict['chat_sessions'][session_id] = [msg.dict() if hasattr(msg, 'dict') else msg for msg in messages]
+        # Update the task with the modified dictionary
+        persistence_model.tasks.update(task_id, task_dict)
 
 def get_session_messages(task_id: str, session_id: str) -> List[Dict]:
     """Get messages for a specific chat session"""
     task = persistence_model.tasks.read(task_id)
-    if task and hasattr(task, 'chat_sessions'):
-        return task.chat_sessions.get(session_id, [])
+    if task:
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' in task_dict:
+            return task_dict['chat_sessions'].get(session_id, [])
     return []
 
 def get_chat_sessions(task_id: str) -> Dict[str, List[Dict]]:
     """Get all chat sessions for a task"""
     task = persistence_model.tasks.read(task_id)
-    if task and hasattr(task, 'chat_sessions'):
-        return task.chat_sessions
+    if task:
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' in task_dict:
+            return task_dict['chat_sessions']
     return {}
 
 def on_tm_select():
     """Callback when TaskManager selection changes"""
     if st.session_state.tm_selector == "+ New Chat":
         st.session_state.creating_new_chat = True
+        st.session_state.messages = []
+        st.session_state.current_session_id = None
     else:
         st.session_state.creating_new_chat = False
+        # Create new session for selected task
+        if st.session_state.current_task_id:
+            session_id = create_new_session(st.session_state.current_task_id)
+            st.session_state.current_session_id = session_id
+            st.session_state.messages = []
 
 def load_state(state_path: Optional[str] = None):
     """Load Cerebrum state from file."""
@@ -609,28 +626,35 @@ def render_main_chat():
     # Session management
     if st.session_state.current_task_id:
         task = persistence_model.tasks.read(st.session_state.current_task_id)
-        
-        # TODO: Handle a case where task is none.
+        if not task:
+            st.error("Selected task not found")
+            return
 
+        # Convert task to dictionary if it's not already
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        
+        # Initialize chat_sessions if needed
+        if 'chat_sessions' not in task_dict:
+            task_dict['chat_sessions'] = {}
+            persistence_model.tasks.update(task.id, task_dict)
+            task = persistence_model.tasks.read(task.id)  # Reload task after update
+            task_dict = task.dict() if hasattr(task, 'dict') else task
+        
         # Session management UI
         col1, col2 = st.columns([3, 1])
         
-        # Initialize chat_sessions if needed
-        if not hasattr(task, 'chat_sessions') or task.chat_sessions is None:
-            task.chat_sessions = {}
-            persistence_model.tasks.update(task.id, task)
-        
         # Get existing sessions or create first session
-        if not task.chat_sessions:
-            session_id = task.create_session()
+        if not task_dict['chat_sessions']:
+            session_id = create_new_session(task.id)
             st.session_state.current_session_id = session_id
             st.session_state.messages = []
-            persistence_model.tasks.update(task.id, task)
+            task = persistence_model.tasks.read(task.id)  # Reload task after creating session
+            task_dict = task.dict() if hasattr(task, 'dict') else task
         
         with col1:
             # Show session selection if there are multiple sessions
-            if len(task.chat_sessions) > 1:
-                session_options = list(task.chat_sessions.keys())
+            if len(task_dict['chat_sessions']) > 1:
+                session_options = list(task_dict['chat_sessions'].keys())
                 selected_session = st.selectbox(
                     "Select Chat Session",
                     options=session_options,
@@ -639,26 +663,24 @@ def render_main_chat():
                 )
                 if selected_session != st.session_state.current_session_id:
                     st.session_state.current_session_id = selected_session
-                    st.session_state.messages = task.get_session_messages(selected_session)
+                    st.session_state.messages = task_dict['chat_sessions'].get(selected_session, [])
                     st.rerun()
         
         with col2:
             # Button to create new session
             if st.button("New Session"):
-                session_id = task.create_session()
+                session_id = create_new_session(task.id)
                 st.session_state.current_session_id = session_id
                 st.session_state.messages = []
-                persistence_model.tasks.update(task.id, task)
                 st.rerun()
         
         # Ensure we have a current session
         if not st.session_state.current_session_id:
-            session_id = task.create_session()
+            session_id = create_new_session(task.id)
             st.session_state.current_session_id = session_id
             st.session_state.messages = []
-            persistence_model.tasks.update(task.id, task)
             st.rerun()
-    
+
     # Add a sidebar section for context
     with st.sidebar:
         st.markdown("---")

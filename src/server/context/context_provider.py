@@ -338,3 +338,28 @@ class ContextProvider:
         enhanced_context["task_contexts"] = task_contexts
         
         return enhanced_context
+
+    def load_state(self, state_data: Dict):
+        """Load context state from saved state data."""
+        if 'task_contexts' in state_data:
+            for task_id, context_data in state_data['task_contexts'].items():
+                task_context = self.task_context_manager.create_task_context(task_id)
+                task_context.use_context = context_data.get('use_context', True)
+                task_context.inherit_manager_context = context_data.get('inherit_manager_context', True)
+                task_context.contexts = [
+                    ContextReference(**ctx) if isinstance(ctx, dict) else ctx 
+                    for ctx in context_data.get('contexts', [])
+                ]
+
+    def get_state(self) -> Dict:
+        """Get current context state for saving."""
+        return {
+            'task_contexts': {
+                task_id: {
+                    'use_context': context.use_context,
+                    'inherit_manager_context': context.inherit_manager_context,
+                    'contexts': [ctx.dict() if hasattr(ctx, 'dict') else ctx for ctx in context.contexts]
+                }
+                for task_id, context in self.task_context_manager.task_contexts.items()
+            }
+        }

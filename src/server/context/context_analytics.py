@@ -1,104 +1,80 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime
-from pydantic import BaseModel
-from collections import defaultdict
-
-class ContextUsageMetrics(BaseModel):
-    """Metrics for context usage analysis."""
-    views: int = 0
-    successful_enhancements: int = 0
-    failed_enhancements: int = 0
-    average_relevance: float = 0.0
-    last_used: Optional[datetime] = None
 
 class ContextAnalytics:
-    """Tracks and analyzes context usage."""
+    """Handles analytics for context usage and effectiveness."""
     
     def __init__(self):
-        self.metrics = defaultdict(lambda: {
-            'total': ContextUsageMetrics(),
-            'by_type': defaultdict(ContextUsageMetrics),
-            'by_task': defaultdict(ContextUsageMetrics)
-        })
-
-    async def record_context_usage(
-        self, 
-        task_id: str,
-        contexts: List[Dict[str, Any]],
-        success: bool = True
-    ):
-        """Record usage of contexts for a task."""
-        timestamp = datetime.now()
-        
-        # Update total metrics
-        total_metrics = self.metrics[task_id]['total']
-        total_metrics.views += 1
-        if success:
-            total_metrics.successful_enhancements += 1
-        else:
-            total_metrics.failed_enhancements += 1
-        total_metrics.last_used = timestamp
-
-        # Update per-type metrics
-        for context in contexts:
-            type_metrics = self.metrics[task_id]['by_type'][context['type']]
-            type_metrics.views += 1
-            if success:
-                type_metrics.successful_enhancements += 1
-            else:
-                type_metrics.failed_enhancements += 1
-            type_metrics.last_used = timestamp
-            
-            # Update relevance scores
-            if 'relevance' in context:
-                type_metrics.average_relevance = (
-                    (type_metrics.average_relevance * (type_metrics.views - 1) + 
-                     context['relevance']) / type_metrics.views
-                )
+        self.analytics_store = {}
 
     async def get_task_analytics(self, task_id: str) -> Dict[str, Any]:
-        """Get analytics for a specific task."""
-        if task_id not in self.metrics:
-            return {}
-            
-        task_metrics = self.metrics[task_id]
-        return {
-            'total_usage': task_metrics['total'].dict(),
-            'usage_by_type': {
-                context_type: metrics.dict()
-                for context_type, metrics in task_metrics['by_type'].items()
+        """Get analytics data for a specific task."""
+        if task_id not in self.analytics_store:
+            # Return default structure if no analytics exist
+            return {
+                'total_usage': {
+                    'views': 0,
+                    'successful_enhancements': 0,
+                    'last_used': None
+                },
+                'usage_by_type': {}
             }
-        }
+        
+        return self.analytics_store[task_id]
 
-    async def get_summary_analytics(self) -> Dict[str, Any]:
-        """Get summary analytics across all tasks."""
-        summary = {
-            'total_tasks': len(self.metrics),
-            'total_views': 0,
-            'success_rate': 0.0,
-            'type_distribution': defaultdict(int),
-            'most_active_tasks': []
-        }
+    async def record_context_usage(
+        self,
+        task_id: str,
+        context_type: str,
+        success: bool = True,
+        relevance: Optional[float] = None
+    ):
+        """Record usage of context for a task."""
+        if task_id not in self.analytics_store:
+            self.analytics_store[task_id] = {
+                'total_usage': {
+                    'views': 0,
+                    'successful_enhancements': 0,
+                    'last_used': None
+                },
+                'usage_by_type': {}
+            }
         
-        for task_id, metrics in self.metrics.items():
-            total = metrics['total']
-            summary['total_views'] += total.views
-            
-            # Calculate success rate
-            if total.views > 0:
-                success_rate = total.successful_enhancements / total.views
-                summary['most_active_tasks'].append({
-                    'task_id': task_id,
-                    'views': total.views,
-                    'success_rate': success_rate
-                })
-            
-            # Track type distribution
-            for context_type in metrics['by_type'].keys():
-                summary['type_distribution'][context_type] += 1
+        analytics = self.analytics_store[task_id]
         
-        # Sort most active tasks
-        summary['most_active_tasks'].sort(key=lambda x: x['views'], reverse=True)
-        summary['most_active_tasks'] = summary['most_active_tasks'][:10]
+        # Update total usage
+        analytics['total_usage']['views'] += 1
+        if success:
+            analytics['total_usage']['successful_enhancements'] += 1
+        analytics['total_usage']['last_used'] = datetime.now()
         
-        return summary
+        # Update type-specific usage
+        if context_type not in analytics['usage_by_type']:
+            analytics['usage_by_type'][context_type] = {
+                'views': 0,
+                'successful_enhancements': 0,
+                'average_relevance': 0.0,
+                'relevance_count': 0
+            }
+        
+        type_stats = analytics['usage_by_type'][context_type]
+        type_stats['views'] += 1
+        if success:
+            type_stats['successful_enhancements'] += 1
+        
+        if relevance is not None:
+            current_avg = type_stats['average_relevance']
+            current_count = type_stats['relevance_count']
+            new_count = current_count + 1
+            type_stats['average_relevance'] = (
+                (current_avg * current_count + relevance) / new_count
+            )
+            type_stats['relevance_count'] = new_count
+
+    async def clear_analytics(self, task_id: Optional[str] = None):
+        """Clear analytics data for a task or all tasks."""
+        if task_id:
+            if task_id in self.analytics_store:
+                del self.analytics_store[task_id]
+        else:
+            self.analytics_store.clear()
