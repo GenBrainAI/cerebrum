@@ -31,6 +31,21 @@ class ContextManagerUI:
         self.context_provider = ContextProvider()
         self.persistence_model = PersistenceModelFactory.persistence_model()
         
+        # Load contexts from persistence model
+        try:
+            # Sync task contexts
+            tasks = self.persistence_model.tasks.list()
+            for task in tasks:
+                self.context_provider.sync_task_contexts(task.id, task)
+            
+            # Sync manager contexts
+            managers = self.persistence_model.tasksmanagers.list()
+            for manager in managers:
+                self.context_provider.sync_manager_contexts(manager.id, manager)
+            
+        except Exception as e:
+            print(f"Error loading contexts: {e}")
+        
         # Initialize context analytics
         try:
             from src.server.context.context_analytics import ContextAnalytics
@@ -468,7 +483,7 @@ class ContextManagerUI:
                 
                 with col2:
                     st.empty()  # Add some spacing
-                    if st.button("��️", key=f"delete_{entry_id}"):
+                    if st.button("🗑️", key=f"delete_{entry_id}"):
                         try:
                             await self.knowledge_base.delete_knowledge(entry_id)
                             st.success("Entry deleted!")
@@ -1050,8 +1065,11 @@ class ContextManagerUI:
         """Render context settings for a task manager and its tasks."""
         tasksmanager = self.persistence_model.tasksmanagers.read(tm_id)
         
-        # TaskManager context settings with improved layout
+        # TaskManager context settings
         st.subheader(f"TaskManager: {tasksmanager.name}")
+        
+        # Sync context state from task manager model
+        self.context_provider.sync_manager_contexts(tm_id, tasksmanager)
         
         # Get current contexts for task manager
         tm_contexts = await self.context_provider.get_task_contexts(tm_id)
@@ -1125,9 +1143,28 @@ class ContextManagerUI:
                 # Update task if settings change
                 if (getattr(task, 'use_context', True) != use_context or 
                     getattr(task, 'inherit_manager_context', True) != inherit_context):
+                    # Breakpoint 5: Before any updates
+                    print(f"Debug - Before updates for task {task.id}:")
+                    print(f"Current contexts: {task.contexts}")
+                    print(f"Current use_context: {task.use_context}")
+                    print(f"Current inherit_manager_context: {task.inherit_manager_context}")
+                    
                     task.use_context = use_context
                     task.inherit_manager_context = inherit_context
+                    
+                    # Update task model with current context state
+                    self.context_provider.update_task_model(task.id, task)
+                    
+                    # Breakpoint 6: Before persistence save
+                    print(f"Debug - Before saving to persistence:")
+                    print(f"Task contexts: {task.contexts}")
+                    
+                    # Save to persistence model
                     self.persistence_model.tasks.update(task.id, task)
+                    
+                    # Verify save
+                    saved_task = self.persistence_model.tasks.read(task.id)
+                    print(f"Saved task contexts: {saved_task.contexts}")
                 
                 # Add task context button and dialog
                 if 'active_dialog' not in st.session_state:
@@ -1292,3 +1329,41 @@ class ContextManagerUI:
                     
             except Exception as e:
                 st.error(f"Execution failed: {str(e)}")
+
+    async def _render_context_settings(self, task_id: str, context: Dict):
+        """Render settings for a specific context."""
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_priority = st.slider(
+                "Priority", 
+                min_value=0, 
+                max_value=100, 
+                value=context.get('priority', 50),
+                key=f"priority_{context['id']}"
+            )
+            
+            if new_priority != context.get('priority'):
+                await self.context_provider.update_task_context(
+                    task_id=task_id,
+                    context_id=UUID(context['id']),
+                    priority=new_priority
+                )
+                st.rerun()
+    
+        with col2:
+            if context['type'] == 'vector':
+                # Add UI for updating vector filters
+                new_filters = st.multiselect(
+                    "File Filters",
+                    options=available_files,
+                    default=context.get('metadata', {}).get('filters', {}).get('file_ids', [])
+                )
+                
+                if new_filters != context.get('metadata', {}).get('filters', {}).get('file_ids', []):
+                    await self.context_provider.update_task_context(
+                        task_id=task_id,
+                        context_id=UUID(context['id']),
+                        metadata={'filters': {'file_ids': new_filters}}
+                    )
+                    st.rerun()

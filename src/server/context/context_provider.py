@@ -10,8 +10,8 @@ from src.server.models.message import Message
 from src.server.models.task_context_model import TaskContextManager, TaskContext, ContextReference
 from src.server.context.system_context import SystemContextManager
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
-
-
+from src.server.models.tasks_manager import TasksManager
+from src.server.models.task import Task
 class ContextProvider:
     """Provides context for tasks by managing different context sources."""
     
@@ -243,11 +243,13 @@ class ContextProvider:
         print(f"Priority: {priority}")
         print(f"Metadata: {metadata}")
         
+        # Get or create task context
         task_context = self.task_context_manager.get_task_context(task_id)
         if not task_context:
             print(f"Debug - Creating new task context for {task_id}")  # Debug print
             task_context = self.create_task_context(task_id)
         
+        # Add context to task context manager
         context_ref = task_context.add_context(
             type=type,
             source_id=source_id,
@@ -255,6 +257,26 @@ class ContextProvider:
             metadata=metadata
         )
         print(f"Debug - Added context reference: {context_ref}")  # Debug print
+
+        # Update the task model in persistence
+        task = self.persistence_model.tasks.read(task_id)
+        if task:
+            # Convert context reference to dict for task model
+            context_dict = context_ref.dict()
+            
+            # Initialize contexts list if needed
+            if not hasattr(task, 'contexts') or task.contexts is None:
+                task.contexts = []
+            
+            # Add the new context to task's contexts
+            task.contexts.append(context_dict)
+            
+            # Save updated task
+            self.persistence_model.tasks.update(task_id, task)
+            print(f"Debug - Updated task model with contexts: {task.contexts}")  # Debug print
+        else:
+            print(f"Warning: Task {task_id} not found in persistence model")
+
         return context_ref
 
     async def update_task_context(
@@ -265,15 +287,34 @@ class ContextProvider:
         metadata: Optional[Dict] = None
     ) -> bool:
         """Update a task's context reference."""
+        # Get task context from manager
         task_context = self.task_context_manager.get_task_context(task_id)
         if not task_context:
             return False
 
+        # Update in task context manager
         updated = False
         if priority is not None:
             updated |= task_context.update_context_priority(context_id, priority)
         if metadata is not None:
             updated |= task_context.update_context_metadata(context_id, metadata)
+        
+        # If updated, sync with persistence model
+        if updated:
+            task = self.persistence_model.tasks.read(task_id)
+            if task:
+                # Find and update the context in task.contexts
+                for ctx in task.contexts:
+                    if ctx.get('id') == str(context_id):
+                        if priority is not None:
+                            ctx['priority'] = priority
+                        if metadata is not None:
+                            ctx['metadata'].update(metadata)
+                        break
+                
+                # Save updated task
+                self.persistence_model.tasks.update(task_id, task)
+                print(f"Debug - Updated task context in persistence model: {task.contexts}")
         
         return updated
 
@@ -363,3 +404,70 @@ class ContextProvider:
                 for task_id, context in self.task_context_manager.task_contexts.items()
             }
         }
+
+    def sync_task_contexts(self, task_id: str, task: Task) -> None:
+        """Sync contexts between task model and context manager."""
+        # Get or create task context
+        task_context = self.task_context_manager.get_task_context(task_id)
+        if not task_context:
+            task_context = self.task_context_manager.create_task_context(task_id)
+        
+        # Sync configuration
+        task_context.use_context = task.use_context
+        task_context.inherit_manager_context = task.inherit_manager_context
+        
+        # Sync contexts from task model to context manager
+        if task.contexts:
+            task_context.contexts = [
+                ContextReference(**ctx) if isinstance(ctx, dict) else ctx 
+                for ctx in task.contexts
+            ]
+
+    def sync_manager_contexts(self, manager_id: str, manager: TasksManager) -> None:
+        """Sync contexts between task manager model and context manager."""
+        # Get or create manager context
+        manager_context_id = f"manager_{manager_id}"
+        manager_context = self.task_context_manager.get_task_context(manager_context_id)
+        if not manager_context:
+            manager_context = self.task_context_manager.create_task_context(manager_context_id)
+        
+        # Sync configuration
+        manager_context.use_context = manager.use_context
+        
+        # Sync contexts from manager model to context manager
+        if manager.contexts:
+            manager_context.contexts = [
+                ContextReference(**ctx) if isinstance(ctx, dict) else ctx 
+                for ctx in manager.contexts
+            ]
+
+    def update_task_model(self, task_id: str, task: Task) -> None:
+        """Update task model with current context state."""
+        task_context = self.task_context_manager.get_task_context(task_id)
+        if task_context:
+            print(f"Debug - Updating task model {task_id}")  # Debug print
+            print(f"Context count: {len(task_context.contexts)}")
+            
+            task.use_context = task_context.use_context
+            task.inherit_manager_context = task_context.inherit_manager_context
+            
+            # Convert contexts to dictionaries
+            contexts = [
+                ctx.dict() if hasattr(ctx, 'dict') else ctx 
+                for ctx in task_context.contexts
+            ]
+            print(f"Debug - Converted contexts: {contexts}")  # Debug print
+            
+            task.contexts = contexts
+            print(f"Debug - Task contexts after update: {task.contexts}")  # Debug print
+
+    def update_manager_model(self, manager_id: str, manager: TasksManager) -> None:
+        """Update task manager model with current context state."""
+        manager_context_id = f"manager_{manager_id}"
+        manager_context = self.task_context_manager.get_task_context(manager_context_id)
+        if manager_context:
+            manager.use_context = manager_context.use_context
+            manager.contexts = [
+                ctx.dict() if hasattr(ctx, 'dict') else ctx 
+                for ctx in manager_context.contexts
+            ]

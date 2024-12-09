@@ -15,8 +15,23 @@ def save_to_storage(location: StorageLocation) -> str:
     try:
         # Create and serialize persistence model
         persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-        json_str = persistence_model.to_json()
-
+        
+        # Breakpoint 7: Check persistence model before serialization
+        tasks = persistence_model.tasks.list()
+        for task in tasks:
+            print(f"Debug - Task {task.id} before serialization:")
+            print(f"Contexts: {task.contexts}")
+        
+        state_data = json.loads(persistence_model.to_json())
+        
+        # Breakpoint 8: Check state data after serialization
+        if 'tasks' in state_data:
+            for task in state_data['tasks']:
+                print(f"Debug - Serialized task {task.get('id')}:")
+                print(f"Contexts: {task.get('contexts', [])}")
+        
+        json_str = json.dumps(state_data)
+        
         # Handle different storage types
         if location.type == StorageType.s3:
             response = s3_client.put_object(
@@ -30,6 +45,14 @@ def save_to_storage(location: StorageLocation) -> str:
             filename = f'{location.location}/{location.state_name}'
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write(json_str)
+            
+            # Verify save
+            with open(filename, 'r', encoding='utf-8') as f:
+                saved_data = json.load(f)
+                if 'tasks' in saved_data:
+                    for task in saved_data['tasks']:
+                        print(f"Saved task {task.get('id')} contexts: {task.get('contexts', [])}")
+            
             return f"Saved to local file: {filename}"
             
         else:

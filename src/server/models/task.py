@@ -79,6 +79,7 @@ class Task(BaseModel):
     config: Optional[Dict[str, Any]] = Field(default=None)
     use_context: bool = Field(default=True)
     inherit_manager_context: bool = Field(default=True)
+    contexts: List[Dict] = Field(default_factory=list, description="Context references for the task")
 
     def create_session(self, name: Optional[str] = None) -> str:
         """Create a new chat session"""
@@ -133,6 +134,21 @@ class Task(BaseModel):
             if msg.role == 'system':
                 system_messages.append(msg)
         return system_messages
+
+    def update_context_config(
+        self,
+        use_context: Optional[bool] = None,
+        inherit_manager_context: Optional[bool] = None
+    ) -> bool:
+        """Update context configuration."""
+        updated = False
+        if use_context is not None and use_context != self.use_context:
+            self.use_context = use_context
+            updated = True
+        if inherit_manager_context is not None and inherit_manager_context != self.inherit_manager_context:
+            self.inherit_manager_context = inherit_manager_context
+            updated = True
+        return updated
 
     class Config:
         arbitrary_types_allowed = True

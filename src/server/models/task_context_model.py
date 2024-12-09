@@ -19,6 +19,66 @@ class TaskContext:
         self.inherit_manager_context = True
         self.contexts: List[ContextReference] = []
 
+    def add_context(
+        self,
+        type: str,
+        source_id: str,
+        priority: int = 0,
+        metadata: Optional[Dict] = None
+    ) -> ContextReference:
+        """Add a context reference to this task context."""
+        context_ref = ContextReference(
+            type=type,
+            source_id=source_id,
+            priority=priority,
+            metadata=metadata or {}
+        )
+        self.contexts.append(context_ref)
+        return context_ref
+
+    def dict(self) -> Dict:
+        """Convert to dictionary for serialization."""
+        return {
+            "task_id": self.task_id,
+            "use_context": self.use_context,
+            "inherit_manager_context": self.inherit_manager_context,
+            "contexts": [
+                ctx.dict() if hasattr(ctx, 'dict') else ctx 
+                for ctx in self.contexts
+            ]
+        }
+
+    def update_context_config(
+        self,
+        use_context: Optional[bool] = None,
+        inherit_manager_context: Optional[bool] = None
+    ) -> bool:
+        """Update context configuration."""
+        updated = False
+        if use_context is not None and use_context != self.use_context:
+            self.use_context = use_context
+            updated = True
+        if inherit_manager_context is not None and inherit_manager_context != self.inherit_manager_context:
+            self.inherit_manager_context = inherit_manager_context
+            updated = True
+        return updated
+
+    def update_context_priority(self, context_id: UUID, priority: int) -> bool:
+        """Update priority of a specific context."""
+        for ctx in self.contexts:
+            if ctx.id == context_id:
+                ctx.priority = priority
+                return True
+        return False
+
+    def update_context_metadata(self, context_id: UUID, metadata: Dict) -> bool:
+        """Update metadata of a specific context."""
+        for ctx in self.contexts:
+            if ctx.id == context_id:
+                ctx.metadata.update(metadata)
+                return True
+        return False
+
 class TaskContextManager:
     def __init__(self):
         self.task_contexts: Dict[str, TaskContext] = {}
