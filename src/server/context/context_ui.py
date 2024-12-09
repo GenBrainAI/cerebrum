@@ -1146,7 +1146,7 @@ class ContextManagerUI:
                                     if content:
                                         st.text(f"Content: {content[:100]}...")
                             with col3:
-                                if st.button("🗑️", key=f"delete_ctx_{task.id}_{ctx['id']}"):
+                                if st.button("🗑️", key=f"delete_ctx_{task.id}_{ctx.id if hasattr(ctx, 'id') else ctx.get('id')}"):
                                     await self.context_provider.remove_context_from_task(task.id, ctx['id'])
                                     st.rerun()
                             st.markdown("---")

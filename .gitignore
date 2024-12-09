@@ -155,3 +155,7 @@ sms_*
 docs/*
 
 temp_repos/
+
+# Test directories
+test_context_db/
+test_context_db/**

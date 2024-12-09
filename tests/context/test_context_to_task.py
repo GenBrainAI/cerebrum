@@ -1,14 +1,53 @@
 import pytest
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime
 from typing import Dict, List
+import json
+from pathlib import Path
 
 from src.server.models.task_context_model import TaskContextManager, TaskContext, ContextReference
 from src.server.context.context_provider import ContextProvider
 from src.server.models.message import Message
 
+class MockVectorStore:
+    def __init__(self):
+        self.metadata_dir = Path("test_context_db/metadata")
+        self.metadata_dir.mkdir(parents=True, exist_ok=True)
+        
+    async def get_filtered_items(self, filters: Dict, limit: int = 5) -> List[Dict]:
+        if 'file_ids' in filters.get('filters', {}):
+            results = []
+            for file_id in filters['filters']['file_ids']:
+                metadata_file = self.metadata_dir / f"{file_id}.json"
+                if metadata_file.exists():
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                        results.append({
+                            "content": metadata.get('content', ''),
+                            "metadata": metadata
+                        })
+            return results
+        return []
+
 class MockContextDB:
+    def __init__(self):
+        self.vector_store = MockVectorStore()
+        
     async def search_context(self, query: str, limit: int, filters: Dict = None) -> List[Dict]:
+        # If we have vector store filters, use them
+        if filters and ('file_ids' in filters or 'filters' in filters):
+            vector_results = await self.vector_store.get_filtered_items(
+                filters if 'filters' in filters else {"filters": filters}, 
+                limit
+            )
+            if vector_results:
+                return [{
+                    "content": item["content"],
+                    "metadata": item["metadata"],
+                    "relevance": 0.95
+                } for item in vector_results]
+                
+        # Fallback to default test content
         return [
             {
                 "content": "Test vector content",
@@ -234,3 +273,66 @@ async def test_context_type_filtering(context_provider):
         context_types=["system"]
     )
     assert all(c["type"] == "system" for c in contexts)
+
+@pytest.mark.asyncio
+async def test_add_vector_context_to_task(context_provider):
+    """Test adding vector context to a task with file references."""
+    # Setup mock file in vector store
+    mock_file_id = "5888dd126ee208d8e82720bb5d8154af"
+    mock_file_content = "Test content from I, Robot"
+    mock_file_metadata = {
+        "filename": "Asimov-Isaac-I-Robot.pdf",
+        "content": mock_file_content,
+        "file_type": "application/pdf",
+        "added_at": "2024-03-14T12:00:00",
+        "size": 1000
+    }
+
+    # Create metadata directory and file
+    metadata_dir = context_provider.context_db.vector_store.metadata_dir
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    
+    with open(metadata_dir / f"{mock_file_id}.json", 'w') as f:
+        json.dump(mock_file_metadata, f)
+
+    # Create a task
+    task_id = "test_task_1"
+    task_context = context_provider.task_context_manager.create_task_context(task_id)
+    
+    # Add vector context with file reference
+    metadata = {
+        "filters": {
+            "file_ids": [mock_file_id]
+        }
+    }
+    
+    context_ref = await context_provider.add_context_to_task(
+        task_id=task_id,
+        type="vector",
+        source_id=str(uuid4()),  # Generate a new UUID for the context
+        priority=50,
+        metadata=metadata
+    )
+    
+    # Verify context was added
+    assert context_ref is not None
+    assert context_ref.type == "vector"
+    assert context_ref.priority == 50
+    
+    # Get contexts and verify
+    contexts = await context_provider.get_task_contexts(task_id)
+    assert len(contexts) > 0
+    
+    vector_contexts = [c for c in contexts if c["type"] == "vector"]
+    assert len(vector_contexts) > 0
+    
+    # Verify content is retrieved correctly
+    first_vector_context = vector_contexts[0]
+    assert "content" in first_vector_context
+    assert mock_file_content in first_vector_context["content"]
+    
+    # Verify metadata
+    assert "metadata" in first_vector_context
+    assert "filters" in first_vector_context["metadata"]
+    assert "file_ids" in first_vector_context["metadata"]["filters"]
+    assert mock_file_id in first_vector_context["metadata"]["filters"]["file_ids"]

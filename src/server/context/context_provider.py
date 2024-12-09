@@ -77,6 +77,9 @@ class ContextProvider:
                         if not context_types or context_ref.type in context_types:
                             context_data = await self._get_context_data(context_ref)
                             if context_data:
+                                # Ensure context_data is a dictionary
+                                if hasattr(context_data, 'dict'):
+                                    context_data = context_data.dict()
                                 contexts.append(context_data)
 
         # Add task-specific contexts
@@ -84,6 +87,9 @@ class ContextProvider:
             if not context_types or context_ref.type in context_types:
                 context_data = await self._get_context_data(context_ref)
                 if context_data:
+                    # Ensure context_data is a dictionary
+                    if hasattr(context_data, 'dict'):
+                        context_data = context_data.dict()
                     contexts.append(context_data)
 
         # Sort by priority (highest first)
@@ -95,17 +101,35 @@ class ContextProvider:
         try:
             if context_ref.type == "system":
                 return {
+                    "id": str(context_ref.id),
                     "type": "system",
                     "content": self.system_context.get_context(context_ref.source_id),
                     "priority": context_ref.priority
                 }
             elif context_ref.type == "vector":
+                # For vector type, we should use the file_ids from metadata
+                if context_ref.metadata and 'filters' in context_ref.metadata:
+                    results = await self.context_db.vector_store.get_filtered_items(
+                        filters=context_ref.metadata,
+                        limit=1
+                    )
+                    if results:
+                        return {
+                            "id": str(context_ref.id),
+                            "type": "vector",
+                            "content": results[0]["content"],
+                            "metadata": context_ref.metadata,
+                            "priority": context_ref.priority
+                        }
+                # Fallback to search if no filters
                 results = await self.context_db.search_context(
                     context_ref.source_id, 
-                    limit=1
+                    limit=1,
+                    filters=context_ref.metadata.get('filters') if context_ref.metadata else None
                 )
                 if results:
                     return {
+                        "id": str(context_ref.id),
                         "type": "vector",
                         "content": results[0]["content"],
                         "metadata": results[0]["metadata"],
@@ -117,6 +141,7 @@ class ContextProvider:
                 )
                 if knowledge:
                     return {
+                        "id": str(context_ref.id),
                         "type": "knowledge",
                         "content": knowledge[0]["content"],
                         "metadata": knowledge[0]["metadata"],
