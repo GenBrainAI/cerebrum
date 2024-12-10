@@ -2,7 +2,8 @@
     "toolsets": "{}",
     "tools": "{}",
     "tasksmanagers": "{\"9e84bc0e-5e72-42b5-98b5-48b8311041b4\": {\"id\": \"9e84bc0e-5e72-42b5-98b5-48b8311041b4\", \"name\": \"one\", \"model\": \"gpt-4o-mini\", \"description\": \"Chat session TasksManager\", \"status\": null, \"configurations\": null, \"created_at\": \"2024-11-11T01:50:12.200998\", \"udated_at\": null, \"messages\": [], \"toolsets\": []}}",
-    "tasks": "{\"ca5bd241-82f0-449e-a80f-a5a612c5e895\": {\"id\": \"ca5bd241-82f0-449e-a80f-a5a612c5e895\", \"name\": \"one\", \"tasksmanager_id\": \"9e84bc0e-5e72-42b5-98b5-48b8311041b4\", \"description\": \"Chat conversation task\", \"messages\": [{\"id\": null, \"role\": \"system\", \"content\": \"You are a helpful AI assistant engaged in a conversation.\", \"file_ids\": null, \"created_at\": null, \"updated_at\": null}], \"chat_sessions\": {}, \"toolsets\": null, \"curried_tools\": null, \"curried_proxy_id\": null, \"crewai_info_id\": null, \"autogen_config_id\": null, \"created_at\": \"2024-11-11T01:50:12.201381\", \"updated_at\": null, \"config\": null}}",
+    "tasks": "{\"ca5bd241-82f0-449e-a80f-a5a612c5e895\": {\"id\": \"ca5bd241-82f0-449e-a80f-a5a612c5e895\", \"name\": \"one\", \"tasksmanager_id\": \"9e84bc0e-5e72-42b5-98b5-48b8311041b4\", \"description\": \"Chat conversation task\", \"messages\": [{\"id\": null, \"role\": \"system\", \"content\": \"You are a helpful AI assistant engaged in a conversation.\", \"file_ids\": null, \"created_at\": null, \"updated_at\": null}], \"chat_sessions\": {\"session_20241209_025454\": []}, \"toolsets\": null, \"curried_tools\": null, \"curried_proxy_id\": null, \"crewai_info_id\": null, \"autogen_config_id\": null, \"created_at\": \"2024-11-11T01:50:12.201381\", \"updated_at\": null, \"config\": null, \"use_context\": true, \"inherit_manager_context\": true}}",
     "messages": "{}",
-    "crewai_config": "{}"
+    "crewai_config": "{}",
+    "curried_proxies": "{}"
 }

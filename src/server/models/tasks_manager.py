@@ -23,6 +23,8 @@ class TasksManager(BaseModel):
         updated_at: The updated_at of this TasksManager [Optional].
         messages: The messages of this TasksManager [Optional].
         toolsets: The toolsets of this TasksManager [Optional].
+        use_context: The use_context of this TasksManager [Optional].
+        contexts: The contexts of this TasksManager [Optional].
     """
 
     id: Optional[str] = Field(alias="id", default=None)
@@ -35,5 +37,17 @@ class TasksManager(BaseModel):
     udated_at: Optional[datetime] = None
     messages: Optional[List[Message]] = Field(alias="messages", default=[])
     toolsets: Optional[List[str]] = Field(alias="toolsets", default=[])
+    use_context: bool = Field(default=True)
+    contexts: List[Dict] = Field(default_factory=list, description="Context references for the task manager")
+
+    def update_context_config(
+        self,
+        use_context: Optional[bool] = None
+    ) -> bool:
+        """Update context configuration."""
+        if use_context is not None and use_context != self.use_context:
+            self.use_context = use_context
+            return True
+        return False
 
 TasksManager.update_forward_refs()

@@ -1,15 +1,44 @@
+from typing import Optional
 from .persistence_model import PersistenceModelBase
 from .in_memory_persistence import InMemoryPersistenceModel
 
 
 class PersistenceModelFactory:
-    _instance: PersistenceModelBase = None
+    _instance: Optional[PersistenceModelBase] = None
 
-    @staticmethod
-    def persistence_model(type: str = "inmemory") -> PersistenceModelBase:
-        if PersistenceModelFactory._instance is None:
-            if type == "inmemory":
-                PersistenceModelFactory._instance = InMemoryPersistenceModel()
-            else:
-                raise NotImplementedError(f"Unknown persistence model type: {type}")
-        return PersistenceModelFactory._instance
+    @classmethod
+    def persistence_model(cls, type: str = "inmemory") -> PersistenceModelBase:
+        # Check if we're in a Streamlit context
+        try:
+            import streamlit as st
+            if 'persistence_model' in st.session_state:
+                return st.session_state.persistence_model
+            
+            # If we're in Streamlit but no instance exists yet
+            if cls._instance is None:
+                if type == "inmemory":
+                    cls._instance = InMemoryPersistenceModel()
+                else:
+                    raise NotImplementedError(f"Unknown persistence model type: {type}")
+                st.session_state.persistence_model = cls._instance
+            return cls._instance
+            
+        except ImportError:
+            # Non-Streamlit context - use regular singleton pattern
+            if cls._instance is None:
+                if type == "inmemory":
+                    cls._instance = InMemoryPersistenceModel()
+                else:
+                    raise NotImplementedError(f"Unknown persistence model type: {type}")
+            return cls._instance
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset the singleton instance - mainly for testing purposes"""
+        cls._instance = None
+        try:
+            import streamlit as st
+            if 'persistence_model' in st.session_state:
+                del st.session_state.persistence_model
+        except ImportError:
+            pass

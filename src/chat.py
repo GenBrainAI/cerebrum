@@ -2,6 +2,7 @@ import streamlit as st
 import time
 import os
 import asyncio
+import json
 from typing import Optional
 from typing import List, Dict
 from datetime import datetime
@@ -14,6 +15,8 @@ from server.models.tasks_manager import TasksManager
 from server.models.task import Task
 from server.controllers.persistence_controller import load_from_storage, save_to_storage
 from server.models.persistence_models import StorageLocation, StorageType
+from server.context.context_ui import ContextManagerUI
+from server.context.context_provider import ContextProvider
 
 # Initialize persistence model and task runner
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
@@ -39,6 +42,10 @@ def save_current_state(state_name: str) -> str:
             location=str(state_dir),
             state_name=f"{state_name}"
         )
+        
+        # Get context state before saving
+        context_provider = ContextProvider()
+        context_state = context_provider.get_state()
         result = save_to_storage(location)
         return result
     except Exception as e:
@@ -49,7 +56,6 @@ def load_state(state_path: Optional[str] = None):
     """Load Cerebrum state from file."""
     try:
         if not state_path and not st.session_state.default_state_loaded:
-            # Try to load default state
             state_path = "state/default_state.json"
             st.session_state.default_state_loaded = True
         
@@ -60,13 +66,20 @@ def load_state(state_path: Optional[str] = None):
                 state_name=os.path.basename(state_path)
             )
             
-            # Store location in session state for future saves
+            # Store location in session state
             st.session_state.state_location = location
             
+            # Load the state
             json_str = load_from_storage(location)
+            state_data = json.loads(json_str)
+            
+            # Load context state if present
+            if 'context_state' in state_data:
+                context_provider = ContextProvider()
+                context_provider.load_state(state_data['context_state'])
+            
             return f"Successfully loaded state from {state_path} with length {len(json_str)}"
         return "No state file specified"
-    
     except Exception as e:
         if state_path == "state/default_state.json":
             return "No default state loaded"
@@ -74,39 +87,84 @@ def load_state(state_path: Optional[str] = None):
 
 def render_state_management():
     """Render the state management section in the sidebar."""
+    persistence_model = st.session_state.persistence_model  # Use session state instance
+    
     with st.sidebar:
         st.subheader("State Management")
+        
+        # Initialize session state variables
+        if 'selected_state_file' not in st.session_state:
+            st.session_state.selected_state_file = ""
+        if 'state_loaded' not in st.session_state:
+            st.session_state.state_loaded = False
+        if 'state_location' not in st.session_state:
+            st.session_state.state_location = None
         
         # State loading section
         st.write("Load State")
         state_files = list((get_state_dir()).glob("*.json"))
+        
+        # Dropdown selection
         if state_files:
+            file_names = [""] + [f.name for f in state_files]
+            
+            # Handle selection change
+            def on_state_select():
+                selected = st.session_state.state_selector
+                if selected != st.session_state.selected_state_file:
+                    st.session_state.selected_state_file = selected
+                    st.session_state.state_loaded = False  # Reset loaded state
+            
+            # Use a different key for the selectbox
             selected_state = st.selectbox(
                 "Select saved state",
-                [""] + [f.name for f in state_files]
+                file_names,
+                index=file_names.index(st.session_state.selected_state_file) if st.session_state.selected_state_file in file_names else 0,
+                key="state_selector",
+                on_change=on_state_select
             )
-            if selected_state:
-                if st.button("Load Selected State"):
-                    result = load_state(str(get_state_dir() / selected_state))
-                    st.success(result)
         
-        # Manual state file path input
+        # Manual path input
         manual_state_path = st.text_input("Or enter state file path")
-        if st.button("Load State File"):
-            result = load_state(manual_state_path if manual_state_path else None)
-            st.success(result)
         
-        # State saving section
-        if persistence_model.tasksmanagers.list():  # Only show if there's state to save
-            st.write("---")
-            st.write("Save Current State")
-            new_state_name = st.text_input("State Name")
-            if st.button("Save State") and new_state_name:
+        # Action buttons
+        if selected_state or manual_state_path:
+            state_to_load = str(get_state_dir() / selected_state) if selected_state else manual_state_path
+            if st.button("Load State", use_container_width=True):
                 try:
-                    result = save_current_state(new_state_name)
-                    st.success(f"State saved successfully as {new_state_name}.json")
+                    result = load_state(state_to_load)
+                    st.session_state.state_loaded = True
+                    st.success(result)
                 except Exception as e:
-                    st.error(f"Error saving state: {str(e)}")
+                    st.error(f"Error loading state: {str(e)}")
+            
+            if selected_state and st.session_state.state_loaded:
+                if st.button("Save State", use_container_width=True):
+                    try:
+                        result = save_current_state(selected_state)
+                        st.success("State saved successfully")
+                    except Exception as e:
+                        st.error(f"Error saving state: {str(e)}")
+        
+        st.write("---")
+        
+        # New state creation
+        if persistence_model.tasksmanagers.list():
+            st.write("Create New State")
+            new_state_name = st.text_input("New State Name")
+            if st.button("Create State"):
+                if new_state_name:
+                    try:
+                        result = save_current_state(new_state_name)
+                        new_state_filename = f"{new_state_name}.json"
+                        # Use rerun to update the UI with new state
+                        st.success(f"New state created as {new_state_filename}")
+                        st.session_state.state_selector = new_state_filename
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating state: {str(e)}")
+                else:
+                    st.error("Please enter a name for the new state")
 
 
 # In the render_navigation function, add:
@@ -175,18 +233,25 @@ def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None
 
 def initialize_session_state():
     """Initialize session state variables if they don't exist"""
+    if 'persistence_model' not in st.session_state:
+        st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+    
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'current_tasksmanager_id' not in st.session_state:
-        st.session_state.current_tasksmanager_id = None
+        # Try to restore from last known selection
+        st.session_state.current_tasksmanager_id = st.session_state.get('last_tasksmanager_id')
     if 'current_task_id' not in st.session_state:
-        st.session_state.current_task_id = None
+        # Try to restore from last known selection
+        st.session_state.current_task_id = st.session_state.get('last_task_id')
     if 'current_session_id' not in st.session_state:
         st.session_state.current_session_id = None
     if 'chat_title' not in st.session_state:
         st.session_state.chat_title = "New Chat"
     if 'default_state_loaded' not in st.session_state:
         st.session_state.default_state_loaded = False
+    if 'state_location' not in st.session_state:
+        st.session_state.state_location = None
 
 def get_task_system_messages(task_id: str) -> List[Dict]:
     """Get system messages for a specific task"""
@@ -205,10 +270,13 @@ def create_new_session(task_id: str) -> str:
     session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     task = persistence_model.tasks.read(task_id)
     if task:
-        if not hasattr(task, 'chat_sessions'):
-            task.chat_sessions = {}
-        task.chat_sessions[session_id] = []
-        persistence_model.tasks.update(task_id, task)
+        # Create a copy of the task to modify
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' not in task_dict:
+            task_dict['chat_sessions'] = {}
+        task_dict['chat_sessions'][session_id] = []
+        # Update the task with the modified dictionary
+        persistence_model.tasks.update(task_id, task_dict)
     return session_id
 
 def save_session_messages(task_id: str, session_id: str, messages: List[Dict]):
@@ -218,37 +286,50 @@ def save_session_messages(task_id: str, session_id: str, messages: List[Dict]):
         
     task = persistence_model.tasks.read(task_id)
     if task:
-        if not hasattr(task, 'chat_sessions'):
-            task.chat_sessions = {}
-        task.chat_sessions[session_id] = [msg.dict() if hasattr(msg, 'dict') else msg for msg in messages]
-        persistence_model.tasks.update(task_id, task)
+        # Create a copy of the task to modify
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' not in task_dict:
+            task_dict['chat_sessions'] = {}
+        task_dict['chat_sessions'][session_id] = [msg.dict() if hasattr(msg, 'dict') else msg for msg in messages]
+        # Update the task with the modified dictionary
+        persistence_model.tasks.update(task_id, task_dict)
 
 def get_session_messages(task_id: str, session_id: str) -> List[Dict]:
     """Get messages for a specific chat session"""
     task = persistence_model.tasks.read(task_id)
-    if task and hasattr(task, 'chat_sessions'):
-        return task.chat_sessions.get(session_id, [])
+    if task:
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' in task_dict:
+            return task_dict['chat_sessions'].get(session_id, [])
     return []
 
 def get_chat_sessions(task_id: str) -> Dict[str, List[Dict]]:
     """Get all chat sessions for a task"""
     task = persistence_model.tasks.read(task_id)
-    if task and hasattr(task, 'chat_sessions'):
-        return task.chat_sessions
+    if task:
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        if 'chat_sessions' in task_dict:
+            return task_dict['chat_sessions']
     return {}
 
 def on_tm_select():
     """Callback when TaskManager selection changes"""
     if st.session_state.tm_selector == "+ New Chat":
         st.session_state.creating_new_chat = True
+        st.session_state.messages = []
+        st.session_state.current_session_id = None
     else:
         st.session_state.creating_new_chat = False
+        # Create new session for selected task
+        if st.session_state.current_task_id:
+            session_id = create_new_session(st.session_state.current_task_id)
+            st.session_state.current_session_id = session_id
+            st.session_state.messages = []
 
 def load_state(state_path: Optional[str] = None):
     """Load Cerebrum state from file."""
     try:
         if not state_path and not st.session_state.default_state_loaded:
-            # Try to load default state
             state_path = "state/default_state.json"
             st.session_state.default_state_loaded = True
         
@@ -259,19 +340,23 @@ def load_state(state_path: Optional[str] = None):
                 state_name=os.path.basename(state_path)
             )
             
-            # Store location in session state for future saves
+            # Store location in session state
             st.session_state.state_location = location
             
+            # Load the state
             json_str = load_from_storage(location)
+            state_data = json.loads(json_str)
+            
+            # Load context state if present
+            if 'context_state' in state_data:
+                context_provider = ContextProvider()
+                context_provider.load_state(state_data['context_state'])
+            
             return f"Successfully loaded state from {state_path} with length {len(json_str)}"
         return "No state file specified"
-    
     except Exception as e:
         if state_path == "state/default_state.json":
             return "No default state loaded"
-        return f"Error loading state: {str(e)}"
-    
-    except Exception as e:
         return f"Error loading state: {str(e)}"
 
 def get_available_tasksmanagers():
@@ -533,7 +618,7 @@ def render_sidebar():
 
 
 def render_main_chat():
-    """Render the main chat interface"""
+    """Render the main chat interface with context information."""
     tasksmanagers = get_available_tasksmanagers()
     
     if st.session_state.current_tasksmanager_id is None:
@@ -548,28 +633,35 @@ def render_main_chat():
     # Session management
     if st.session_state.current_task_id:
         task = persistence_model.tasks.read(st.session_state.current_task_id)
-        
-        # TODO: Handle a case where task is none.
+        if not task:
+            st.error("Selected task not found")
+            return
 
+        # Convert task to dictionary if it's not already
+        task_dict = task.dict() if hasattr(task, 'dict') else task
+        
+        # Initialize chat_sessions if needed
+        if 'chat_sessions' not in task_dict:
+            task_dict['chat_sessions'] = {}
+            persistence_model.tasks.update(task.id, task_dict)
+            task = persistence_model.tasks.read(task.id)  # Reload task after update
+            task_dict = task.dict() if hasattr(task, 'dict') else task
+        
         # Session management UI
         col1, col2 = st.columns([3, 1])
         
-        # Initialize chat_sessions if needed
-        if not hasattr(task, 'chat_sessions') or task.chat_sessions is None:
-            task.chat_sessions = {}
-            persistence_model.tasks.update(task.id, task)
-        
         # Get existing sessions or create first session
-        if not task.chat_sessions:
-            session_id = task.create_session()
+        if not task_dict['chat_sessions']:
+            session_id = create_new_session(task.id)
             st.session_state.current_session_id = session_id
             st.session_state.messages = []
-            persistence_model.tasks.update(task.id, task)
+            task = persistence_model.tasks.read(task.id)  # Reload task after creating session
+            task_dict = task.dict() if hasattr(task, 'dict') else task
         
         with col1:
             # Show session selection if there are multiple sessions
-            if len(task.chat_sessions) > 1:
-                session_options = list(task.chat_sessions.keys())
+            if len(task_dict['chat_sessions']) > 1:
+                session_options = list(task_dict['chat_sessions'].keys())
                 selected_session = st.selectbox(
                     "Select Chat Session",
                     options=session_options,
@@ -578,26 +670,58 @@ def render_main_chat():
                 )
                 if selected_session != st.session_state.current_session_id:
                     st.session_state.current_session_id = selected_session
-                    st.session_state.messages = task.get_session_messages(selected_session)
+                    st.session_state.messages = task_dict['chat_sessions'].get(selected_session, [])
                     st.rerun()
         
         with col2:
             # Button to create new session
             if st.button("New Session"):
-                session_id = task.create_session()
+                session_id = create_new_session(task.id)
                 st.session_state.current_session_id = session_id
                 st.session_state.messages = []
-                persistence_model.tasks.update(task.id, task)
                 st.rerun()
         
         # Ensure we have a current session
         if not st.session_state.current_session_id:
-            session_id = task.create_session()
+            session_id = create_new_session(task.id)
             st.session_state.current_session_id = session_id
             st.session_state.messages = []
-            persistence_model.tasks.update(task.id, task)
             st.rerun()
-    
+
+    # Add a sidebar section for context
+    with st.sidebar:
+        st.markdown("---")
+        st.subheader("Context Settings")
+        
+        # Get task
+        task = persistence_model.tasks.read(st.session_state.current_task_id)
+        
+        # Context toggle
+        use_context = st.toggle(
+            "Use Context Enhancement",
+            value=getattr(task, 'use_context', True),
+            key="context_toggle"
+        )
+        
+        inherit_context = st.toggle(
+            "Inherit Manager Context",
+            value=getattr(task, 'inherit_manager_context', True),
+            key="inherit_toggle",
+            disabled=not use_context
+        )
+        
+        # Update task if settings change
+        if (getattr(task, 'use_context', True) != use_context or 
+            getattr(task, 'inherit_manager_context', True) != inherit_context):
+            task.use_context = use_context
+            task.inherit_manager_context = inherit_context
+            persistence_model.tasks.update(task.id, task)
+        
+        # Show context information in a tab
+        if use_context and st.toggle("Show Context Details", key="show_context"):
+            context_ui = ContextManagerUI()
+            asyncio.run(context_ui.render_context_section(task.id))
+
     # Display chat messages
     if st.session_state.messages is not None:
         for msg in st.session_state.messages:
