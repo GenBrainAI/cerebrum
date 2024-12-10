@@ -19,7 +19,7 @@ from ..models.function import Function, ResolvedSchema, ParameterSchema, Respons
 from ..models.persistence_models import StorageLocation
 from ..models.toolset import Toolset, Tool
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-
+from ..utils.task_utils import generate_tools_by_ids
 router = APIRouter()
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")

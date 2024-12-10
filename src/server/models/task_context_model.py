@@ -36,6 +36,19 @@ class TaskContext:
         self.contexts.append(context_ref)
         return context_ref
 
+    def remove_context(self, context_id: UUID) -> bool:
+        """Remove a context reference by its ID.
+        
+        Args:
+            context_id: UUID of the context to remove
+            
+        Returns:
+            bool: True if context was found and removed, False otherwise
+        """
+        initial_length = len(self.contexts)
+        self.contexts = [ctx for ctx in self.contexts if ctx.id != context_id]
+        return len(self.contexts) < initial_length
+
     def dict(self) -> Dict:
         """Convert to dictionary for serialization."""
         return {

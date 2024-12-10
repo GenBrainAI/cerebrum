@@ -102,7 +102,6 @@ class TaskRunner:
                 # Record context usage
                 await self.context_analytics.record_context_usage(
                     task_id=task.id,
-                    contexts=contexts,
                     success=success
                 )
 

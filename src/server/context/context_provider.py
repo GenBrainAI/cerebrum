@@ -12,15 +12,32 @@ from src.server.context.system_context import SystemContextManager
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.models.tasks_manager import TasksManager
 from src.server.models.task import Task
+from src.server.context.context_analytics import ContextAnalytics
+from src.server.context.vector_store import VectorStore
+
 class ContextProvider:
     """Provides context for tasks by managing different context sources."""
     
     def __init__(self):
-        self.context_db = ContextDatabase()
+        self.context_db = None  # Initialize when needed
+        self._vector_store = None  # Initialize when needed
+        self._persistence_model = None  # Add private storage
         self.knowledge_base = KnowledgeBase()
         self.system_context = SystemContextManager()
         self.task_context_manager = TaskContextManager()
-        self.persistence_model = PersistenceModelFactory.persistence_model()
+        self.context_analytics = ContextAnalytics()
+
+    @property
+    def persistence_model(self):
+        """Get persistence model instance when needed"""
+        if self._persistence_model is not None:
+            return self._persistence_model
+        return PersistenceModelFactory.persistence_model()
+
+    @persistence_model.setter
+    def persistence_model(self, value):
+        """Set persistence model - mainly for testing purposes"""
+        self._persistence_model = value
 
     async def add_system_context(
         self,
@@ -53,8 +70,19 @@ class ContextProvider:
             metadata={"category": category}
         )
 
-    async def get_task_contexts(self, task_id: str, context_types: List[str] = None) -> List[Dict]:
-        """Get contexts for a task, including inherited contexts from the manager."""
+    async def get_task_contexts(
+        self, 
+        task_id: str, 
+        context_types: List[str] = None,
+        query: Optional[str] = None
+    ) -> List[Dict]:
+        """Get contexts for a task, including inherited contexts from the manager.
+        
+        Args:
+            task_id: ID of the task
+            context_types: Optional list of context types to filter by
+            query: Optional query string for semantic search
+        """
         contexts = []
         
         # Get task context
@@ -75,7 +103,7 @@ class ContextProvider:
                     # Add manager contexts
                     for context_ref in manager_context.contexts:
                         if not context_types or context_ref.type in context_types:
-                            context_data = await self._get_context_data(context_ref)
+                            context_data = await self._get_context_data(context_ref, query)
                             if context_data:
                                 # Ensure context_data is a dictionary
                                 if hasattr(context_data, 'dict'):
@@ -85,7 +113,7 @@ class ContextProvider:
         # Add task-specific contexts
         for context_ref in task_context.contexts:
             if not context_types or context_ref.type in context_types:
-                context_data = await self._get_context_data(context_ref)
+                context_data = await self._get_context_data(context_ref, query)
                 if context_data:
                     # Ensure context_data is a dictionary
                     if hasattr(context_data, 'dict'):
@@ -96,7 +124,11 @@ class ContextProvider:
         contexts.sort(key=lambda x: x.get('priority', 0), reverse=True)
         return contexts
 
-    async def _get_context_data(self, context_ref: ContextReference) -> Optional[Dict]:
+    async def _get_context_data(
+        self, 
+        context_ref: ContextReference,
+        query: Optional[str] = None
+    ) -> Optional[Dict]:
         """Get the actual context data based on the reference type."""
         try:
             if context_ref.type == "system":
@@ -109,10 +141,19 @@ class ContextProvider:
             elif context_ref.type == "vector":
                 # For vector type, we should use the file_ids from metadata
                 if context_ref.metadata and 'filters' in context_ref.metadata:
-                    results = await self.context_db.vector_store.get_filtered_items(
-                        filters=context_ref.metadata,
-                        limit=1
-                    )
+                    if query:
+                        # If query provided, use semantic search
+                        results = await self.context_db.search_context(
+                            query,
+                            filters=context_ref.metadata.get('filters'),
+                            limit=1
+                        )
+                    else:
+                        # Otherwise use direct file access
+                        results = await self.context_db.vector_store.get_filtered_items(
+                            filters=context_ref.metadata,
+                            limit=1
+                        )
                     if results:
                         return {
                             "id": str(context_ref.id),
@@ -123,7 +164,7 @@ class ContextProvider:
                         }
                 # Fallback to search if no filters
                 results = await self.context_db.search_context(
-                    context_ref.source_id, 
+                    query or context_ref.source_id, 
                     limit=1,
                     filters=context_ref.metadata.get('filters') if context_ref.metadata else None
                 )
@@ -190,10 +231,23 @@ class ContextProvider:
             return messages
 
         # Get contexts based on task settings
-        contexts = await self.get_task_contexts(task_id=task_id)
+        contexts = await self.get_task_contexts(task_id=task_id, query=query)
         
         if not contexts:
             return messages
+
+        # Record context usage if there's a caller_id in the last message
+        caller_id = None
+        if messages and hasattr(messages[-1], 'metadata'):
+            caller_id = messages[-1].metadata.get('caller_id')
+        
+        if caller_id:
+            for ctx in contexts:
+                self.context_analytics.record_context_usage(
+                    context_id=ctx['id'],
+                    caller_id=caller_id,
+                    context_type=ctx['type']
+                )
 
         # Format contexts by type
         context_parts = []
@@ -471,3 +525,52 @@ class ContextProvider:
                 ctx.dict() if hasattr(ctx, 'dict') else ctx 
                 for ctx in manager_context.contexts
             ]
+
+    async def remove_context_from_task(self, task_id: str, context_id: str) -> bool:
+        """
+        Remove a context from a task.
+        
+        Args:
+            task_id (str): The ID of the task
+            context_id (str): The ID of the context to remove
+            
+        Returns:
+            bool: True if context was removed successfully, False otherwise
+        """
+        try:
+            # Get the persistence model
+            persistence_model = PersistenceModelFactory.persistence_model()
+            
+            # Get the task
+            task = persistence_model.tasks.read(task_id)
+            if not task:
+                raise ValueError(f"Task {task_id} not found")
+            
+            # Convert task to dictionary if needed
+            task_dict = task.dict() if hasattr(task, 'dict') else task
+            
+            # Initialize contexts list if it doesn't exist
+            if 'contexts' not in task_dict:
+                task_dict['contexts'] = []
+            
+            # Find and remove the context
+            task_dict['contexts'] = [
+                ctx for ctx in task_dict['contexts'] 
+                if str(ctx.get('id', '')) != str(context_id)
+            ]
+            
+            # Update the task
+            persistence_model.tasks.update(task_id, task_dict)
+            
+            # Also remove from vector store if it's a vector context
+            try:
+                vector_store = VectorStore()
+                await vector_store.remove_context(context_id)
+            except Exception as e:
+                print(f"Warning: Could not remove from vector store: {e}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error removing context: {e}")
+            raise Exception(f"Failed to remove context: {str(e)}")

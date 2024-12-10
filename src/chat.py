@@ -2,6 +2,7 @@ import streamlit as st
 import time
 import os
 import asyncio
+import json
 from typing import Optional
 from typing import List, Dict
 from datetime import datetime
@@ -15,6 +16,7 @@ from server.models.task import Task
 from server.controllers.persistence_controller import load_from_storage, save_to_storage
 from server.models.persistence_models import StorageLocation, StorageType
 from server.context.context_ui import ContextManagerUI
+from server.context.context_provider import ContextProvider
 
 # Initialize persistence model and task runner
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
@@ -40,6 +42,10 @@ def save_current_state(state_name: str) -> str:
             location=str(state_dir),
             state_name=f"{state_name}"
         )
+        
+        # Get context state before saving
+        context_provider = ContextProvider()
+        context_state = context_provider.get_state()
         result = save_to_storage(location)
         return result
     except Exception as e:
@@ -50,7 +56,6 @@ def load_state(state_path: Optional[str] = None):
     """Load Cerebrum state from file."""
     try:
         if not state_path and not st.session_state.default_state_loaded:
-            # Try to load default state
             state_path = "state/default_state.json"
             st.session_state.default_state_loaded = True
         
@@ -66,16 +71,15 @@ def load_state(state_path: Optional[str] = None):
             
             # Load the state
             json_str = load_from_storage(location)
+            state_data = json.loads(json_str)
             
-            # Store current task and tasksmanager IDs in session state
-            if st.session_state.current_tasksmanager_id:
-                st.session_state.last_tasksmanager_id = st.session_state.current_tasksmanager_id
-            if st.session_state.current_task_id:
-                st.session_state.last_task_id = st.session_state.current_task_id
+            # Load context state if present
+            if 'context_state' in state_data:
+                context_provider = ContextProvider()
+                context_provider.load_state(state_data['context_state'])
             
             return f"Successfully loaded state from {state_path} with length {len(json_str)}"
         return "No state file specified"
-    
     except Exception as e:
         if state_path == "state/default_state.json":
             return "No default state loaded"
@@ -83,6 +87,8 @@ def load_state(state_path: Optional[str] = None):
 
 def render_state_management():
     """Render the state management section in the sidebar."""
+    persistence_model = st.session_state.persistence_model  # Use session state instance
+    
     with st.sidebar:
         st.subheader("State Management")
         
@@ -227,6 +233,9 @@ def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None
 
 def initialize_session_state():
     """Initialize session state variables if they don't exist"""
+    if 'persistence_model' not in st.session_state:
+        st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+    
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'current_tasksmanager_id' not in st.session_state:
@@ -321,7 +330,6 @@ def load_state(state_path: Optional[str] = None):
     """Load Cerebrum state from file."""
     try:
         if not state_path and not st.session_state.default_state_loaded:
-            # Try to load default state
             state_path = "state/default_state.json"
             st.session_state.default_state_loaded = True
         
@@ -337,16 +345,15 @@ def load_state(state_path: Optional[str] = None):
             
             # Load the state
             json_str = load_from_storage(location)
+            state_data = json.loads(json_str)
             
-            # Store current task and tasksmanager IDs in session state
-            if st.session_state.current_tasksmanager_id:
-                st.session_state.last_tasksmanager_id = st.session_state.current_tasksmanager_id
-            if st.session_state.current_task_id:
-                st.session_state.last_task_id = st.session_state.current_task_id
+            # Load context state if present
+            if 'context_state' in state_data:
+                context_provider = ContextProvider()
+                context_provider.load_state(state_data['context_state'])
             
             return f"Successfully loaded state from {state_path} with length {len(json_str)}"
         return "No state file specified"
-    
     except Exception as e:
         if state_path == "state/default_state.json":
             return "No default state loaded"
