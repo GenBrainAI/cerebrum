@@ -226,49 +226,60 @@ class ContextProvider:
         query: Optional[str] = None
     ) -> List[Message]:
         """Prepare messages for a task by injecting relevant context."""
-        task_context = self.task_context_manager.get_task_context(task_id)
-        if not task_context or not task_context.use_context:
-            return messages
+        try:
+            # Ensure we're synced with persistence model
+            task = self.persistence_model.tasks.read(task_id)
+            if task:
+                self.sync_task_contexts(task_id, task)
+            
+            # Get task context
+            task_context = self.task_context_manager.get_task_context(task_id)
+            if not task_context or not task_context.use_context:
+                return messages
 
-        # Get contexts based on task settings
-        contexts = await self.get_task_contexts(task_id=task_id, query=query)
-        
-        if not contexts:
-            return messages
+            # Get contexts based on task settings
+            contexts = await self.get_task_contexts(task_id=task_id, query=query)
+            
+            if not contexts:
+                return messages
 
-        # Record context usage if there's a caller_id in the last message
-        caller_id = None
-        if messages and hasattr(messages[-1], 'metadata'):
-            caller_id = messages[-1].metadata.get('caller_id')
-        
-        if caller_id:
+            # Record context usage if there's a caller_id in the last message
+            caller_id = None
+            if messages and hasattr(messages[-1], 'metadata'):
+                caller_id = messages[-1].metadata.get('caller_id')
+            
+            if caller_id:
+                for ctx in contexts:
+                    self.context_analytics.record_context_usage(
+                        context_id=ctx['id'],
+                        caller_id=caller_id,
+                        context_type=ctx['type']
+                    )
+
+            # Format contexts by type
+            context_parts = []
             for ctx in contexts:
-                self.context_analytics.record_context_usage(
-                    context_id=ctx['id'],
-                    caller_id=caller_id,
-                    context_type=ctx['type']
+                if ctx["type"] == "system":
+                    context_parts.append(f"System Context:\n{ctx['content']}")
+                elif ctx["type"] == "vector":
+                    context_parts.append(f"Related Context:\n{ctx['content']}")
+                elif ctx["type"] == "knowledge":
+                    context_parts.append(f"Domain Knowledge:\n{ctx['content']}")
+
+            # Create context message
+            if context_parts:
+                context_message = Message(
+                    role="system",
+                    content="Using the following context to inform your responses:\n\n" + 
+                            "\n\n---\n\n".join(context_parts)
                 )
-
-        # Format contexts by type
-        context_parts = []
-        for ctx in contexts:
-            if ctx["type"] == "system":
-                context_parts.append(f"System Context:\n{ctx['content']}")
-            elif ctx["type"] == "vector":
-                context_parts.append(f"Related Context:\n{ctx['content']}")
-            elif ctx["type"] == "knowledge":
-                context_parts.append(f"Domain Knowledge:\n{ctx['content']}")
-
-        # Create context message
-        if context_parts:
-            context_message = Message(
-                role="system",
-                content="Using the following context to inform your responses:\n\n" + 
-                        "\n\n---\n\n".join(context_parts)
-            )
-            return [context_message] + messages
-        
-        return messages
+                return [context_message] + messages
+            
+            return messages
+            
+        except Exception as e:
+            print(f"Error preparing task messages: {str(e)}")
+            return messages  # Return original messages if there's an error
 
     def create_task_context(self, task_id: str) -> TaskContext:
         """Create a new task context."""
@@ -574,3 +585,28 @@ class ContextProvider:
         except Exception as e:
             print(f"Error removing context: {e}")
             raise Exception(f"Failed to remove context: {str(e)}")
+
+    async def initialize(self):
+        """Initialize context provider and sync with persistence model."""
+        try:
+            # Initialize context DB if needed
+            if self.context_db is None:
+                self.context_db = ContextDatabase()
+            
+            # Get persistence model
+            persistence_model = self.persistence_model
+            
+            # Sync task contexts
+            tasks = persistence_model.tasks.list()
+            for task in tasks:
+                self.sync_task_contexts(task.id, task)
+            
+            # Sync manager contexts
+            managers = persistence_model.tasksmanagers.list()
+            for manager in managers:
+                self.sync_manager_contexts(manager.id, manager)
+            
+            print("Context provider initialized and synced with persistence model")
+        except Exception as e:
+            print(f"Error initializing context provider: {str(e)}")
+            raise

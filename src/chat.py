@@ -18,10 +18,6 @@ from server.models.persistence_models import StorageLocation, StorageType
 from server.context.context_ui import ContextManagerUI
 from server.context.context_provider import ContextProvider
 
-# Initialize persistence model and task runner
-persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-task_runner = TaskRunner(persistence_model)
-
 def get_project_root() -> Path:
     """Get the absolute path to the project root."""
     # Assumes this file is in src/chat.py
@@ -236,6 +232,9 @@ def initialize_session_state():
     if 'persistence_model' not in st.session_state:
         st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
     
+    if 'task_runner' not in st.session_state:
+        st.session_state.task_runner = TaskRunner(st.session_state.persistence_model)
+        
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'current_tasksmanager_id' not in st.session_state:
@@ -258,9 +257,10 @@ def get_task_system_messages(task_id: str) -> List[Dict]:
     if not task_id:
         return []
     
+    # Use session state persistence model
+    persistence_model = st.session_state.persistence_model
     task = persistence_model.tasks.read(task_id)
     if task and task.messages:
-        # Return only system messages from the task
         return [msg.dict() for msg in task.messages if isinstance(msg, dict) and msg.get('role') == 'system' 
                 or getattr(msg, 'role', None) == 'system']
     return []
@@ -268,14 +268,14 @@ def get_task_system_messages(task_id: str) -> List[Dict]:
 def create_new_session(task_id: str) -> str:
     """Create a new chat session for a task"""
     session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    # Use session state persistence model
+    persistence_model = st.session_state.persistence_model
     task = persistence_model.tasks.read(task_id)
     if task:
-        # Create a copy of the task to modify
         task_dict = task.dict() if hasattr(task, 'dict') else task
         if 'chat_sessions' not in task_dict:
             task_dict['chat_sessions'] = {}
         task_dict['chat_sessions'][session_id] = []
-        # Update the task with the modified dictionary
         persistence_model.tasks.update(task_id, task_dict)
     return session_id
 
@@ -283,19 +283,21 @@ def save_session_messages(task_id: str, session_id: str, messages: List[Dict]):
     """Save messages for a specific chat session"""
     if not task_id or not session_id:
         return
-        
+    
+    # Use session state persistence model    
+    persistence_model = st.session_state.persistence_model
     task = persistence_model.tasks.read(task_id)
     if task:
-        # Create a copy of the task to modify
         task_dict = task.dict() if hasattr(task, 'dict') else task
         if 'chat_sessions' not in task_dict:
             task_dict['chat_sessions'] = {}
         task_dict['chat_sessions'][session_id] = [msg.dict() if hasattr(msg, 'dict') else msg for msg in messages]
-        # Update the task with the modified dictionary
         persistence_model.tasks.update(task_id, task_dict)
 
 def get_session_messages(task_id: str, session_id: str) -> List[Dict]:
     """Get messages for a specific chat session"""
+    # Use session state persistence model
+    persistence_model = st.session_state.persistence_model
     task = persistence_model.tasks.read(task_id)
     if task:
         task_dict = task.dict() if hasattr(task, 'dict') else task
@@ -305,6 +307,8 @@ def get_session_messages(task_id: str, session_id: str) -> List[Dict]:
 
 def get_chat_sessions(task_id: str) -> Dict[str, List[Dict]]:
     """Get all chat sessions for a task"""
+    # Use session state persistence model
+    persistence_model = st.session_state.persistence_model
     task = persistence_model.tasks.read(task_id)
     if task:
         task_dict = task.dict() if hasattr(task, 'dict') else task
@@ -360,12 +364,11 @@ def load_state(state_path: Optional[str] = None):
         return f"Error loading state: {str(e)}"
 
 def get_available_tasksmanagers():
-    """
-    Get list of available TasksManagers sorted by creation date
-    """
+    """Get list of available TasksManagers sorted by creation date"""
     try:
+        # Use session state persistence model
+        persistence_model = st.session_state.persistence_model
         tasksmanagers = persistence_model.tasksmanagers.list()
-        # Sort by creation date if available, otherwise by name
         return sorted(
             tasksmanagers,
             key=lambda x: (x.created_at or '', x.name),
@@ -376,13 +379,12 @@ def get_available_tasksmanagers():
         return []
 
 def get_tasks_for_tasksmanager(tasksmanager_id: str):
-    """
-    Get list of tasks for a specific TasksManager sorted by creation date
-    """
+    """Get list of tasks for a specific TasksManager sorted by creation date"""
     try:
+        # Use session state persistence model
+        persistence_model = st.session_state.persistence_model
         all_tasks = persistence_model.tasks.list()
         tasks = [task for task in all_tasks if task.tasksmanager_id == tasksmanager_id]
-        # Sort by creation date if available, otherwise by name
         return sorted(
             tasks,
             key=lambda x: (x.created_at or '', x.name),
@@ -397,6 +399,10 @@ async def process_message(prompt: str,
                         task_id: str, 
                         messages: list):
     """Process a user message and get AI response"""
+    # Use session state persistence model and task runner
+    persistence_model = st.session_state.persistence_model
+    task_runner = st.session_state.task_runner
+    
     # Create new message for the prompt
     new_message = Message(
         role="user",
@@ -446,8 +452,10 @@ def render_logo(width=150):
 
 def render_sidebar():
     """Render the sidebar UI"""
+    # Get persistence model from session state at the start of the function
+    persistence_model = st.session_state.persistence_model
+    
     with st.sidebar:
-
         # Logo and title
         render_logo(width=150)
 
@@ -619,6 +627,9 @@ def render_sidebar():
 
 def render_main_chat():
     """Render the main chat interface with context information."""
+    # Get persistence model from session state at the start of the function
+    persistence_model = st.session_state.persistence_model
+    
     tasksmanagers = get_available_tasksmanagers()
     
     if st.session_state.current_tasksmanager_id is None:
@@ -787,9 +798,9 @@ def render_main_chat():
                             updated_at=getattr(msg, 'updated_at', None)
                         ))
 
-                # Run async task in sync context
+                # Use session state task runner
                 full_response = asyncio.run(
-                    task_runner.run_task(
+                    st.session_state.task_runner.run_task(
                         tasksmanager_id=st.session_state.current_tasksmanager_id,
                         task_id=st.session_state.current_task_id,
                         running_extra_params={'messages': current_messages}
@@ -830,19 +841,6 @@ def render_main_chat():
 
             except Exception as e:
                 st.error(f"Error processing request: {str(e)}")
-def on_tm_select():
-    """Callback when TaskManager selection changes"""
-    if st.session_state.tm_selector == "+ New Chat":
-        st.session_state.creating_new_chat = True
-        st.session_state.messages = []
-        st.session_state.current_session_id = None
-    else:
-        st.session_state.creating_new_chat = False
-        # Create new session for selected task
-        if st.session_state.current_task_id:
-            session_id = create_new_session(st.session_state.current_task_id)
-            st.session_state.current_session_id = session_id
-            st.session_state.messages = []
 
 def main():
     """Main application entry point"""

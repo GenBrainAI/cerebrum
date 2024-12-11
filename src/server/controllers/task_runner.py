@@ -23,6 +23,15 @@ class TaskRunner:
         self.context_analytics = ContextAnalytics()
         self.logger = logging.getLogger(__name__)
 
+    async def initialize(self):
+        """Initialize the task runner and its components."""
+        try:
+            # Initialize context provider
+            await self.context_provider.initialize()
+        except Exception as e:
+            self.logger.error(f"Error initializing task runner: {str(e)}")
+            raise
+
     async def run_task(
         self,
         tasksmanager_id: str,
@@ -31,6 +40,9 @@ class TaskRunner:
     ) -> Dict[str, Any]:
         """Run a task with integrated context support."""
         try:
+            # Ensure context provider is initialized
+            await self.initialize()
+
             # Get task and tasksmanager
             task: Task = self.persistence_model.tasks.read(task_id)
             if task is None:
