@@ -72,54 +72,99 @@ class TaskManagerContext(BaseModel):
     created_at: Optional[datetime] = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = Field(default_factory=datetime.now)
 
-async def prepare_task_messages(
+async def extract_context_messages_by_task(
     context_provider,
     task: TaskContext,
     tasksmanager: TaskManagerContext,
-    messages: List[Dict[str, Any]],
-    query: Optional[str] = None
+    messages: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
-    """Prepare messages with context from ContextProvider."""
-    # Start with any system messages
-    system_messages = []
+    """
+    Extract and format context messages for a task based on its configuration.
+    Combines system contexts, knowledge base, and vector search results.
+    """
+    # Start with empty context collections
+    context_messages = []
     
-    # Get system contexts if enabled
-    if task.context_config.include_system_context:
-        # Combine global and task-specific system contexts
-        all_context_ids = []
-        if tasksmanager.context_config.enable_global_context:
-            all_context_ids.extend(tasksmanager.global_system_context_ids)
-        all_context_ids.extend(task.system_context_ids)
-        
-        # Get system context content
-        for context_id in all_context_ids:
-            system_content = await context_provider.get_system_context(str(context_id))
-            if system_content:
-                system_messages.append({
-                    "role": "system",
-                    "content": system_content
-                })
+    # Skip if task doesn't want context
+    if not task.context_config.include_system_context:
+        return messages
+
+    # Build query from messages and task description
+    query_text = _build_search_query(messages, task.description)
     
-    # Get vector contexts if enabled
-    vector_contexts = []
-    if task.context_config.include_vector_context:
-        # Use task-specific query if available, otherwise use provided query
-        search_query = task.vector_context_query or query or task.description
-        if search_query:
-            vector_results = await context_provider.search_context(
-                query=search_query,
-                limit=task.context_config.max_contexts,
-                min_relevance=task.context_config.min_relevance
-            )
-            
-            if vector_results:
-                vector_contexts = [
-                    {
-                        "role": "system",
-                        "content": f"Relevant Context (similarity: {result['relevance']:.2f}):\n{result['content']}"
-                    }
-                    for result in vector_results
-                ]
+    # Get all contexts through context provider
+    contexts = await context_provider.get_task_contexts(
+        task_id=task.id,
+        query=query_text if task.context_config.include_vector_context else None,
+        limit=task.context_config.max_contexts
+    )
     
-    # Combine all messages in proper order
-    return system_messages + vector_contexts + messages
+    if not contexts:
+        return messages
+
+    # Group contexts by type
+    context_by_type = {
+        "knowledge": [],
+        "code": [],
+        "vector": [],
+        "system": []
+    }
+    
+    for ctx in contexts:
+        ctx_type = ctx.get("type", "")
+        if ctx_type in context_by_type:
+            # Add relevance score for vector contexts
+            if ctx_type == "vector" and "relevance" in ctx:
+                content = f"Relevance ({ctx['relevance']:.2f}): {ctx['content']}"
+            else:
+                content = ctx["content"]
+            context_by_type[ctx_type].append(content)
+
+    # Build context messages in specific order
+    # 1. System and Knowledge (constant context)
+    for ctx_type in ["system", "knowledge"]:
+        if context_by_type[ctx_type]:
+            context_messages.append({
+                "role": "system",
+                "content": f"{ctx_type.title()} Context:\n" + 
+                          "\n---\n".join(context_by_type[ctx_type])
+            })
+    
+    # 2. Code Context (full files)
+    if context_by_type["code"]:
+        context_messages.append({
+            "role": "system",
+            "content": "Code Context:\n" + "\n---\n".join(context_by_type["code"])
+        })
+    
+    # 3. Vector Context (relevant chunks)
+    if context_by_type["vector"]:
+        context_messages.append({
+            "role": "system",
+            "content": "Relevant Context:\n" + "\n---\n".join(context_by_type["vector"])
+        })
+
+    # Return context messages followed by user messages
+    return context_messages + messages
+
+def _build_search_query(messages: List[Dict[str, Any]], task_description: Optional[str] = None) -> str:
+    """Build search query from messages and task description."""
+    query_parts = []
+    
+    # Add task description if available
+    if task_description:
+        query_parts.append(task_description)
+    
+    # Add system messages
+    system_messages = [msg["content"] for msg in messages 
+                      if msg.get("role") == "system"]
+    if system_messages:
+        query_parts.extend(system_messages)
+    
+    # Add last user message
+    user_messages = [msg["content"] for msg in messages 
+                    if msg.get("role") == "user"]
+    if user_messages:
+        query_parts.append(user_messages[-1])
+    
+    return " ".join(query_parts)
