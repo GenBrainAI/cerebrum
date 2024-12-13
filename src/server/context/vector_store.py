@@ -3,7 +3,7 @@ import io
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Callable
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
@@ -11,6 +11,8 @@ import logging
 import json
 from dataclasses import dataclass
 import PyPDF2
+from tqdm.asyncio import tqdm
+import asyncio
 
 @dataclass
 class VectorStoreConfig:
@@ -175,13 +177,26 @@ class VectorStore:
         
         return [chunk.strip() for chunk in chunks if chunk.strip()]  # Added strip() to clean chunks
 
-    async def add_file_to_index(self, index_name: str, file_path_or_obj: Any, metadata: Optional[Dict[str, Any]] = None) -> List[str]:
-        """Add file content to a specific index with chunking."""
+    async def add_file_to_index(self, index_name: str, file_path_or_obj: Any, 
+                               metadata: Optional[Dict[str, Any]] = None,
+                               progress_callback: Optional[Callable[[str, int, int], None]] = None) -> List[str]:
+        """Add file content to a specific index with chunking.
+        
+        Args:
+            index_name: Name of the index to add to
+            file_path_or_obj: File path or file-like object
+            metadata: Optional metadata for the file
+            progress_callback: Optional callback function(status_message, current, total)
+        """
         try:
             if index_name not in self.indices:
                 raise ValueError(f"Index {index_name} not found")
             
             collection = self.indices[index_name]
+            
+            # Update progress
+            if progress_callback:
+                progress_callback("Reading file...", 0, 100)
             
             # Extract text from file
             try:
@@ -190,8 +205,12 @@ class VectorStore:
                     if filename.lower().endswith('.pdf'):
                         pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_path_or_obj.read()))
                         text = ""
-                        for page in pdf_reader.pages:
+                        total_pages = len(pdf_reader.pages)
+                        for i, page in enumerate(pdf_reader.pages):
                             text += page.extract_text() + "\n"
+                            if progress_callback:
+                                progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
+                                               i+1, total_pages)
                         file_path_or_obj.seek(0)
                     else:
                         content = file_path_or_obj.read()
@@ -205,8 +224,12 @@ class VectorStore:
                         with open(file_path, 'rb') as f:
                             pdf_reader = PyPDF2.PdfReader(f)
                             text = ""
-                            for page in pdf_reader.pages:
+                            total_pages = len(pdf_reader.pages)
+                            for i, page in enumerate(pdf_reader.pages):
                                 text += page.extract_text() + "\n"
+                                if progress_callback:
+                                    progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
+                                                   i+1, total_pages)
                     else:
                         with open(file_path, 'r', encoding='utf-8') as f:
                             text = f.read()
@@ -214,27 +237,55 @@ class VectorStore:
                 logging.error(f"Error reading file: {str(e)}")
                 raise
 
+            if progress_callback:
+                progress_callback("Chunking text...", 0, 100)
+
             # Split into chunks
             chunks = self._chunk_text(text)
             successful_ids = []
             
-            # Base metadata for all chunks
-            base_metadata = {
-                **(metadata or {}),
+            # Ensure we have a file_id in metadata
+            if metadata is None:
+                metadata = {}
+            if 'file_id' not in metadata:
+                metadata['file_id'] = hashlib.md5(text.encode()).hexdigest()
+            
+            if progress_callback:
+                progress_callback("Adding root chunk...", 0, len(chunks) + 1)
+
+            # Add root chunk first
+            root_id = f"{metadata['file_id']}_root"
+            root_metadata = {
+                **metadata,
+                "is_root": True,
                 "total_chunks": len(chunks),
                 "original_text_length": len(text)
             }
             
-            # Process each chunk
+            # Add root chunk to collection
+            collection.add(
+                ids=[root_id],
+                documents=[text[:min(len(text), 1000)]],  # Store first 1000 chars as preview
+                metadatas=[root_metadata]
+            )
+            successful_ids.append(root_id)
+            
+            # Process each chunk with progress updates
             for i, chunk in enumerate(chunks):
                 try:
+                    if progress_callback:
+                        progress_callback(f"Processing chunk {i+1}/{len(chunks)}", 
+                                       i+1, len(chunks))
+                    
                     # Generate unique ID for this chunk
-                    chunk_id = hashlib.md5(f"{chunk}{i}".encode()).hexdigest()
+                    chunk_id = f"{metadata['file_id']}_{i}"
                     
                     # Add chunk-specific metadata
                     chunk_metadata = {
-                        **base_metadata,
+                        **metadata,
+                        "is_root": False,
                         "chunk_index": i,
+                        "total_chunks": len(chunks),
                         "chunk_size": len(chunk)
                     }
                     
@@ -248,12 +299,18 @@ class VectorStore:
                     successful_ids.append(chunk_id)
                     logging.info(f"Added chunk {i+1}/{len(chunks)} to index {index_name}")
                     
+                    # Allow other tasks to run
+                    await asyncio.sleep(0)
+                    
                 except Exception as e:
                     logging.error(f"Error processing chunk {i+1}/{len(chunks)}: {str(e)}")
                     continue
             
             if not successful_ids:
                 raise Exception("No chunks were successfully processed")
+            
+            if progress_callback:
+                progress_callback("Complete!", len(chunks), len(chunks))
             
             return successful_ids
             
@@ -538,7 +595,9 @@ class VectorStore:
             logging.error(f"Error deleting index: {str(e)}")
             return False
 
-    async def process_directory(self, index_name: str, directory_path: str, metadata: Optional[Dict[str, Any]] = None) -> int:
+    async def process_directory(self, index_name: str, directory_path: str, 
+                              metadata: Optional[Dict[str, Any]] = None,
+                              progress_callback: Optional[Callable[[str, int, int], None]] = None) -> int:
         """Process all files in a directory and add them to an index."""
         if index_name not in self.indices:
             raise ValueError(f"Index {index_name} not found")
@@ -546,26 +605,37 @@ class VectorStore:
         processed = 0
         path = Path(directory_path)
         
-        for file_path in path.rglob("*"):
-            if file_path.is_file() and file_path.suffix.lower() in ['.txt', '.pdf', '.docx', '.py', '.md', '.json']:
-                try:
-                    await self.add_file_to_index(
-                        index_name=index_name,
-                        file_path_or_obj=str(file_path),
-                        metadata={
-                            **(metadata or {}),
-                            "original_path": str(file_path)
-                        }
-                    )
-                    processed += 1
-                except Exception as e:
-                    logging.error(f"Error processing file {file_path}: {str(e)}")
+        # Get list of files to process
+        files = [f for f in path.rglob("*") 
+                 if f.is_file() and f.suffix.lower() in ['.txt', '.pdf', '.docx', '.py', '.md', '.json']]
+        
+        total_files = len(files)
+        for i, file_path in enumerate(files):
+            try:
+                if progress_callback:
+                    progress_callback(f"Processing file {i+1}/{total_files}: {file_path.name}",
+                                   i, total_files)
                 
+                await self.add_file_to_index(
+                    index_name=index_name,
+                    file_path_or_obj=str(file_path),
+                    metadata={
+                        **(metadata or {}),
+                        "original_path": str(file_path)
+                    },
+                    progress_callback=lambda msg, cur, tot: progress_callback(
+                        f"File {i+1}/{total_files} - {msg}", cur, tot
+                    ) if progress_callback else None
+                )
+                processed += 1
+            except Exception as e:
+                logging.error(f"Error processing file {file_path}: {str(e)}")
+        
         return processed
 
 
     async def get_index_contents(self, index_name: str) -> List[Dict[str, Any]]:
-        """Get all files stored in a specific index."""
+        """Get all files stored in a specific index, grouped by root files."""
         try:
             self._reload_indices()
             self._ensure_collection(index_name)
@@ -576,25 +646,36 @@ class VectorStore:
             if not results['ids']:
                 return []
             
-            contents = []
+            # Group chunks by file_id
+            file_groups = {}
             for doc_id, doc, meta in zip(results['ids'], results['documents'], results['metadatas']):
-                # Ensure metadata is properly nested
-                content_item = {
-                    "id": doc_id,
-                    "content": doc,
-                    "metadata": {
-                        **meta,  # Include all original metadata
-                        "original_name": meta.get("original_name", "Unknown"),
-                        "file_type": meta.get("file_type", "Unknown"),
-                        "size": meta.get("size", 0),
-                        "added_at": meta.get("added_at", "Unknown"),
-                        "chunk_index": meta.get("chunk_index", 0),
-                        "total_chunks": meta.get("total_chunks", 1)
-                    }
-                }
-                contents.append(content_item)
+                file_id = meta.get('file_id')
+                if file_id:
+                    if file_id not in file_groups:
+                        # Initialize group with root metadata if this is a root chunk
+                        if meta.get('is_root', False):
+                            file_groups[file_id] = {
+                                "id": doc_id,
+                                "content": doc,
+                                "metadata": {
+                                    **meta,
+                                    "chunks": []
+                                }
+                            }
+                    else:
+                        # Add non-root chunks to the chunks list
+                        if not meta.get('is_root', False):
+                            file_groups[file_id]["metadata"]["chunks"].append({
+                                "id": doc_id,
+                                "content": doc,
+                                "metadata": meta
+                            })
             
-            logging.info(f"Retrieved {len(contents)} items from index {index_name}")
+            # Convert groups to list and sort by added_at
+            contents = list(file_groups.values())
+            contents.sort(key=lambda x: x["metadata"].get("added_at", ""), reverse=True)
+            
+            logging.info(f"Retrieved {len(contents)} root files from index {index_name}")
             return contents
             
         except Exception as e:
@@ -602,14 +683,27 @@ class VectorStore:
             return []
 
     async def delete_file_from_index(self, index_name: str, file_id: str) -> bool:
-        """Delete a specific file from an index."""
+        """Delete a file and all its chunks from an index."""
         try:
             if index_name not in self.indices:
                 raise ValueError(f"Index {index_name} not found")
             
             collection = self.indices[index_name]
-            collection.delete(ids=[file_id])
-            return True
+            
+            # Get all chunks with matching file_id
+            results = collection.get(
+                where={"file_id": file_id}
+            )
+            
+            if results['ids']:
+                # Delete all chunks associated with this file
+                collection.delete(
+                    ids=results['ids']
+                )
+                logging.info(f"Deleted file {file_id} and {len(results['ids'])} associated chunks")
+                return True
+            
+            return False
             
         except Exception as e:
             logging.error(f"Error deleting file from index: {str(e)}")

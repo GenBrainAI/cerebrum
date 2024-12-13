@@ -235,9 +235,6 @@ async def test_vector_context_in_task(vector_store: VectorStore,
             "task_id": mock_task["id"]
         }
     )
-    
-    # Breakpoint 1: Verify chunk IDs were created
-    print("\n=== Breakpoint 1 ===")
     print(f"Chunk IDs created: {chunk_ids}")
     print(f"Number of chunks: {len(chunk_ids)}")
     
@@ -250,8 +247,6 @@ async def test_vector_context_in_task(vector_store: VectorStore,
         }
     }
     
-    # Breakpoint 2: Before storing context
-    print("\n=== Breakpoint 2 ===")
     print(f"Task ID: {mock_task['id']}")
     print(f"Context metadata: {context_metadata}")
     
@@ -263,21 +258,6 @@ async def test_vector_context_in_task(vector_store: VectorStore,
         priority=50
     )
     
-    # Breakpoint 3: After storing context
-    print("\n=== Breakpoint 3 ===")
-    print(f"Context reference: {context_ref.__dict__ if context_ref else None}")
-    print(f"Stored contexts: {context_provider.context_db.stored_contexts}")
-    print(f"store_context called: {context_provider.context_db.store_context.mock.called}")
-    print(f"store_context call args: {context_provider.context_db.store_context.mock.call_args_list}")
-    
-    # After storing context
-    print("\n=== Method Calls ===")
-    print(f"Store context calls: {context_provider.context_db.store_context.mock.call_args_list}")
-    print(f"Get contexts calls: {context_provider.context_db.get_contexts.mock.call_args_list}")
-    
-    # Breakpoint 3a: Before context retrieval
-    print("\n=== Breakpoint 3a ===")
-    print(f"About to retrieve contexts for task: {mock_task['id']}")
     print(f"Context provider state:")
     print(f"- Persistence model: {context_provider.persistence_model}")
     print(f"- Context DB: {context_provider.context_db}")
@@ -287,20 +267,6 @@ async def test_vector_context_in_task(vector_store: VectorStore,
         task_id=mock_task["id"],
         context_types=["vector"]
     )
-    
-    # Breakpoint 3b: Immediately after get_task_contexts
-    print("\n=== Breakpoint 3b ===")
-    print(f"Raw task_contexts result: {task_contexts}")
-    print(f"Context provider internal state:")
-    print(f"- Task contexts manager: {context_provider.task_context_manager}")
-    print(f"- Current task contexts: {context_provider.task_context_manager._task_contexts if hasattr(context_provider.task_context_manager, '_task_contexts') else 'Not available'}")
-    
-    # Breakpoint 4: After retrieving contexts
-    print("\n=== Breakpoint 4 ===")
-    print(f"Retrieved contexts: {task_contexts}")
-    print(f"Task ID used: {mock_task['id']}")
-    print(f"Context types requested: ['vector']")
-    print(f"All stored contexts: {context_provider.context_db.stored_contexts}")
     
     # Verify context was added
     assert len(task_contexts) > 0, "Vector context should be added to task"
