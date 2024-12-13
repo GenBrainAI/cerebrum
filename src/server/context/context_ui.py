@@ -982,130 +982,174 @@ class ContextManagerUI:
         # Get available indices for vector store
         vector_indices = await self.vector_store.list_indices()
         
-        # Task selection
-        selected_task = st.selectbox(
-            "Select Task",
-            options=[""] + [f"{task.name} ({task.id})" for task in tasks],
-            format_func=lambda x: x.split(" (")[0] if x else "Select a task..."
-        )
+        # Create two columns for existing contexts and adding new ones
+        col1, col2 = st.columns([1, 1])
+        
+        with col1:
+            st.markdown("### Existing Task Contexts")
+            # Show tasks with contexts
+            for task in tasks:
+                contexts = await self.context_provider.get_task_contexts(task.id)
+                if contexts:  # Only show tasks that have contexts
+                    with st.expander(f"📋 {task.name} ({len(contexts)} contexts)"):
+                        st.write(f"Task ID: {task.id}")
+                        st.write("Context Configuration:")
+                        st.write(f"- Use Context: {getattr(task, 'use_context', True)}")
+                        st.write(f"- Inherit Manager Context: {getattr(task, 'inherit_manager_context', True)}")
+                        
+                        st.markdown("#### Associated Contexts:")
+                        for ctx in contexts:
+                            with st.container():
+                                ctx_col1, ctx_col2 = st.columns([5, 1])
+                                with ctx_col1:
+                                    st.markdown(f"**{ctx['type'].title()} Context**")
+                                    st.write(f"Priority: {ctx.get('priority', 50)}")
+                                    if ctx['type'] == 'vector':
+                                        st.write(f"Index: {ctx['metadata'].get('index_name', 'Unknown')}")
+                                        st.write(f"Files: {ctx['metadata'].get('file_count', 0)}")
+                                    elif ctx['type'] == 'system':
+                                        st.write(f"Name: {ctx['metadata'].get('name', 'Unnamed')}")
+                                with ctx_col2:
+                                    if st.button("🗑️", key=f"delete_ctx_{task.id}_{ctx['id']}", 
+                                               help=f"Remove this context from {task.name}"):
+                                        try:
+                                            await self.context_provider.remove_context_from_task(
+                                                task_id=task.id,
+                                                context_id=ctx['id']
+                                            )
+                                            st.success("Context removed!")
+                                            time.sleep(0.5)
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Error removing context: {str(e)}")
+                                st.markdown("---")
 
-        if selected_task:
-            task_id = selected_task.split("(")[-1].strip(")")
-            task = task_dict[task_id]
+        with col2:
+            st.markdown("### Add New Context")
+            # Task selection
+            selected_task = st.selectbox(
+                "Select Task",
+                options=[""] + [f"{task.name} ({task.id})" for task in tasks],
+                format_func=lambda x: x.split(" (")[0] if x else "Select a task..."
+            )
 
-            # Show current task context configuration
-            st.markdown("### Context Configuration")
-            
-            col1, col2 = st.columns(2)
-            with col1:
+            if selected_task:
+                task_id = selected_task.split("(")[-1].strip(")")
+                task = task_dict[task_id]
+
+                # Show current task context configuration
+                st.markdown("#### Context Configuration")
+                
                 use_context = st.checkbox(
                     "Use Context",
                     value=getattr(task, 'use_context', True),
                     key=f"use_context_{task_id}"
                 )
-            with col2:
+                
                 inherit_manager = st.checkbox(
                     "Inherit Manager Context",
                     value=getattr(task, 'inherit_manager_context', True),
                     key=f"inherit_manager_{task_id}"
                 )
 
-            if st.button("Update Configuration"):
-                try:
-                    await self.context_provider.update_task_context_config(
-                        task_id=task_id,
-                        use_context=use_context,
-                        inherit_manager_context=inherit_manager
-                    )
-                    st.success("Context configuration updated!")
-                except Exception as e:
-                    st.error(f"Error updating configuration: {str(e)}")
-
-            # Show current contexts
-            st.markdown("### Current Contexts")
-            contexts = await self.context_provider.get_task_contexts(task_id)
-            
-            if contexts:
-                for ctx in contexts:
-                    with st.expander(f"{ctx['type'].title()} Context - Priority: {ctx.get('priority', 50)}"):
-                        st.json(ctx)
-            else:
-                st.info("No contexts associated with this task")
-
-            # Add new context section
-            st.markdown("### Add Context")
-            
-            context_type = st.selectbox(
-                "Context Type",
-                options=["vector", "system", "knowledge"]
-            )
-
-            if context_type == "vector":
-                # Vector store context
-                if vector_indices:
-                    selected_index = st.selectbox(
-                        "Select Vector Index",
-                        options=[""] + [idx["name"] for idx in vector_indices],
-                        format_func=lambda x: x.replace("vs_", "") if x else "Select an index..."
-                    )
-                    
-                    if selected_index:
-                        priority = st.slider("Priority", 0, 100, 50)
-                        
-                        if st.button("Add Vector Context"):
-                            try:
-                                # Get index contents for metadata
-                                index_contents = await self.vector_store.get_index_contents(selected_index)
-                                
-                                # Create context metadata
-                                metadata = {
-                                    "index_name": selected_index,
-                                    "file_count": len(index_contents),
-                                    "added_at": datetime.now().isoformat()
-                                }
-                                
-                                # Add context to task
-                                await self.context_provider.add_context_to_task(
-                                    task_id=task_id,
-                                    type="vector",
-                                    source_id=selected_index,
-                                    metadata=metadata,
-                                    priority=priority
-                                )
-                                
-                                st.success(f"Added vector context from index {selected_index}")
-                                time.sleep(0.5)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error adding vector context: {str(e)}")
-                else:
-                    st.warning("No vector indices available. Create one in the Vector Store section.")
-
-            elif context_type == "system":
-                # System context
-                name = st.text_input("Context Name")
-                content = st.text_area("Content")
-                description = st.text_input("Description (optional)")
-                priority = st.slider("Priority", 0, 100, 50)
-                
-                if st.button("Add System Context"):
+                if st.button("Update Configuration"):
                     try:
-                        await self.context_provider.add_system_context(
+                        await self.context_provider.update_task_context_config(
                             task_id=task_id,
-                            name=name,
-                            content=content,
-                            description=description,
-                            priority=priority
+                            use_context=use_context,
+                            inherit_manager_context=inherit_manager
                         )
-                        st.success("Added system context")
-                        time.sleep(0.5)
-                        st.rerun()
+                        st.success("Context configuration updated!")
                     except Exception as e:
-                        st.error(f"Error adding system context: {str(e)}")
+                        st.error(f"Error updating configuration: {str(e)}")
 
-            elif context_type == "knowledge":
-                # Knowledge base context
-                st.info("Knowledge base context integration coming soon...")
+                # Get existing contexts for duplicate checking
+                existing_contexts = await self.context_provider.get_task_contexts(task_id)
+                existing_sources = {(ctx['type'], ctx['source_id']) for ctx in existing_contexts}
 
-        else:
-            st.info("Select a task to manage its contexts")
+                # Add new context section
+                st.markdown("#### Add Context")
+                
+                context_type = st.selectbox(
+                    "Context Type",
+                    options=["vector", "system", "knowledge"]
+                )
+
+                if context_type == "vector":
+                    # Vector store context
+                    if vector_indices:
+                        selected_index = st.selectbox(
+                            "Select Vector Index",
+                            options=[""] + [idx["name"] for idx in vector_indices],
+                            format_func=lambda x: x.replace("vs_", "") if x else "Select an index..."
+                        )
+                        
+                        if selected_index:
+                            # Check for duplicate
+                            if (context_type, selected_index) in existing_sources:
+                                st.warning("This vector index is already associated with this task!")
+                            else:
+                                priority = st.slider("Priority", 0, 100, 50)
+                                
+                                if st.button("Add Vector Context"):
+                                    try:
+                                        # Get index contents for metadata
+                                        index_contents = await self.vector_store.get_index_contents(selected_index)
+                                        
+                                        # Create context metadata
+                                        metadata = {
+                                            "index_name": selected_index,
+                                            "file_count": len(index_contents),
+                                            "added_at": datetime.now().isoformat()
+                                        }
+                                        
+                                        # Add context to task
+                                        await self.context_provider.add_context_to_task(
+                                            task_id=task_id,
+                                            type="vector",
+                                            source_id=selected_index,
+                                            metadata=metadata,
+                                            priority=priority
+                                        )
+                                        
+                                        st.success(f"Added vector context from index {selected_index}")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error adding vector context: {str(e)}")
+                    else:
+                        st.warning("No vector indices available. Create one in the Vector Store section.")
+
+                elif context_type == "system":
+                    # System context
+                    name = st.text_input("Context Name")
+                    if name:
+                        # Check for duplicate
+                        if (context_type, name) in existing_sources:
+                            st.warning("A system context with this name already exists for this task!")
+                        else:
+                            content = st.text_area("Content")
+                            description = st.text_input("Description (optional)")
+                            priority = st.slider("Priority", 0, 100, 50)
+                            
+                            if st.button("Add System Context"):
+                                try:
+                                    await self.context_provider.add_system_context(
+                                        task_id=task_id,
+                                        name=name,
+                                        content=content,
+                                        description=description,
+                                        priority=priority
+                                    )
+                                    st.success("Added system context")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error adding system context: {str(e)}")
+
+                elif context_type == "knowledge":
+                    # Knowledge base context
+                    st.info("Knowledge base context integration coming soon...")
+
+            else:
+                st.info("Select a task to add new contexts")
