@@ -23,6 +23,15 @@ class TaskRunner:
         self.context_analytics = ContextAnalytics()
         self.logger = logging.getLogger(__name__)
 
+    async def initialize(self):
+        """Initialize the task runner and its components."""
+        try:
+            # Initialize context provider
+            await self.context_provider.initialize()
+        except Exception as e:
+            self.logger.error(f"Error initializing task runner: {str(e)}")
+            raise
+
     async def run_task(
         self,
         tasksmanager_id: str,
@@ -31,6 +40,9 @@ class TaskRunner:
     ) -> Dict[str, Any]:
         """Run a task with integrated context support."""
         try:
+            # Ensure context provider is initialized
+            await self.initialize()
+
             # Get task and tasksmanager
             task: Task = self.persistence_model.tasks.read(task_id)
             if task is None:
@@ -61,49 +73,32 @@ class TaskRunner:
     ) -> Dict[str, Any]:
         """Execute a standard task with context support."""
         try:
-            # Get contexts
-            contexts = await self.context_provider.get_task_contexts(
+            # Get curried proxy for tools
+            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            
+            # Initialize messages with system messages
+            messages = task.get_system_messages()
+
+            # Add messages from running params
+            if running_extra_params and "messages" in running_extra_params:
+                messages.extend(running_extra_params["messages"])
+
+            # Prepare messages with context
+            messages = await self.context_provider.prepare_task_messages(
                 task_id=task.id,
-                query=running_extra_params.get("query") if running_extra_params else None
+                messages=messages
+            )
+
+            # Execute completion
+            response = await self.operator.completion(
+                tasksmanager_id=tasksmanager.id,
+                task_id=task.id,
+                messages=messages,
+                model=tasksmanager.model,
+                curried_proxy=curried_proxy
             )
             
-            success = False
-            try:
-                # Get curried proxy for tools
-                curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
-                
-                # Initialize messages with system messages
-                messages = task.get_system_messages()
-
-                # Add messages from running params
-                if running_extra_params and "messages" in running_extra_params:
-                    messages.extend(running_extra_params["messages"])
-
-                # Prepare messages with context
-                messages = await self.context_provider.prepare_task_messages(
-                    task_id=task.id,
-                    messages=messages,
-                    query=running_extra_params.get("query") if running_extra_params else None
-                )
-
-                # Execute completion
-                response = await self.operator.completion(
-                    tasksmanager_id=tasksmanager.id,
-                    task_id=task.id,
-                    messages=messages,
-                    model=tasksmanager.model,
-                    curried_proxy=curried_proxy
-                )
-                
-                success = True
-                return {"response": response}
-
-            finally:
-                # Record context usage
-                await self.context_analytics.record_context_usage(
-                    task_id=task.id,
-                    success=success
-                )
+            return {"response": response}
 
         except Exception as e:
             self.logger.error(f"Error in standard task execution: {str(e)}")

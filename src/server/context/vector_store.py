@@ -1,19 +1,18 @@
 import os
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
-import asyncio
-from datetime import datetime
-import hashlib
-import mimetypes
-import PyPDF2
-import docx
 import io
-from dataclasses import dataclass
-import json
+import hashlib
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Union, Callable
+import chromadb
+from chromadb.config import Settings
+from chromadb.utils import embedding_functions
 import logging
-import numpy as np
-import openai
-import traceback
+import json
+from dataclasses import dataclass
+import PyPDF2
+from tqdm.asyncio import tqdm
+import asyncio
 
 @dataclass
 class VectorStoreConfig:
@@ -33,95 +32,316 @@ class VectorStoreConfig:
 
 class VectorStore:
     def __init__(self, config: Optional[VectorStoreConfig] = None, base_path: str = "persistent_state/context/vector_store"):
-        """Initialize VectorStore with configuration.
+        """Initialize VectorStore with ChromaDB.
         
         Args:
             config: VectorStoreConfig object with settings
-            base_path: Default base path if no config provided
+            base_path: Base path for ChromaDB persistence
         """
         self.config = config or VectorStoreConfig()
-        # Use persist_directory from config if provided, otherwise use base_path
-        persist_dir = self.config.persist_directory if config else base_path
-        self.base_path = Path(persist_dir)
+        self.base_path = Path(base_path)
         
-        # Create directory structure
-        print(f"Debug - Creating vector store directory structure at: {self.base_path}")
-        self.base_path.mkdir(parents=True, exist_ok=True)
+        # Initialize ChromaDB client
+        self.client = chromadb.PersistentClient(
+            path=str(self.base_path),
+            settings=Settings(
+                anonymized_telemetry=False,
+                allow_reset=True
+            )
+        )
+
+        # Initialize OpenAI embedding function
+        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model_name=self.config.embedding_model
+        )
         
-        # Create subdirectories
-        self.metadata_dir = self.base_path / "metadata"
-        self.chunks_dir = self.base_path / "chunks"
-        self.items_dir = self.base_path / "items"
-        
-        print(f"Debug - Creating subdirectories:")
-        print(f"  Metadata: {self.metadata_dir}")
-        print(f"  Chunks: {self.chunks_dir}")
-        print(f"  Items: {self.items_dir}")
-        
-        self.metadata_dir.mkdir(exist_ok=True)
-        self.chunks_dir.mkdir(exist_ok=True)
-        self.items_dir.mkdir(exist_ok=True)
-        
-        # Initialize index file path
-        self.index_file = self.base_path / "vector_index.json"
-        
-        # Initialize embeddings configuration
-        self.embedding_model = self.config.embedding_model
-        self.embeddings_provider = self.config.embeddings_provider
-        self.metadata_schema = self.config.metadata_schema or {}
-        
+        # Initialize indices dictionary
+        self.indices = {}
+        self._load_existing_indices()
+
+    def _load_existing_indices(self):
+        """Load existing collections from ChromaDB."""
+        try:
+            for collection in self.client.list_collections():
+                if collection.name.startswith('vs_'):
+                    self.indices[collection.name] = self.client.get_collection(
+                        name=collection.name,
+                        embedding_function=self.embedding_function
+                    )
+            logging.info(f"Loaded {len(self.indices)} existing vector indices")
+        except Exception as e:
+            logging.error(f"Error loading existing collections: {str(e)}")
+
     def _safe_embed(self, texts: List[str]) -> List[List[float]]:
-        """Safely generate embeddings for a list of texts.
+        """Safely generate embeddings for a list of texts."""
+        try:
+            # Use the embedding function directly
+            embeddings = self.embedding_function(texts)
+            return embeddings
+        except Exception as e:
+            logging.error(f"Error generating embeddings: {str(e)}")
+            # Return zero embeddings as fallback
+            dimension = 1536  # OpenAI's default embedding dimension
+            return [[0.0] * dimension for _ in texts]
+
+    def create_index(self, name: str, description: Optional[str] = None) -> str:
+        """Create a new index/collection for specific content."""
+        try:
+            index_name = f"vs_{name}"
+            # Check if collection already exists
+            try:
+                collection = self.client.get_collection(
+                    name=index_name,
+                    embedding_function=self.embedding_function
+                )
+            except:
+                # Create new collection if it doesn't exist
+                collection = self.client.create_collection(
+                    name=index_name,
+                    embedding_function=self.embedding_function,
+                    metadata={"description": description}
+                )
+            
+            # Store in indices dictionary
+            self.indices[index_name] = collection
+            logging.info(f"Created/loaded index: {index_name}")
+            return index_name
+            
+        except Exception as e:
+            logging.error(f"Error creating index {name}: {str(e)}")
+            raise
+
+    def _reload_indices(self):
+        """Reload all indices from ChromaDB."""
+        try:
+            self.indices.clear()  # Clear existing indices
+            collections = self.client.list_collections()
+            for collection in collections:
+                if collection.name.startswith('vs_'):
+                    self.indices[collection.name] = self.client.get_collection(
+                        name=collection.name,
+                        embedding_function=self.embedding_function
+                    )
+            logging.info(f"Reloaded {len(self.indices)} vector indices")
+        except Exception as e:
+            logging.error(f"Error reloading indices: {str(e)}")
+
+    async def list_indices(self) -> List[Dict[str, Any]]:
+        """List all available indices/collections."""
+        self._reload_indices()  # Reload before listing
+        collections = self.client.list_collections()
+        indices = [{
+            "name": col.name,
+            "description": col.metadata.get("description", ""),
+            "count": col.count()
+        } for col in collections if col.name.startswith("vs_")]
+        logging.info(f"Listed {len(indices)} indices: {[idx['name'] for idx in indices]}")
+        return indices
+
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get statistics about the vector store."""
+        collections = await self.list_indices()
+        total_vectors = sum(col["count"] for col in collections)
+        return {
+            "total_vectors": total_vectors,
+            "indices_count": len(collections),
+            "storage_size": self._calculate_storage_size()
+        }
+
+    def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
+        """Split text into overlapping chunks."""
+        chunks = []
+        start = 0
+        text_len = len(text)
+        
+        while start < text_len:
+            remaining = text_len - start
+            
+            if remaining <= chunk_size:
+                # If remaining text is smaller than chunk_size, add it and we're done
+                chunks.append(text[start:])
+                break
+            
+            # Find a good breaking point within the chunk_size
+            end = start + chunk_size
+            while end > start and not text[end - 1].isspace():
+                end -= 1
+            
+            # If we couldn't find a space, just use the full chunk_size
+            if end == start:
+                end = start + chunk_size
+            
+            chunks.append(text[start:end])
+            start = end - overlap
+        
+        return [chunk.strip() for chunk in chunks if chunk.strip()]  # Added strip() to clean chunks
+
+    async def add_file_to_index(self, index_name: str, file_path_or_obj: Any, 
+                               metadata: Optional[Dict[str, Any]] = None,
+                               progress_callback: Optional[Callable[[str, int, int], None]] = None) -> List[str]:
+        """Add file content to a specific index with chunking.
         
         Args:
-            texts: List of text strings to embed
-            
-        Returns:
-            List of embedding vectors
+            index_name: Name of the index to add to
+            file_path_or_obj: File path or file-like object
+            metadata: Optional metadata for the file
+            progress_callback: Optional callback function(status_message, current, total)
         """
         try:
-            # Use OpenAI's embedding API
-            response = openai.Embedding.create(
-                input=texts,
-                model=self.embedding_model
+            if index_name not in self.indices:
+                raise ValueError(f"Index {index_name} not found")
+            
+            collection = self.indices[index_name]
+            
+            # Update progress
+            if progress_callback:
+                progress_callback("Reading file...", 0, 100)
+            
+            # Extract text from file
+            try:
+                if hasattr(file_path_or_obj, 'read'):  # File-like object
+                    filename = getattr(file_path_or_obj, 'name', '')
+                    if filename.lower().endswith('.pdf'):
+                        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_path_or_obj.read()))
+                        text = ""
+                        total_pages = len(pdf_reader.pages)
+                        for i, page in enumerate(pdf_reader.pages):
+                            text += page.extract_text() + "\n"
+                            if progress_callback:
+                                progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
+                                               i+1, total_pages)
+                        file_path_or_obj.seek(0)
+                    else:
+                        content = file_path_or_obj.read()
+                        text = content.decode('utf-8') if isinstance(content, bytes) else str(content)
+                else:  # File path
+                    file_path = Path(file_path_or_obj)
+                    if not file_path.exists():
+                        raise FileNotFoundError(f"File not found: {file_path}")
+                    
+                    if file_path.suffix.lower() == '.pdf':
+                        with open(file_path, 'rb') as f:
+                            pdf_reader = PyPDF2.PdfReader(f)
+                            text = ""
+                            total_pages = len(pdf_reader.pages)
+                            for i, page in enumerate(pdf_reader.pages):
+                                text += page.extract_text() + "\n"
+                                if progress_callback:
+                                    progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
+                                                   i+1, total_pages)
+                    else:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            text = f.read()
+            except Exception as e:
+                logging.error(f"Error reading file: {str(e)}")
+                raise
+
+            if progress_callback:
+                progress_callback("Chunking text...", 0, 100)
+
+            # Split into chunks
+            chunks = self._chunk_text(text)
+            successful_ids = []
+            
+            # Ensure we have a file_id in metadata
+            if metadata is None:
+                metadata = {}
+            if 'file_id' not in metadata:
+                metadata['file_id'] = hashlib.md5(text.encode()).hexdigest()
+            
+            if progress_callback:
+                progress_callback("Adding root chunk...", 0, len(chunks) + 1)
+
+            # Add root chunk first
+            root_id = f"{metadata['file_id']}_root"
+            root_metadata = {
+                **metadata,
+                "is_root": True,
+                "total_chunks": len(chunks),
+                "original_text_length": len(text)
+            }
+            
+            # Add root chunk to collection
+            collection.add(
+                ids=[root_id],
+                documents=[text[:min(len(text), 1000)]],  # Store first 1000 chars as preview
+                metadatas=[root_metadata]
             )
-            return [data["embedding"] for data in response["data"]]
+            successful_ids.append(root_id)
+            
+            # Process each chunk with progress updates
+            for i, chunk in enumerate(chunks):
+                try:
+                    if progress_callback:
+                        progress_callback(f"Processing chunk {i+1}/{len(chunks)}", 
+                                       i+1, len(chunks))
+                    
+                    # Generate unique ID for this chunk
+                    chunk_id = f"{metadata['file_id']}_{i}"
+                    
+                    # Add chunk-specific metadata
+                    chunk_metadata = {
+                        **metadata,
+                        "is_root": False,
+                        "chunk_index": i,
+                        "total_chunks": len(chunks),
+                        "chunk_size": len(chunk)
+                    }
+                    
+                    # Add to collection
+                    collection.add(
+                        ids=[chunk_id],
+                        documents=[chunk],
+                        metadatas=[chunk_metadata]
+                    )
+                    
+                    successful_ids.append(chunk_id)
+                    logging.info(f"Added chunk {i+1}/{len(chunks)} to index {index_name}")
+                    
+                    # Allow other tasks to run
+                    await asyncio.sleep(0)
+                    
+                except Exception as e:
+                    logging.error(f"Error processing chunk {i+1}/{len(chunks)}: {str(e)}")
+                    continue
+            
+            if not successful_ids:
+                raise Exception("No chunks were successfully processed")
+            
+            if progress_callback:
+                progress_callback("Complete!", len(chunks), len(chunks))
+            
+            return successful_ids
+            
         except Exception as e:
-            # For testing/fallback, return random embeddings of correct dimension
-            dim = 1536  # Default OpenAI embedding dimension
-            return [list(np.random.uniform(-1, 1, dim)) for _ in texts]
+            logging.error(f"Error adding file to index {index_name}: {str(e)}")
+            raise
 
     async def add_items(self, embeddings: List[List[float]], metadatas: List[Dict[str, Any]], 
                        contents: List[str]) -> Dict[str, Any]:
-        """Add items to the vector store.
-        
-        Args:
-            embeddings: List of embedding vectors
-            metadatas: List of metadata dictionaries
-            contents: List of content strings
-            
-        Returns:
-            Stats about the operation
-        """
+        """Add items to ChromaDB collection."""
         try:
             # Generate IDs for the items
-            ids = [hashlib.md5(content.encode()).hexdigest() for content in contents]
+            ids = [hashlib.md5(f"{content}{i}".encode()).hexdigest() 
+                  for i, content in enumerate(contents)]
             
-            # Store items
-            for i, (id_, embedding, metadata, content) in enumerate(zip(ids, embeddings, metadatas, contents)):
-                # Save embedding and metadata
-                item_path = self.base_path / "items" / f"{id_}.json"
-                item_path.parent.mkdir(exist_ok=True)
-                
-                item_data = {
-                    "id": id_,
-                    "embedding": embedding,
-                    "metadata": metadata,
-                    "content": content
-                }
-                
-                with open(item_path, 'w') as f:
-                    json.dump(item_data, f)
+            # Get or create default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Add to collection in batches
+            batch_size = self.config.batch_size
+            for i in range(0, len(contents), batch_size):
+                batch_end = min(i + batch_size, len(contents))
+                collection.add(
+                    embeddings=embeddings[i:batch_end],
+                    documents=contents[i:batch_end],
+                    metadatas=metadatas[i:batch_end],
+                    ids=ids[i:batch_end]
+                )
             
             return {
                 "ids": ids,
@@ -136,9 +356,9 @@ class VectorStore:
                 "processed": 0,
                 "failed": len(contents)
             }
-    
+
     async def add_file(self, file_path_or_obj: Any, metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Process and add a file to the vector store."""
+        """Process and add a file to ChromaDB."""
         try:
             # Handle Streamlit UploadedFile
             if hasattr(file_path_or_obj, 'read'):  # It's a file-like object
@@ -255,230 +475,294 @@ class VectorStore:
             
             print(f"Debug - Successfully stored metadata at: {metadata_file}")
             
-            return file_hash
+            # Add processed content to ChromaDB
+            file_id = str(hash(text))
+            
+            self.collection.add(
+                documents=[text],
+                metadatas=[metadata],
+                ids=[file_id]
+            )
+            
+            return file_id
             
         except Exception as e:
-            print(f"Debug - Error adding file: {str(e)}")
-            print(f"Debug - Full error: {traceback.format_exc()}")
+            logging.error(f"Error adding file to vector store: {str(e)}")
             raise
-    
-    def _create_chunks(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
-        """Split text into overlapping chunks."""
-        chunks = []
-        start = 0
-        text_len = len(text)
-        
-        while start < text_len:
-            remaining = text_len - start
-            
-            if remaining <= chunk_size:
-                # If remaining text is smaller than chunk_size, add it and we're done
-                chunks.append(text[start:])
-                break
-            
-            # Find a good breaking point within the chunk_size
-            end = start + chunk_size
-            while end > start and not text[end - 1].isspace():
-                end -= 1
-            
-            # If we couldn't find a space, just use the full chunk_size
-            if end == start:
-                end = start + chunk_size
-            
-            chunks.append(text[start:end])
-            start = end - overlap
-        
-        return chunks
-    
-    async def get_collection_stats(self) -> Dict[str, Any]:
-        """Get statistics about the vector store."""
-        try:
-            total_size = sum(f.stat().st_size for f in self.chunks_dir.rglob('*') if f.is_file())
-            total_chunks = len(list(self.chunks_dir.glob('*.txt')))
-            
-            return {
-                "total_items": total_chunks,
-                "total_size": total_size,
-                "last_updated": datetime.now().isoformat()
-            }
-        except Exception as e:
-            raise Exception(f"Error getting collection stats: {str(e)}")
-    
-    async def list_files(self) -> List[Dict[str, Any]]:
-        """List all files in the vector store with their metadata."""
-        try:
-            files = []
-            metadata_dir = self.base_path / 'metadata'
-            
-            if not metadata_dir.exists():
-                return []
-            
-            for metadata_file in metadata_dir.glob('*.json'):
-                try:
-                    with open(metadata_file, 'r', encoding='utf-8') as f:
-                        metadata = json.load(f)
-                        # Add file ID to metadata
-                        metadata['id'] = metadata_file.stem
-                        files.append(metadata)
-                except Exception as e:
-                    logging.error(f"Error reading metadata file {metadata_file}: {str(e)}")
-                    continue
-                
-            return sorted(files, key=lambda x: x.get('added_at', ''), reverse=True)
-            
-        except Exception as e:
-            raise Exception(f"Error listing files: {str(e)}")
-    
-    async def get_stats(self) -> Dict[str, Any]:
-        """Get statistics about the vector store."""
-        try:
-            # Calculate total size of chunks directory
-            chunks_size = sum(f.stat().st_size for f in self.chunks_dir.rglob('*') if f.is_file())
-            chunks_size_mb = chunks_size / (1024 * 1024)  # Convert to MB
-            
-            # Count total files
-            metadata_dir = self.base_path / 'metadata'
-            total_files = len(list(metadata_dir.glob('*.json'))) if metadata_dir.exists() else 0
-            
-            # Count total vectors (chunks)
-            total_vectors = len(list(self.chunks_dir.glob('*.txt')))
-            
-            return {
-                'total_files': total_files,
-                'total_vectors': total_vectors,
-                'storage_size': round(chunks_size_mb, 2),
-                'last_updated': datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            raise Exception(f"Error getting vector store statistics: {str(e)}")
-    
-    async def delete_file(self, file_id: str) -> bool:
-        """Delete a file and its chunks from the vector store."""
-        try:
-            # Delete metadata file
-            metadata_file = self.base_path / 'metadata' / f"{file_id}.json"
-            if metadata_file.exists():
-                metadata_file.unlink()
-            
-            # Delete associated chunks
-            chunk_pattern = f"{file_id}_*.txt"
-            for chunk_file in self.chunks_dir.glob(chunk_pattern):
-                chunk_file.unlink()
-            
-            return True
-            
-        except Exception as e:
-            raise Exception(f"Error deleting file {file_id}: {str(e)}")
-    
+
     async def search(self, embedding: List[float], filters: Optional[Dict[str, Any]] = None, 
                     limit: int = 10) -> List[Dict[str, Any]]:
-        """Search for similar items in the vector store.
-        
-        Args:
-            embedding: Query embedding vector
-            filters: Optional metadata filters
-            limit: Maximum number of results to return
-            
-        Returns:
-            List of results with content, metadata, and relevance scores
-        """
+        """Search ChromaDB collection."""
         try:
-            # Get all items from store
-            items_dir = self.base_path / "items"
-            if not items_dir.exists():
-                return []
-                
-            results = []
-            for item_path in items_dir.glob("*.json"):
-                with open(item_path) as f:
-                    item = json.load(f)
-                    
-                # Apply filters if provided
-                if filters:
-                    metadata = item.get("metadata", {})
-                    if not all(metadata.get(k) == v for k, v in filters.items()):
-                        continue
-                
-                # Calculate cosine similarity
-                item_embedding = item.get("embedding", [])
-                if not item_embedding:
-                    continue
-                    
-                similarity = self._cosine_similarity(embedding, item_embedding)
-                
-                results.append({
-                    "content": item.get("content", ""),
-                    "metadata": item.get("metadata", {}),
-                    "relevance": float(similarity)
-                })
+            # Get or create default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
             
-            # Sort by relevance and limit results
-            results.sort(key=lambda x: x["relevance"], reverse=True)
-            return results[:limit]
+            # Query collection
+            results = collection.query(
+                query_embeddings=[embedding],
+                n_results=limit,
+                where=filters
+            )
+            
+            # Format results
+            formatted_results = []
+            if results['ids'] and len(results['ids'][0]) > 0:
+                for i in range(len(results['ids'][0])):
+                    formatted_results.append({
+                        "id": results['ids'][0][i],
+                        "content": results['documents'][0][i],
+                        "metadata": results['metadatas'][0][i],
+                        "relevance": float(results['distances'][0][i]) if 'distances' in results else 1.0
+                    })
+            
+            logging.info(f"Search returned {len(formatted_results)} results")
+            return formatted_results
             
         except Exception as e:
             logging.error(f"Error searching vector store: {str(e)}")
             return []
+
+    async def get_filtered_items(self, filters: Dict[str, Any], limit: int = 5) -> List[Dict[str, Any]]:
+        """Get items from ChromaDB using filters."""
+        try:
+            results = self.collection.get(
+                where=filters.get('filters', {}),
+                limit=limit
+            )
             
-    def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
-        """Calculate cosine similarity between two vectors."""
-        if not a or not b or len(a) != len(b):
+            return [{
+                "content": doc,
+                "metadata": meta
+            } for doc, meta in zip(results['documents'], results['metadatas'])]
+            
+        except Exception as e:
+            logging.error(f"Error getting filtered items: {str(e)}")
+            return []
+
+    async def get_file_info(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """Get file information from ChromaDB."""
+        try:
+            result = self.collection.get(
+                ids=[file_id],
+                include=['documents', 'metadatas']
+            )
+            
+            if result['ids']:
+                return {
+                    'content': result['documents'][0],
+                    **result['metadatas'][0]
+                }
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error getting file info: {str(e)}")
+            return None
+
+    async def delete_file(self, file_id: str) -> bool:
+        """Delete a file from ChromaDB."""
+        try:
+            self.collection.delete(ids=[file_id])
+            return True
+        except Exception as e:
+            logging.error(f"Error deleting file: {str(e)}")
+            return False
+
+    def _calculate_storage_size(self) -> float:
+        """Calculate total storage size in MB."""
+        try:
+            total_size = 0
+            for root, _, files in os.walk(self.base_path):
+                for file in files:
+                    file_path = Path(root) / file
+                    total_size += file_path.stat().st_size
+            return total_size / (1024 * 1024)  # Convert to MB
+        except Exception as e:
+            logging.error(f"Error calculating storage size: {str(e)}")
             return 0.0
-            
-        a = np.array(a)
-        b = np.array(b)
+
+    async def delete_index(self, index_name: str) -> bool:
+        """Delete an index and all its contents."""
+        try:
+            if index_name in self.indices:
+                self.client.delete_collection(index_name)
+                del self.indices[index_name]
+                return True
+            return False
+        except Exception as e:
+            logging.error(f"Error deleting index: {str(e)}")
+            return False
+
+    async def process_directory(self, index_name: str, directory_path: str, 
+                              metadata: Optional[Dict[str, Any]] = None,
+                              progress_callback: Optional[Callable[[str, int, int], None]] = None) -> int:
+        """Process all files in a directory and add them to an index."""
+        if index_name not in self.indices:
+            raise ValueError(f"Index {index_name} not found")
         
-        norm_a = np.linalg.norm(a)
-        norm_b = np.linalg.norm(b)
+        processed = 0
+        path = Path(directory_path)
         
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
+        # Get list of files to process
+        files = [f for f in path.rglob("*") 
+                 if f.is_file() and f.suffix.lower() in ['.txt', '.pdf', '.docx', '.py', '.md', '.json']]
+        
+        total_files = len(files)
+        for i, file_path in enumerate(files):
+            try:
+                if progress_callback:
+                    progress_callback(f"Processing file {i+1}/{total_files}: {file_path.name}",
+                                   i, total_files)
+                
+                await self.add_file_to_index(
+                    index_name=index_name,
+                    file_path_or_obj=str(file_path),
+                    metadata={
+                        **(metadata or {}),
+                        "original_path": str(file_path)
+                    },
+                    progress_callback=lambda msg, cur, tot: progress_callback(
+                        f"File {i+1}/{total_files} - {msg}", cur, tot
+                    ) if progress_callback else None
+                )
+                processed += 1
+            except Exception as e:
+                logging.error(f"Error processing file {file_path}: {str(e)}")
+        
+        return processed
+
+
+    async def get_index_contents(self, index_name: str) -> List[Dict[str, Any]]:
+        """Get all files stored in a specific index, grouped by root files."""
+        try:
+            self._reload_indices()
+            self._ensure_collection(index_name)
             
-        return np.dot(a, b) / (norm_a * norm_b)
-    
+            collection = self.indices[index_name]
+            results = collection.get()
+            
+            if not results['ids']:
+                return []
+            
+            # Group chunks by file_id
+            file_groups = {}
+            for doc_id, doc, meta in zip(results['ids'], results['documents'], results['metadatas']):
+                file_id = meta.get('file_id')
+                if file_id:
+                    if file_id not in file_groups:
+                        # Initialize group with root metadata if this is a root chunk
+                        if meta.get('is_root', False):
+                            file_groups[file_id] = {
+                                "id": doc_id,
+                                "content": doc,
+                                "metadata": {
+                                    **meta,
+                                    "chunks": []
+                                }
+                            }
+                    else:
+                        # Add non-root chunks to the chunks list
+                        if not meta.get('is_root', False):
+                            file_groups[file_id]["metadata"]["chunks"].append({
+                                "id": doc_id,
+                                "content": doc,
+                                "metadata": meta
+                            })
+            
+            # Convert groups to list and sort by added_at
+            contents = list(file_groups.values())
+            contents.sort(key=lambda x: x["metadata"].get("added_at", ""), reverse=True)
+            
+            logging.info(f"Retrieved {len(contents)} root files from index {index_name}")
+            return contents
+            
+        except Exception as e:
+            logging.error(f"Error getting index contents: {str(e)}")
+            return []
+
+    async def delete_file_from_index(self, index_name: str, file_id: str) -> bool:
+        """Delete a file and all its chunks from an index."""
+        try:
+            if index_name not in self.indices:
+                raise ValueError(f"Index {index_name} not found")
+            
+            collection = self.indices[index_name]
+            
+            # Get all chunks with matching file_id
+            results = collection.get(
+                where={"file_id": file_id}
+            )
+            
+            if results['ids']:
+                # Delete all chunks associated with this file
+                collection.delete(
+                    ids=results['ids']
+                )
+                logging.info(f"Deleted file {file_id} and {len(results['ids'])} associated chunks")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logging.error(f"Error deleting file from index: {str(e)}")
+            return False
+
+    def _ensure_collection(self, index_name: str):
+        """Ensure collection exists and is properly initialized."""
+        if index_name not in self.indices:
+            try:
+                collection = self.client.get_collection(
+                    name=index_name,
+                    embedding_function=self.embedding_function
+                )
+                self.indices[index_name] = collection
+                logging.info(f"Loaded existing collection: {index_name}")
+            except:
+                collection = self.client.create_collection(
+                    name=index_name,
+                    embedding_function=self.embedding_function
+                )
+                self.indices[index_name] = collection
+                logging.info(f"Created new collection: {index_name}")
+
     async def update_embeddings(self, ids: List[str], embeddings: List[List[float]]) -> Dict[str, Any]:
-        """Update embeddings for existing items in the vector store.
+        """Update embeddings for existing items in ChromaDB.
         
         Args:
-            ids: List of item IDs to update
-            embeddings: List of new embedding vectors
+            ids: List of document IDs to update
+            embeddings: List of new embeddings to assign
             
         Returns:
-            Stats about the update operation
+            Dict containing stats about the update operation
         """
         try:
             if len(ids) != len(embeddings):
                 raise ValueError("Number of IDs must match number of embeddings")
-                
+            
+            # Get or create default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Update embeddings in batches
+            batch_size = self.config.batch_size
             processed = 0
             failed = 0
             
-            # Update each item
-            for id_, embedding in zip(ids, embeddings):
+            for i in range(0, len(ids), batch_size):
+                batch_end = min(i + batch_size, len(ids))
                 try:
-                    item_path = self.base_path / "items" / f"{id_}.json"
-                    if not item_path.exists():
-                        logging.warning(f"Item {id_} not found")
-                        failed += 1
-                        continue
-                        
-                    # Read existing item
-                    with open(item_path, 'r') as f:
-                        item_data = json.load(f)
-                    
-                    # Update embedding
-                    item_data["embedding"] = embedding
-                    
-                    # Write back to file
-                    with open(item_path, 'w') as f:
-                        json.dump(item_data, f)
-                        
-                    processed += 1
-                    
+                    collection.update(
+                        ids=ids[i:batch_end],
+                        embeddings=embeddings[i:batch_end]
+                    )
+                    processed += batch_end - i
                 except Exception as e:
-                    logging.error(f"Error updating item {id_}: {str(e)}")
-                    failed += 1
+                    logging.error(f"Error updating batch {i}-{batch_end}: {str(e)}")
+                    failed += batch_end - i
             
             return {
                 "processed": processed,
@@ -491,59 +775,3 @@ class VectorStore:
                 "processed": 0,
                 "failed": len(ids)
             }
-    
-    async def get_filtered_items(
-        self,
-        filters: Dict[str, Any],
-        limit: int = 5
-    ) -> List[Dict[str, Any]]:
-        """Get items matching filters without semantic search."""
-        try:
-            # If we have file_ids in filters, get those specific files
-            if 'file_ids' in filters.get('filters', {}):
-                results = []
-                for file_id in filters['filters']['file_ids']:
-                    file_info = await self.get_file_info(file_id)
-                    if file_info:
-                        results.append({
-                            "content": file_info.get('content', ''),
-                            "metadata": file_info
-                        })
-                return results[:limit]
-            
-            # Add other filter handling as needed
-            return []
-            
-        except Exception as e:
-            logging.error(f"Error getting filtered items: {str(e)}")
-            return []
-    
-    async def get_file_info(self, file_id: str) -> Optional[Dict[str, Any]]:
-        """Get file information by ID."""
-        try:
-            print(f"Debug - Getting file info for ID: {file_id}")
-            metadata_file = self.base_path / 'metadata' / f"{file_id}.json"
-            print(f"Debug - Looking for metadata file at: {str(metadata_file.absolute())}")
-            
-            # List all files in metadata directory
-            metadata_dir = self.base_path / 'metadata'
-            if metadata_dir.exists():
-                print("Debug - Files in metadata directory:")
-                for f in metadata_dir.glob('*.json'):
-                    print(f"  - {f.name}")
-            else:
-                print(f"Debug - Metadata directory does not exist: {str(metadata_dir)}")
-            
-            if metadata_file.exists():
-                with open(metadata_file, 'r', encoding='utf-8') as f:
-                    metadata = json.load(f)
-                    print(f"Debug - Found metadata: {metadata}")
-                    return metadata
-            else:
-                print(f"Debug - Metadata file not found: {metadata_file}")
-                return None
-                
-        except Exception as e:
-            print(f"Debug - Error getting file info: {str(e)}")
-            print(f"Debug - Full error: {traceback.format_exc()}")
-            return None

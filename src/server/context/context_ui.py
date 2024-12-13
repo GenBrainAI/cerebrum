@@ -8,22 +8,32 @@ import io
 import time
 import tempfile
 from uuid import uuid4, UUID
+import asyncio
 
 from src.server.context.context_database import ContextDatabase
 from src.server.context.code_catalog import CodeCatalog
 from src.server.context.knowledge_base import KnowledgeBase
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.context.context_provider import ContextProvider
+from src.server.context.vector_store import VectorStore
 
 class ContextManagerUI:
     """Enhanced UI component for managing and visualizing the context system."""
     
     def __init__(self):
-        """Initialize context management components."""
-        self.context_db = ContextDatabase()
+        """Initialize context management UI components."""
+        # Initialize session state if needed
+        if 'persistence_model' not in st.session_state:
+            st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+            
+        # Initialize components
+        self.context_provider = ContextProvider()
+        self.vector_store = VectorStore()
         self.code_catalog = CodeCatalog()
         self.knowledge_base = KnowledgeBase()
-        self.context_provider = ContextProvider()
+        
+        # Initialize context provider
+        asyncio.run(self.context_provider.initialize())
         
         # Load contexts from persistence model
         try:
@@ -112,28 +122,48 @@ class ContextManagerUI:
     def render_navigation(self):
         """Render the horizontal navigation menu."""
         st.markdown("---")
-        nav_cols = st.columns(5)  # Updated to 5 columns
+        
+        # Initialize layout state if not exists
+        if 'layout_style' not in st.session_state:
+            st.session_state.layout_style = 'horizontal'
+        
+        nav_cols = st.columns(5)
         
         with nav_cols[0]:
-            if st.button("Task Contexts", use_container_width=True):
+            if st.button("Task Contexts", 
+                        key="nav_task_contexts",
+                        use_container_width=True):
                 st.session_state.context_view = "task_contexts"
+                st.session_state.layout_style = 'horizontal'
                 
         with nav_cols[1]:
-            if st.button("📚 Knowledge Base", use_container_width=True):
+            if st.button("📚 Knowledge Base", 
+                        key="nav_knowledge",
+                        use_container_width=True):
                 st.session_state.context_view = "knowledge"
+                st.session_state.layout_style = 'horizontal'
                 
         with nav_cols[2]:
-            if st.button("🔍 Code Analysis", use_container_width=True):
+            if st.button("🔍 Code Analysis", 
+                        key="nav_code",
+                        use_container_width=True):
                 st.session_state.context_view = "code"
+                st.session_state.layout_style = 'horizontal'
                 
         with nav_cols[3]:
-            if st.button("🔄 Vector Store", use_container_width=True):
+            if st.button("🔄 Vector Store", 
+                        key="nav_vector",
+                        use_container_width=True):
                 st.session_state.context_view = "vector"
+                st.session_state.layout_style = 'horizontal'
                 
         with nav_cols[4]:
-            if st.button("⚙️ Settings", use_container_width=True):
+            if st.button("⚙️ Settings", 
+                        key="nav_settings",
+                        use_container_width=True):
                 st.session_state.context_view = "settings"
-        
+                st.session_state.layout_style = 'horizontal'
+                
         st.markdown("---")
     
     async def render_status_bar(self):
@@ -141,28 +171,26 @@ class ContextManagerUI:
         stats = self.get_statistics()
         
         try:
-            vector_stats = await self.context_db.vector_store.get_stats()
+            vector_stats = await self.vector_store.get_stats()
         except Exception as e:
             st.error(f"Error getting vector store stats: {str(e)}")
             vector_stats = {}
         
         status_cols = st.columns(4)
         with status_cols[0]:
-            st.metric("Indexed Files", stats.get("total_files", 0))
+            st.metric("Indexed Files", vector_stats.get('total_vectors', 0))
         with status_cols[1]:
-            st.metric("Knowledge Entries", stats.get("total_entries", 0))
+            st.metric("Vector Indices", vector_stats.get('indices_count', 0))
         with status_cols[2]:
-            st.metric("Vector Chunks", vector_stats.get("total_vectors", 0))
+            st.metric("Storage Size", f"{vector_stats.get('storage_size', 0):.2f} MB")
         with status_cols[3]:
-            # Combine storage sizes
-            total_storage = stats.get("memory_usage", 0) + vector_stats.get("storage_size", 0)
-            st.metric("Disk Usage", f"{total_storage:.2f}MB")
-    
+            st.metric("Active Contexts", len(self.context_provider.task_context_manager.task_contexts))
+                
     async def render_main_view(self):
         """Render the main content based on selected view."""
         if "context_view" not in st.session_state:
-            st.session_state.context_view = "task_contexts"  # Changed default view
-                
+            st.session_state.context_view = "task_contexts"
+            
         view = st.session_state.context_view
         
         if view == "task_contexts":
@@ -758,579 +786,376 @@ class ContextManagerUI:
 
     async def render_vector_view(self):
         """Render the vector store management view."""
-        persistence_model = st.session_state.persistence_model  # Use session state instance
         st.subheader("Vector Store Management")
 
-        # Get stats first for use in multiple places
+        # Force refresh vector store state
         try:
-            stats = await self.context_db.vector_store.get_stats()
-            
-            # Display total files at the top
-            st.metric("Indexed Files", stats.get('total_files', 0))
-            
+            self.vector_store._reload_indices()
         except Exception as e:
-            st.error(f"Error getting vector store stats: {str(e)}")
-            stats = {}
+            st.error(f"Error refreshing vector store state: {str(e)}")
+
+        # Index management section
+        st.subheader("Manage Indices")
+        
+        # Create new index
+        with st.expander("Create New Index", expanded=False):
+            new_index_name = st.text_input("Index Name")
+            description = st.text_area("Description")
+            if st.button("Create Index", use_container_width=True):
+                if new_index_name:
+                    try:
+                        index_name = self.vector_store.create_index(
+                            name=new_index_name,
+                            description=description
+                        )
+                        st.success(f"Created index: {index_name}")
+                        time.sleep(0.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error creating index: {str(e)}")
+                else:
+                    st.warning("Please provide an index name")
 
         # File ingestion section
         st.subheader("Add Files to Vector Store")
         
+        # Index selection
+        indices = await self.vector_store.list_indices()
+        if not indices:
+            st.info("No indices available. Create an index first.")
+            return
+        
+        selected_index = st.selectbox(
+            "Select Index",
+            options=[""] + [idx["name"] for idx in indices],
+            format_func=lambda x: x.replace("vs_", "") if x else "Select an index..."
+        )
+        
+        if not selected_index:
+            st.warning("Please select an index to add files")
+            return
+
         # Source selection
         source_type = st.radio(
             "Source Type",
-            ["Local Files", "Directory"]
+            ["Local Files", "Directory"],
+            horizontal=True
         )
 
         # File upload section
-        uploaded_files = st.file_uploader(
-            "Upload Files",
-            type=["txt", "md", "py", "json", "yaml", "pdf", "doc", "docx"],
-            accept_multiple_files=True
-        )
+        if source_type == "Local Files":
+            uploaded_files = st.file_uploader(
+                "Upload Files",
+                type=["txt", "md", "py", "json", "yaml", "pdf", "doc", "docx"],
+                accept_multiple_files=True
+            )
 
-        if uploaded_files:
-            for uploaded_file in uploaded_files:
-                try:
-                    metadata = {
-                        "original_name": uploaded_file.name,
-                        "file_type": uploaded_file.type,
-                        "size": uploaded_file.size
-                    }
-                    await self.context_db.vector_store.add_file(uploaded_file, metadata)
-                    st.success(f"Added {uploaded_file.name}")
-                except Exception as e:
-                    st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+            if uploaded_files:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"{len(uploaded_files)} file(s) ready to process")
+                with col2:
+                    if st.button("Add to Index", use_container_width=True):
+                        if not selected_index:
+                            st.error("Please select an index first")
+                        else:
+                            # Create a progress bar
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            for uploaded_file in uploaded_files:
+                                try:
+                                    def update_progress(message: str, current: int, total: int):
+                                        if total > 0:
+                                            progress_bar.progress(current / total)
+                                        status_text.text(message)
+                                    
+                                    metadata = {
+                                        "original_name": uploaded_file.name,
+                                        "file_type": uploaded_file.type,
+                                        "size": uploaded_file.size,
+                                        "index": selected_index,
+                                        "added_at": datetime.now().isoformat(),
+                                        "file_id": str(uuid4()),
+                                        "is_root": True
+                                    }
+                                    
+                                    chunk_ids = await self.vector_store.add_file_to_index(
+                                        index_name=selected_index,
+                                        file_path_or_obj=uploaded_file,
+                                        metadata=metadata,
+                                        progress_callback=update_progress
+                                    )
+                                    
+                                    st.success(f"Added {uploaded_file.name} to {selected_index} ({len(chunk_ids)} chunks)")
+                                except Exception as e:
+                                    st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+                            
+                            # Clear progress indicators
+                            progress_bar.empty()
+                            status_text.empty()
+                            
+                            time.sleep(0.5)
+                            st.rerun()
+        else:
+            # Directory processing
+            dir_path = st.text_input("Directory Path")
+            if dir_path and selected_index:
+                if st.button("Process Directory", use_container_width=True):
+                    try:
+                        processed = await self.vector_store.process_directory(
+                            index_name=selected_index,
+                            directory_path=dir_path
+                        )
+                        st.success(f"Processed {processed} files from directory")
+                    except Exception as e:
+                        st.error(f"Error processing directory: {str(e)}")
 
         # List and manage existing files
         st.markdown("---")
-        st.subheader("Manage Vector Store Files")
+        st.subheader("Vector Store Contents")
         
         try:
-            vector_files = await self.context_db.vector_store.list_files()
-            
-            if not vector_files:
-                st.info("No files in vector store")
-                return
+            # Show indices and their contents
+            for idx in indices:
+                # Get unique files (root items) in this index
+                files = await self.vector_store.get_index_contents(idx['name'])
                 
-            # Display files with delete buttons
-            for file_info in vector_files:
-                col1, col2 = st.columns([20, 1])
-                
-                with col1:
-                    with st.expander(f"📄 {file_info.get('original_name', 'Unnamed')}"):
-                        st.write("File Information:")
-                        st.json({
-                            'Added': file_info.get('added_at', 'Unknown'),
-                            'Size': file_info.get('size', 'Unknown'),
-                            'Type': file_info.get('file_type', 'Unknown'),
-                            'Chunks': file_info.get('chunk_count', 0)
-                        })
-                
-                with col2:
-                    if st.button("🗑️", key=f"delete_{file_info['id']}", 
-                               help=f"Delete {file_info.get('original_name', 'file')}"):
+                # Display index with file count
+                with st.expander(f"📁 {idx['name'].replace('vs_', '')} ({len(files)} files)"):
+                    st.write(f"Description: {idx.get('description', 'No description')}")
+                    
+                    if files:
+                        for file_info in files:
+                            metadata = file_info.get('metadata', {})
+                            chunks = metadata.get('chunks', [])
+                            
+                            col1, col2 = st.columns([20, 1])
+                            with col1:
+                                st.write(f"📄 {metadata.get('original_name', 'Unnamed')}")
+                                st.write(f"Added: {metadata.get('added_at', 'Unknown')}")
+                                st.write(f"Size: {metadata.get('size', 'Unknown')} bytes")
+                                st.write(f"Chunks: {metadata.get('total_chunks', len(chunks))}")  # Use total_chunks from metadata
+                            with col2:
+                                if st.button("🗑️", key=f"delete_{idx['name']}_{metadata.get('file_id')}", 
+                                           help=f"Delete {metadata.get('original_name', 'file')}"):
+                                    try:
+                                        await self.vector_store.delete_file_from_index(
+                                            index_name=idx['name'],
+                                            file_id=metadata.get('file_id')
+                                        )
+                                        st.success("File deleted!")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error: {str(e)}")
+                    else:
+                        st.info("No files in this index")
+                    
+                    # Add index delete button
+                    if st.button("Delete Index", key=f"delete_index_{idx['name']}", 
+                               help=f"Delete entire index {idx['name']}"):
                         try:
-                            await self.context_db.vector_store.delete_file(file_info['id'])
-                            st.success("File deleted!")
+                            await self.vector_store.delete_index(idx['name'])
+                            st.success("Index deleted!")
                             time.sleep(0.5)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {str(e)}")
 
         except Exception as e:
-            st.error(f"Error listing vector store files: {str(e)}")
-
-    def render_settings_view(self):
-        """Render the context system settings view."""
-        st.subheader("Context System Settings")
-
-        # Vector store settings
-        with st.expander("Vector Store Settings", expanded=False):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.number_input(
-                    "Batch Size",
-                    min_value=1,
-                    value=self.context_db.vector_store.config.batch_size
-                )
-                st.number_input(
-                    "Max Retries",
-                    min_value=1,
-                    value=self.context_db.vector_store.config.max_retries
-                )
-                
-            with col2:
-                st.number_input(
-                    "Connection Timeout",
-                    min_value=1,
-                    value=self.context_db.vector_store.config.connection_timeout
-                )
-                st.number_input(
-                    "Max Concurrent Requests",
-                    min_value=1,
-                    value=self.context_db.vector_store.config.max_concurrent_requests
-                )
-
-        # Knowledge base settings
-        with st.expander("Knowledge Base Settings", expanded=False):
-            st.text_input(
-                "Base Path",
-                value=self.knowledge_base.base_path
-            )
-            
-            if st.button("Export Knowledge Base"):
-                try:
-                    export_path = self.knowledge_base.export_domain(
-                        domain="all",
-                        export_path="knowledge_export.json"
-                    )
-                    st.success(f"Knowledge base exported to: {export_path}")
-                except Exception as e:
-                    st.error(f"Error exporting knowledge base: {str(e)}")
-
-        # System context settings
-        with st.expander("System Context Settings", expanded=False):
-            st.markdown("### Embedder Configuration")
-            st.selectbox(
-                "Embedder Provider",
-                options=["openai", "cohere", "huggingface"]
-            )
-            
-            st.markdown("### Cache Settings")
-            st.number_input(
-                "URL Cache TTL (seconds)",
-                min_value=0,
-                value=3600
-            )
-
-    def render_code_section(self):
-        """Render the code management section."""
-        st.header("Code Management")
-        
-        # Repository input section
-        with st.expander("Add Repository", expanded=True):
-            repo_url = st.text_input(
-                "GitHub Repository URL or org/repo",
-                placeholder="e.g. openai/whisper or https://github.com/openai/whisper"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                branch = st.text_input("Branch", value="main")
-            with col2:
-                deep_scan = st.checkbox("Deep Scan", value=False, 
-                    help="Scan non-Python files like JavaScript, TypeScript")
-            
-            if st.button("Add Repository"):
-                if repo_url:
-                    with st.spinner("Cloning and analyzing repository..."):
-                        try:
-                            stats = self.code_catalog.index_github_repo(
-                                repo_url=repo_url,
-                                branch=branch,
-                                deep_scan=deep_scan
-                            )
-                            st.success(f"Repository indexed successfully: {stats}")
-                        except Exception as e:
-                            st.error(f"Error indexing repository: {str(e)}")
-                else:
-                    st.warning("Please enter a repository URL")
-        
-        # Repository list section
-        st.subheader("Indexed Repositories")
-        from src.pages.context_management import render_repository_list
-        render_repository_list(st, self.code_catalog)
-
-    async def render_context_section(self, task_id: str):
-        """Render context information and analytics for a task."""
-        st.subheader("Context Information")
-        
-        # Get current contexts
-        contexts = await self.context_provider.get_task_contexts(task_id)
-        
-        # Get analytics if available
-        analytics_data = None
-        if self.context_analytics:
-            try:
-                analytics_data = await self.context_analytics.get_task_analytics(task_id)
-            except Exception as e:
-                st.warning("Analytics data not available")
-        
-        # Create tabs for different views
-        tab1, tab2 = st.tabs(["Active Contexts", "Usage Analytics"])
-        
-        with tab1:
-            if not contexts:
-                st.info("No active contexts for this task")
-            else:
-                for ctx in contexts:
-                    with st.expander(f"{ctx['type'].title()} Context", expanded=False):
-                        # Context content
-                        st.markdown("**Content:**")
-                        st.markdown(ctx['content'])
-                        
-                        # Metadata and stats
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown("**Metadata:**")
-                            st.json(ctx.get('metadata', {}))
-                        with col2:
-                            if 'relevance' in ctx:
-                                st.metric("Relevance", f"{ctx['relevance']:.2f}")
-        
-        with tab2:
-            if not analytics_data:
-                st.info("No usage analytics available")
-            elif analytics_data.get('total_usage'):
-                # Usage metrics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    total = analytics_data['total_usage']
-                    st.metric("Total Views", total['views'])
-                with col2:
-                    success_rate = total['successful_enhancements'] / total['views'] if total['views'] > 0 else 0
-                    st.metric("Success Rate", f"{success_rate:.1%}")
-                with col3:
-                    last_used = total.get('last_used')
-                    st.metric("Last Used", last_used.strftime("%Y-%m-%d %H:%M") if last_used else "Never")
-                
-                # Usage by type
-                if 'usage_by_type' in analytics_data:
-                    st.subheader("Usage by Context Type")
-                    for type_name, metrics in analytics_data['usage_by_type'].items():
-                        with st.expander(type_name.title()):
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric("Views", metrics['views'])
-                                st.metric("Success Rate", 
-                                        f"{metrics['successful_enhancements'] / metrics['views']:.1%}" 
-                                        if metrics['views'] > 0 else "N/A")
-                            with col2:
-                                if metrics.get('average_relevance', 0) > 0:
-                                    st.metric("Avg. Relevance", f"{metrics['average_relevance']:.2f}")
+            st.error(f"Error listing vector store contents: {str(e)}")
 
     async def render_task_context_associations(self):
-        """Render UI for managing task-context associations."""
-        st.header("Task Context Associations")
+        """Render the task context associations view."""
+        st.subheader("Task Context Associations")
+
+        # Get all tasks and task managers
+        persistence_model = PersistenceModelFactory.persistence_model()
+        tasks = persistence_model.tasks.list()
+        tasksmanagers = persistence_model.tasksmanagers.list()
+
+        # Create dictionaries for easy lookup
+        task_dict = {task.id: task for task in tasks}
+        manager_dict = {tm.id: tm for tm in tasksmanagers}
+
+        # Get available indices for vector store
+        vector_indices = await self.vector_store.list_indices()
         
-        # Get available tasks and context data with error handling
-        try:
-            # Get persistence model directly from session state
-            persistence_model = PersistenceModelFactory.persistence_model()
-            tasks = persistence_model.tasks.list()
-            tasksmanagers = persistence_model.tasksmanagers.list()
-            
-            # Debug prints
-            print("\nDebug - Loading tasks and managers from persistence model:")
-            print(f"Persistence model id: {id(persistence_model)}")
-            for task in tasks:
-                print(f"Task {task.id}: {task.name}")
-                print(f"Contexts: {getattr(task, 'contexts', [])}")
-            
-            if not tasks and not tasksmanagers:
-                if 'state_location' in st.session_state:
-                    st.warning("State is loaded but no tasks or task managers found.")
-                else:
-                    st.info("👋 No tasks available. Create tasks in the chat interface to manage their contexts.")
-                return
+        # Add New Context Section
+        st.markdown("### Add New Context")
+        # Task selection
+        selected_task = st.selectbox(
+            "Select Task",
+            options=[""] + [f"{task.name} ({task.id})" for task in tasks],
+            format_func=lambda x: x.split(" (")[0] if x else "Select a task..."
+        )
 
-            # Create mapping of task managers
-            tasksmanagers_dict = {tm.id: tm for tm in tasksmanagers}
-            
-            # Group tasks by task manager
-            tasks_by_manager = {}
-            for task in tasks:
-                tm_id = task.tasksmanager_id
-                if tm_id not in tasks_by_manager:
-                    tasks_by_manager[tm_id] = []
-                tasks_by_manager[tm_id].append(task)
+        if selected_task:
+            task_id = selected_task.split("(")[-1].strip(")")
+            task = task_dict[task_id]
 
-            # Create tabs for task managers
-            if tasks_by_manager:
-                tab_labels = [
-                    f"{tasksmanagers_dict[tm_id].name}" 
-                    for tm_id in tasks_by_manager.keys()
-                    if tm_id in tasksmanagers_dict
-                ]
-                
-                if tab_labels:
-                    tabs = st.tabs(tab_labels)
-                    
-                    for tab, (tm_id, tm_tasks) in zip(tabs, tasks_by_manager.items()):
-                        if tm_id in tasksmanagers_dict:
-                            with tab:
-                                # Pass persistence model to _render_taskmanager_contexts
-                                await self._render_taskmanager_contexts(tm_id, tm_tasks, persistence_model)
-                else:
-                    st.warning("No valid task managers found for the existing tasks.")
-            else:
-                st.warning("No tasks are associated with any task managers.")
+            # Show current task context configuration
+            st.markdown("#### Context Configuration")
+            
+            use_context = st.checkbox(
+                "Use Context",
+                value=getattr(task, 'use_context', True),
+                key=f"use_context_{task_id}"
+            )
+            
+            inherit_manager = st.checkbox(
+                "Inherit Manager Context",
+                value=getattr(task, 'inherit_manager_context', True),
+                key=f"inherit_manager_{task_id}"
+            )
 
-        except Exception as e:
-            st.error(f"Error loading tasks and task managers: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
+            if st.button("Update Configuration"):
+                try:
+                    await self.context_provider.update_task_context_config(
+                        task_id=task_id,
+                        use_context=use_context,
+                        inherit_manager_context=inherit_manager
+                    )
+                    st.success("Context configuration updated!")
+                except Exception as e:
+                    st.error(f"Error updating configuration: {str(e)}")
 
-    async def _render_taskmanager_contexts(self, tm_id: str, tasks: List, persistence_model):
-        """Render contexts for a specific task manager and its tasks."""
-        for task in tasks:
-            # Get fresh task data from persistence model
-            current_task = persistence_model.tasks.read(task.id)
-            
-            st.markdown(f"### Task: {current_task.name}")
-            
-            # Debug print for task contexts
-            print(f"\nDebug - Rendering task {current_task.id} in manager {tm_id}:")
-            print(f"Task contexts: {getattr(current_task, 'contexts', [])}")
-            
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                use_context = st.toggle(
-                    "Use Context Enhancement",
-                    value=getattr(current_task, 'use_context', True),
-                    key=f"use_context_{current_task.id}"
-                )
-            
-            with col2:
-                inherit_context = st.toggle(
-                    "Inherit Manager Context",
-                    value=getattr(current_task, 'inherit_manager_context', True),
-                    key=f"inherit_toggle_{current_task.id}",
-                    disabled=not use_context
-                )
-            
-            # Show task-specific contexts
-            task_contexts = getattr(current_task, 'contexts', [])
-            if task_contexts:
-                st.markdown("#### Task-Specific Contexts")
-                for ctx in task_contexts:
-                    with st.container():
-                        col1, col2, col3 = st.columns([2, 3, 1])
-                        with col1:
-                            st.markdown(f"**{ctx['type'].title()}**")
-                            st.text(f"Priority: {ctx.get('priority', 0)}")
-                        with col2:
-                            if ctx['type'] == 'vector':
-                                # Get available files from vector store
-                                try:
-                                    vector_files = await self.context_db.vector_store.list_files()
-                                    available_files = {f['id']: f.get('filename', 'Unnamed') for f in vector_files}
-                                    
-                                    # Get current file IDs from context
-                                    current_file_ids = ctx.get('metadata', {}).get('filters', {}).get('file_ids', [])
-                                    
-                                    # Create display names for current files
-                                    current_file_names = [available_files.get(file_id, file_id) for file_id in current_file_ids]
-                                    
-                                    # Add UI for updating vector filters
-                                    new_filters = st.multiselect(
-                                        "File Filters",
-                                        options=list(available_files.keys()),
-                                        default=current_file_ids,
-                                        format_func=lambda x: available_files.get(x, x)
-                                    )
-                                    
-                                    # Show current files in a more readable way
-                                    if current_file_names:
-                                        st.caption("Current files:")
-                                        for file_name in current_file_names:
-                                            st.text(f"• {file_name}")
-                                    
-                                except Exception as e:
-                                    st.error(f"Error loading vector files: {str(e)}")
-                        with col3:
-                            if st.button("🗑️", key=f"delete_ctx_{current_task.id}_{ctx['id']}"):
-                                await self.context_provider.remove_context_from_task(current_task.id, ctx['id'])
-                                st.rerun()
-                        st.markdown("---")
-            else:
-                st.info("No task-specific contexts added yet")
-            
-            # Add context button
-            if st.button("➕ Add Task Context", key=f"add_ctx_{current_task.id}"):
-                st.session_state.show_dialog_for_task = current_task.id
-                st.rerun()
-            
-            # Then show dialog if task is selected
-            if st.session_state.show_dialog_for_task == current_task.id:
-                await self._show_add_context_dialog(current_task.id)
-            
-            st.markdown("---")
+            # Get existing contexts for duplicate checking
+            existing_contexts = await self.context_provider.get_task_contexts(task_id)
+            existing_sources = {(ctx['type'], ctx['source_id']) for ctx in existing_contexts}
 
-    async def _show_add_context_dialog(self, target_id: str):
-        """Show dialog for adding new context."""
-        # Initialize session state variables if they don't exist
-        if 'add_context_type' not in st.session_state:
-            st.session_state.add_context_type = "vector"
-        if 'add_context_priority' not in st.session_state:
-            st.session_state.add_context_priority = 50
-        if 'add_context_selected_files' not in st.session_state:
-            st.session_state.add_context_selected_files = []
-        if 'add_context_metadata' not in st.session_state:
-            st.session_state.add_context_metadata = {}
-        if 'dialog_state' not in st.session_state:
-            st.session_state.dialog_state = 'open'
-
-        st.subheader("Add New Context")
-        
-        # Create form
-        form_key = f"add_context_form_{target_id}"
-
-        def handle_submit():
-            st.session_state.dialog_state = 'submitted'
-
-        def handle_cancel():
-            st.session_state.dialog_state = 'cancelled'
-
-        with st.form(key=form_key):
-            # Context type selection
+            # Add new context section
+            st.markdown("#### Add Context")
+            
             context_type = st.selectbox(
                 "Context Type",
-                options=["vector", "knowledge", "system"],
-                key="add_context_type"
+                options=["vector", "system", "knowledge"]
             )
-            
-            # Vector-specific fields
-            metadata = {}
+
             if context_type == "vector":
-                try:
-                    vector_files = await self.context_db.vector_store.list_files()
-                    if not vector_files:
-                        st.warning("No files in vector store. Please add files in the Vector Store management section.")
+                # Vector store context
+                if vector_indices:
+                    selected_index = st.selectbox(
+                        "Select Vector Index",
+                        options=[""] + [idx["name"] for idx in vector_indices],
+                        format_func=lambda x: x.replace("vs_", "") if x else "Select an index..."
+                    )
+                    
+                    if selected_index:
+                        # Check for duplicate
+                        if (context_type, selected_index) in existing_sources:
+                            st.warning("This vector index is already associated with this task!")
+                        else:
+                            priority = st.slider("Priority", 0, 100, 50)
+                            
+                            if st.button("Add Vector Context"):
+                                try:
+                                    # Get index contents for metadata
+                                    index_contents = await self.vector_store.get_index_contents(selected_index)
+                                    
+                                    # Create context metadata
+                                    metadata = {
+                                        "index_name": selected_index,
+                                        "file_count": len(index_contents),
+                                        "added_at": datetime.now().isoformat()
+                                    }
+                                    
+                                    # Add context to task
+                                    await self.context_provider.add_context_to_task(
+                                        task_id=task_id,
+                                        type="vector",
+                                        source_id=selected_index,
+                                        metadata=metadata,
+                                        priority=priority
+                                    )
+                                    
+                                    st.success(f"Added vector context from index {selected_index}")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error adding vector context: {str(e)}")
+                else:
+                    st.warning("No vector indices available. Create one in the Vector Store section.")
+
+            elif context_type == "system":
+                # System context
+                name = st.text_input("Context Name")
+                if name:
+                    # Check for duplicate
+                    if (context_type, name) in existing_sources:
+                        st.warning("A system context with this name already exists for this task!")
                     else:
-                        file_options = [(f['id'], f.get('filename', 'Unnamed')) for f in vector_files]
-                        selected_files = st.multiselect(
-                            "Select Source Files",
-                            options=[id for id, _ in file_options],
-                            format_func=lambda x: dict(file_options)[x],
-                            key="add_context_selected_files"
-                        )
-                        if selected_files:
-                            metadata = {
-                                "filters": {
-                                    "file_ids": selected_files
-                                }
-                            }
-                except Exception as e:
-                    st.error(f"Error loading vector files: {str(e)}")
-            
-            # Priority input
-            priority = st.number_input(
-                "Priority", 
-                min_value=0, 
-                value=50,
-                key="add_context_priority"
-            )
-            
-            # Form buttons
-            col1, col2 = st.columns(2)
-            with col1:
-                submitted = st.form_submit_button("Add Context", on_click=handle_submit)
-            with col2:
-                cancelled = st.form_submit_button("Cancel", on_click=handle_cancel)
+                        content = st.text_area("Content")
+                        description = st.text_input("Description (optional)")
+                        priority = st.slider("Priority", 0, 100, 50)
+                        
+                        if st.button("Add System Context"):
+                            try:
+                                await self.context_provider.add_system_context(
+                                    task_id=task_id,
+                                    name=name,
+                                    content=content,
+                                    description=description,
+                                    priority=priority
+                                )
+                                st.success("Added system context")
+                                time.sleep(0.5)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error adding system context: {str(e)}")
 
-        # Handle form submission based on dialog state
-        if st.session_state.dialog_state == 'submitted':
-            if context_type == "vector" and not metadata:
-                st.error("Please select at least one file")
-            else:
-                try:
-                    await self.context_provider.add_context_to_task(
-                        task_id=target_id,
-                        type=context_type,
-                        source_id=str(uuid4()),
-                        priority=priority,
-                        metadata=metadata
-                    )
-                    st.success("Context added successfully!")
-                    # Reset dialog state
-                    st.session_state.dialog_state = 'open'
-                    st.session_state.show_dialog_for_task = None
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error adding context: {str(e)}")
-                    st.session_state.dialog_state = 'open'
-        
-        elif st.session_state.dialog_state == 'cancelled':
-            st.session_state.dialog_state = 'open'
-            st.session_state.show_dialog_for_task = None
-            st.rerun()
+            elif context_type == "knowledge":
+                # Knowledge base context
+                st.info("Knowledge base context integration coming soon...")
 
-    async def render_task_execution(self):
-        """Add task execution controls"""
-        st.subheader("Execute Analysis Tasks")
-        
-        # Input section
-        input_data = st.text_area(
-            "Analysis Input",
-            help="Enter the text to analyze"
-        )
-        
-        # Task selection
-        tasks = self.persistence_model.tasks.list()
-        selected_tasks = st.multiselect(
-            "Select Tasks",
-            options=[(t.id, t.name) for t in tasks],
-            format_func=lambda x: x[1]
-        )
-        
-        if st.button("Run Analysis"):
-            try:
-                response = await self.execute_tasks(
-                    task_ids=[t[0] for t in selected_tasks],
-                    input_data=input_data
-                )
-                
-                # Display results
-                for task_result in response["responses"]:
-                    with st.expander(f"Task: {task_result['task_id']}"):
-                        st.markdown(task_result["response"])
-                    
-            except Exception as e:
-                st.error(f"Execution failed: {str(e)}")
+        else:
+            st.info("Select a task to add new contexts")
 
-    async def _render_context_settings(self, task_id: str, context: Dict):
-        """Render settings for a specific context."""
-        col1, col2 = st.columns(2)
+        # Visual separator
+        st.markdown("---")
+
+        # Existing Contexts Section
+        st.markdown("### Existing Task Contexts")
         
-        with col1:
-            new_priority = st.slider(
-                "Priority", 
-                min_value=0, 
-                max_value=100, 
-                value=context.get('priority', 50),
-                key=f"priority_{context['id']}"
-            )
-            
-            if new_priority != context.get('priority'):
-                await self.context_provider.update_task_context(
-                    task_id=task_id,
-                    context_id=UUID(context['id']),
-                    priority=new_priority
-                )
-                st.rerun()
-    
-        with col2:
-            if context['type'] == 'vector':
-                try:
-                    # Get available files from vector store
-                    vector_files = await self.context_db.vector_store.list_files()
-                    available_files = [f['id'] for f in vector_files]
+        # Show tasks with contexts
+        has_contexts = False
+        for task in tasks:
+            contexts = await self.context_provider.get_task_contexts(task.id)
+            if contexts:  # Only show tasks that have contexts
+                has_contexts = True
+                with st.expander(f"📋 {task.name} ({len(contexts)} contexts)", expanded=True):
+                    st.write(f"Task ID: {task.id}")
+                    st.write("Context Configuration:")
+                    st.write(f"- Use Context: {getattr(task, 'use_context', True)}")
+                    st.write(f"- Inherit Manager Context: {getattr(task, 'inherit_manager_context', True)}")
                     
-                    # Add UI for updating vector filters
-                    new_filters = st.multiselect(
-                        "File Filters",
-                        options=available_files,
-                        default=context.get('metadata', {}).get('filters', {}).get('file_ids', [])
-                    )
-                    
-                    if new_filters != context.get('metadata', {}).get('filters', {}).get('file_ids', []):
-                        await self.context_provider.update_task_context(
-                            task_id=task_id,
-                            context_id=UUID(context['id']),
-                            metadata={'filters': {'file_ids': new_filters}}
-                        )
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Error loading vector files: {str(e)}")
+                    st.markdown("#### Associated Contexts:")
+                    for ctx in contexts:
+                        with st.container():
+                            cols = st.columns([6, 1])
+                            with cols[0]:
+                                st.markdown(f"**{ctx['type'].title()} Context**")
+                                st.write(f"Priority: {ctx.get('priority', 50)}")
+                                if ctx['type'] == 'vector':
+                                    st.write(f"Index: {ctx['metadata'].get('index_name', 'Unknown')}")
+                                    st.write(f"Files: {ctx['metadata'].get('file_count', 0)}")
+                                elif ctx['type'] == 'system':
+                                    st.write(f"Name: {ctx['metadata'].get('name', 'Unnamed')}")
+                            with cols[1]:
+                                if st.button("🗑️", key=f"delete_ctx_{task.id}_{ctx['id']}", 
+                                           help=f"Remove this context from {task.name}"):
+                                    try:
+                                        await self.context_provider.remove_context_from_task(
+                                            task_id=task.id,
+                                            context_id=ctx['id']
+                                        )
+                                        st.success("Context removed!")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error removing context: {str(e)}")
+                            st.markdown("---")
+        
+        if not has_contexts:
+            st.info("No tasks have any contexts associated with them yet.")

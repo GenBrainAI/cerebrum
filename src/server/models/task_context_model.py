@@ -15,19 +15,14 @@ class ContextReference(BaseModel):
 class TaskContext:
     def __init__(self, task_id: str):
         self.task_id = task_id
-        self.use_context = True
-        self.inherit_manager_context = True
         self.contexts: List[ContextReference] = []
+        self.use_context: bool = True
+        self.inherit_manager_context: bool = True
 
-    def add_context(
-        self,
-        type: str,
-        source_id: str,
-        priority: int = 0,
-        metadata: Optional[Dict] = None
-    ) -> ContextReference:
+    def add_context(self, type: str, source_id: str, priority: int = 50, metadata: Dict = None) -> ContextReference:
         """Add a context reference to this task context."""
         context_ref = ContextReference(
+            task_id=self.task_id,
             type=type,
             source_id=source_id,
             priority=priority,

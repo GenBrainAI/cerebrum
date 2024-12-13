@@ -74,122 +74,111 @@ class ContextProvider:
         self, 
         task_id: str, 
         context_types: List[str] = None,
-        query: Optional[str] = None
+        query: Optional[str] = None,
+        limit: Optional[int] = None
     ) -> List[Dict]:
-        """Get contexts for a task, including inherited contexts from the manager.
-        
-        Args:
-            task_id: ID of the task
-            context_types: Optional list of context types to filter by
-            query: Optional query string for semantic search
-        """
-        contexts = []
-        
+        """Get contexts for a task, including inherited contexts from the manager."""
         # Get task context
         task_context = self.task_context_manager.get_task_context(task_id)
         if not task_context or not task_context.use_context:
             return []
 
+        all_contexts = []
+
         # If task inherits from manager, get manager contexts first
         if task_context.inherit_manager_context:
-            # Get the task to find manager ID
             task = self.persistence_model.tasks.read(task_id)
             if task and hasattr(task, 'tasksmanager_id'):
                 manager_id = task.tasksmanager_id
                 manager_context_id = f"manager_{manager_id}"
-                manager_context = self.task_context_manager.get_task_context(manager_context_id)
                 
-                if manager_context:
-                    # Add manager contexts
-                    for context_ref in manager_context.contexts:
-                        if not context_types or context_ref.type in context_types:
-                            context_data = await self._get_context_data(context_ref, query)
-                            if context_data:
-                                # Ensure context_data is a dictionary
-                                if hasattr(context_data, 'dict'):
-                                    context_data = context_data.dict()
-                                contexts.append(context_data)
+                # Get manager contexts from context DB
+                manager_contexts = await self.context_db.get_contexts(
+                    task_id=manager_context_id,
+                    context_types=context_types
+                )
+                all_contexts.extend(manager_contexts)
 
-        # Add task-specific contexts
-        for context_ref in task_context.contexts:
-            if not context_types or context_ref.type in context_types:
-                context_data = await self._get_context_data(context_ref, query)
-                if context_data:
-                    # Ensure context_data is a dictionary
-                    if hasattr(context_data, 'dict'):
-                        context_data = context_data.dict()
-                    contexts.append(context_data)
+        # Get task-specific contexts from context DB
+        task_contexts = await self.context_db.get_contexts(
+            task_id=task_id,
+            context_types=context_types
+        )
+        all_contexts.extend(task_contexts)
 
         # Sort by priority (highest first)
-        contexts.sort(key=lambda x: x.get('priority', 0), reverse=True)
-        return contexts
+        all_contexts.sort(key=lambda x: x.get('priority', 0), reverse=True)
+        
+        # Apply limit if specified
+        if limit is not None:
+            all_contexts = all_contexts[:limit]
+        
+        return all_contexts
 
-    async def _get_context_data(
-        self, 
-        context_ref: ContextReference,
-        query: Optional[str] = None
-    ) -> Optional[Dict]:
-        """Get the actual context data based on the reference type."""
+    async def _get_context_data(self, context_ref: ContextReference, query: Optional[str] = None) -> Optional[Dict]:
+        """Get context data based on context type and reference."""
         try:
-            if context_ref.type == "system":
-                return {
-                    "id": str(context_ref.id),
-                    "type": "system",
-                    "content": self.system_context.get_context(context_ref.source_id),
-                    "priority": context_ref.priority
-                }
-            elif context_ref.type == "vector":
-                # For vector type, we should use the file_ids from metadata
-                if context_ref.metadata and 'filters' in context_ref.metadata:
-                    if query:
-                        # If query provided, use semantic search
-                        results = await self.context_db.search_context(
-                            query,
-                            filters=context_ref.metadata.get('filters'),
-                            limit=1
-                        )
-                    else:
-                        # Otherwise use direct file access
-                        results = await self.context_db.vector_store.get_filtered_items(
-                            filters=context_ref.metadata,
-                            limit=1
-                        )
+            if context_ref.type == "vector":
+                # For vector context, use vector store with query
+                if self._vector_store is None:
+                    self._vector_store = VectorStore()
+                
+                if query:
+                    # Convert query text to embeddings before searching
+                    query_embedding = self._vector_store.generate_embeddings([query])[0]
+                    
+                    results = await self._vector_store.search(
+                        embedding=query_embedding,
+                        filters=context_ref.metadata.get('filters', {}),
+                        limit=1
+                    )
                     if results:
                         return {
-                            "id": str(context_ref.id),
-                            "type": "vector",
+                            "id": context_ref.id,
+                            "type": context_ref.type,
                             "content": results[0]["content"],
-                            "metadata": context_ref.metadata,
+                            "relevance": results[0]["relevance"],
                             "priority": context_ref.priority
                         }
-                # Fallback to search if no filters
-                results = await self.context_db.search_context(
-                    query or context_ref.source_id, 
-                    limit=1,
-                    filters=context_ref.metadata.get('filters') if context_ref.metadata else None
-                )
-                if results:
+                
+            elif context_ref.type == "system":
+                # For system context, get from system context manager
+                content = self.system_context.get_context(context_ref.source_id)
+                if content:
                     return {
-                        "id": str(context_ref.id),
-                        "type": "vector",
-                        "content": results[0]["content"],
-                        "metadata": results[0]["metadata"],
+                        "id": context_ref.id,
+                        "type": context_ref.type,
+                        "content": content,
                         "priority": context_ref.priority
                     }
+                
             elif context_ref.type == "knowledge":
-                knowledge = self.knowledge_base.get_knowledge(
-                    domain=context_ref.source_id
-                )
-                if knowledge:
+                # For knowledge context, get from knowledge base
+                content = self.knowledge_base.get_entry(context_ref.source_id)
+                if content:
                     return {
-                        "id": str(context_ref.id),
-                        "type": "knowledge",
-                        "content": knowledge[0]["content"],
-                        "metadata": knowledge[0]["metadata"],
+                        "id": context_ref.id,
+                        "type": context_ref.type,
+                        "content": content,
                         "priority": context_ref.priority
                     }
+                
+            elif context_ref.type == "code":
+                # For code context, get from code catalog
+                if self.code_catalog:
+                    content = self.code_catalog.get_file_content(context_ref.source_id)
+                    if content:
+                        return {
+                            "id": context_ref.id,
+                            "type": context_ref.type,
+                            "content": content,
+                            "priority": context_ref.priority
+                        }
+                    
             return None
-        except Exception:
+            
+        except Exception as e:
+            print(f"Error getting context data: {str(e)}")
             return None
 
     def _get_manager_id(self, task_id: str) -> Optional[str]:
@@ -222,53 +211,114 @@ class ContextProvider:
     async def prepare_task_messages(
         self,
         task_id: str,
-        messages: List[Message],
-        query: Optional[str] = None
+        messages: List[Message]
     ) -> List[Message]:
         """Prepare messages for a task by injecting relevant context."""
-        task_context = self.task_context_manager.get_task_context(task_id)
-        if not task_context or not task_context.use_context:
-            return messages
+        try:
+            # Get task context configuration
+            task_context = self.task_context_manager.get_task_context(task_id)
+            if not task_context or not task_context.use_context:
+                return messages
 
-        # Get contexts based on task settings
-        contexts = await self.get_task_contexts(task_id=task_id, query=query)
-        
-        if not contexts:
-            return messages
-
-        # Record context usage if there's a caller_id in the last message
-        caller_id = None
-        if messages and hasattr(messages[-1], 'metadata'):
-            caller_id = messages[-1].metadata.get('caller_id')
-        
-        if caller_id:
-            for ctx in contexts:
-                self.context_analytics.record_context_usage(
-                    context_id=ctx['id'],
-                    caller_id=caller_id,
-                    context_type=ctx['type']
-                )
-
-        # Format contexts by type
-        context_parts = []
-        for ctx in contexts:
-            if ctx["type"] == "system":
-                context_parts.append(f"System Context:\n{ctx['content']}")
-            elif ctx["type"] == "vector":
-                context_parts.append(f"Related Context:\n{ctx['content']}")
-            elif ctx["type"] == "knowledge":
-                context_parts.append(f"Domain Knowledge:\n{ctx['content']}")
-
-        # Create context message
-        if context_parts:
-            context_message = Message(
-                role="system",
-                content="Using the following context to inform your responses:\n\n" + 
-                        "\n\n---\n\n".join(context_parts)
+            # Extract query from messages for vector search
+            query_text = self._extract_query_from_messages(messages)
+            
+            # Get all contexts
+            contexts = await self.get_task_contexts(
+                task_id=task_id,
+                query=query_text
             )
-            return [context_message] + messages
+            
+            if not contexts:
+                return messages
+
+            # Group contexts by type
+            context_by_type = {
+                "system": [],
+                "vector": [],
+                "knowledge": []
+            }
+            
+            for ctx in contexts:
+                ctx_type = ctx.get("type", "")
+                if ctx_type in context_by_type:
+                    if "content" in ctx:
+                        context_by_type[ctx_type].append(ctx["content"])
+                    elif "metadata" in ctx and "content" in ctx["metadata"]:
+                        context_by_type[ctx_type].append(ctx["metadata"]["content"])
+
+            # Build context messages in specific order
+            context_messages = []
+            
+            # 1. System Context
+            if context_by_type["system"]:
+                context_messages.append(Message(
+                    role="system",
+                    content="System Context:\n" + "\n---\n".join(context_by_type["system"])
+                ))
+            
+            # 2. Knowledge Context
+            if context_by_type["knowledge"]:
+                context_messages.append(Message(
+                    role="system",
+                    content="Knowledge Context:\n" + "\n---\n".join(context_by_type["knowledge"])
+                ))
+            
+            # 3. Vector Context
+            if context_by_type["vector"]:
+                context_messages.append(Message(
+                    role="system",
+                    content="Relevant Context:\n" + "\n---\n".join(context_by_type["vector"])
+                ))
+
+            # Return context messages followed by user messages
+            return context_messages + messages
         
-        return messages
+        except Exception as e:
+            print(f"Error preparing task messages: {str(e)}")
+            return messages
+
+    async def _get_knowledge_contexts(self, task_id: str) -> List[Dict]:
+        """Get knowledge base contexts for a task."""
+        contexts = await self.get_task_contexts(
+            task_id=task_id,
+            context_types=["knowledge"]
+        )
+        return contexts
+
+    async def _get_code_contexts(self, task_id: str) -> List[Dict]:
+        """Get code contexts for a task."""
+        contexts = await self.get_task_contexts(
+            task_id=task_id,
+            context_types=["code"]
+        )
+        return contexts
+
+    async def _get_vector_contexts(self, task_id: str, query: str) -> List[Dict]:
+        """Get vector store contexts based on query."""
+        contexts = await self.get_task_contexts(
+            task_id=task_id,
+            context_types=["vector"],
+            query=query
+        )
+        return contexts
+
+    def _extract_query_from_messages(self, messages: List[Message]) -> str:
+        """Extract search query from messages."""
+        # Combine system messages and last user message for context
+        query_parts = []
+        
+        # Add system messages
+        system_messages = [msg.content for msg in messages if msg.role == "system"]
+        if system_messages:
+            query_parts.extend(system_messages)
+        
+        # Add last user message
+        user_messages = [msg for msg in messages if msg.role == "user"]
+        if user_messages:
+            query_parts.append(user_messages[-1].content)
+        
+        return " ".join(query_parts)
 
     def create_task_context(self, task_id: str) -> TaskContext:
         """Create a new task context."""
@@ -282,54 +332,53 @@ class ContextProvider:
         priority: int,
         metadata: Dict
     ) -> ContextReference:
-        """Add a context reference to a task.
-        
-        Args:
-            task_id: ID of the task
-            type: Type of context (vector, knowledge, system)
-            source_id: ID of the source content
-            priority: Priority level (0-100)
-            metadata: Additional metadata for the context
-        """
-        print(f"Debug - Adding context to task {task_id}:")  # Debug print
+        """Add a context reference to a task."""
+        print(f"Debug - Adding context to task {task_id}:")
         print(f"Type: {type}")
         print(f"Source ID: {source_id}")
         print(f"Priority: {priority}")
         print(f"Metadata: {metadata}")
-        
+
         # Get or create task context
         task_context = self.task_context_manager.get_task_context(task_id)
         if not task_context:
-            print(f"Debug - Creating new task context for {task_id}")  # Debug print
+            print(f"Debug - Creating new task context for {task_id}")
             task_context = self.create_task_context(task_id)
-        
-        # Add context to task context manager
+
+        # Add context to task context manager (no await needed)
         context_ref = task_context.add_context(
             type=type,
             source_id=source_id,
             priority=priority,
             metadata=metadata
         )
-        print(f"Debug - Added context reference: {context_ref}")  # Debug print
+        print(f"Debug - Added context reference: {context_ref}")
+
+        # Store context in context DB (this is async)
+        await self.context_db.store_context(
+            task_id=task_id,
+            context_type=type,
+            source_id=source_id,
+            metadata=metadata,
+            priority=priority
+        )
 
         # Update the task model in persistence
         task = self.persistence_model.tasks.read(task_id)
         if task:
             # Convert context reference to dict for task model
-            context_dict = context_ref.dict()
+            context_dict = context_ref.__dict__
             
             # Initialize contexts list if needed
-            if not hasattr(task, 'contexts') or task.contexts is None:
+            if not hasattr(task, 'contexts'):
                 task.contexts = []
             
-            # Add the new context to task's contexts
+            # Add the new context
             task.contexts.append(context_dict)
             
-            # Save updated task
+            # Update task in persistence
             self.persistence_model.tasks.update(task_id, task)
-            print(f"Debug - Updated task model with contexts: {task.contexts}")  # Debug print
-        else:
-            print(f"Warning: Task {task_id} not found in persistence model")
+            print(f"Debug - Updated task model with contexts: {task.contexts}")
 
         return context_ref
 
@@ -574,3 +623,50 @@ class ContextProvider:
         except Exception as e:
             print(f"Error removing context: {e}")
             raise Exception(f"Failed to remove context: {str(e)}")
+
+    async def initialize(self):
+        """Initialize context provider and sync with persistence model."""
+        try:
+            # Initialize context DB if needed
+            if self.context_db is None:
+                self.context_db = ContextDatabase()
+            
+            # Get persistence model
+            persistence_model = self.persistence_model
+            
+            # Sync task contexts
+            tasks = persistence_model.tasks.list()
+            for task in tasks:
+                self.sync_task_contexts(task.id, task)
+            
+            # Sync manager contexts
+            managers = persistence_model.tasksmanagers.list()
+            for manager in managers:
+                self.sync_manager_contexts(manager.id, manager)
+            
+            print("Context provider initialized and synced with persistence model")
+        except Exception as e:
+            print(f"Error initializing context provider: {str(e)}")
+            raise
+
+    async def add_code_context(
+        self,
+        task_id: str,
+        file_path: str,
+        content: str,
+        description: Optional[str] = None,
+        priority: int = 50
+    ) -> ContextReference:
+        """Add a code file as context to a task."""
+        metadata = {
+            "file_path": file_path,
+            "description": description
+        }
+        
+        return await self.add_context_to_task(
+            task_id=task_id,
+            type="code",
+            source_id=file_path,
+            priority=priority,
+            metadata=metadata
+        )

@@ -6,6 +6,7 @@ from fastapi import (
     Response,
     status,
     Query,
+    Depends,
 )
 from typing import Dict, Any
 import logging
@@ -23,9 +24,15 @@ from ..controllers.tasks_controller import create_tasksmanager
 
 router = APIRouter()
 
+# Keep global persistence model for backward compatibility
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-task_runner = TaskRunner(persistence_model)
 
+async def get_task_runner():
+    """Dependency to get initialized task runner."""
+    # Use the global persistence model to maintain consistency
+    task_runner = TaskRunner(persistence_model)
+    await task_runner.initialize()  # Initialize context provider
+    return task_runner
 
 @router.post(
     "/task",
@@ -117,6 +124,10 @@ async def run_task(
     The task can be either a CrewAI task or a standard task with tools.
     """
     try:
+        # Initialize task runner with context
+        task_runner = TaskRunner(persistence_model)
+        await task_runner.initialize()
+        
         # Prepare running parameters
         running_extra_params = run_task_body.running_extra_params or {}
         if run_task_body.messages:

@@ -9,6 +9,9 @@ from tqdm.asyncio import tqdm
 import numpy as np
 from .vector_store import VectorStore, VectorStoreConfig
 from openai import OpenAI
+import json
+import chromadb
+from chromadb.utils import embedding_functions
 
 class ContextDatabase:
     """Enhanced version of the context database with better error handling and performance."""
@@ -24,6 +27,22 @@ class ContextDatabase:
         self.persist_directory = persist_directory
         self.batch_size = batch_size
         self._setup_logging()
+        
+        # Initialize ChromaDB client
+        self.client = chromadb.PersistentClient(
+            path=str(Path(persist_directory) / "chroma"),
+            settings=chromadb.Settings(
+                anonymized_telemetry=False,
+                allow_reset=True
+            )
+        )
+        
+        # Initialize embedding function
+        self.embedding_function = chromadb.utils.embedding_functions.OpenAIEmbeddingFunction(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            model_name="text-embedding-3-small"
+        )
+        
         self._initialize_collections()
         self.executor = ThreadPoolExecutor(max_workers=4)
         
@@ -47,14 +66,18 @@ class ContextDatabase:
         self.logger.setLevel(logging.DEBUG)
 
     def _initialize_collections(self):
-        """Initialize vector store with proper configuration."""
-        config = VectorStoreConfig(
-            batch_size=self.batch_size,
-            persist_directory=self.persist_directory,
-            collection_name="codebase"
-        )
-        print(f"Debug - Initializing vector store with base path: {self.persist_directory}")
-        self.vector_store = VectorStore(base_path=self.persist_directory)
+        """Initialize collections in ChromaDB."""
+        try:
+            # Initialize main collection for contexts
+            self.collection = self.client.get_or_create_collection(
+                name="contexts",
+                embedding_function=self.embedding_function
+            )
+            
+            logging.info("Initialized context database collections")
+        except Exception as e:
+            logging.error(f"Error initializing collections: {str(e)}")
+            raise
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     async def _safe_embed(self, texts: List[str]) -> np.ndarray:
@@ -280,3 +303,95 @@ class ContextDatabase:
         except Exception as e:
             self.logger.error(f"Embedding update failed: {str(e)}")
             raise
+
+    async def store_context(self, task_id: str, context_type: str, source_id: str, 
+                           metadata: dict, priority: int = 50) -> None:
+        """Store a context reference in the database."""
+        try:
+            # Create a unique ID for this context
+            context_id = f"{task_id}_{context_type}_{source_id}"
+            
+            # Store in ChromaDB with task-specific metadata
+            self.collection.add(
+                ids=[context_id],
+                documents=[json.dumps(metadata)],  # Store metadata as document
+                metadatas={
+                    "task_id": task_id,
+                    "type": context_type,
+                    "source_id": source_id,
+                    "priority": priority,
+                    **metadata
+                }
+            )
+            
+            logging.info(f"Stored context {context_id} for task {task_id}")
+            
+        except Exception as e:
+            logging.error(f"Error storing context: {str(e)}")
+            raise
+
+    async def get_contexts(self, task_id: str, context_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Get all contexts for a task, optionally filtered by type."""
+        try:
+            # Build where clause
+            where_clause = {"task_id": task_id}
+            if context_types:
+                where_clause["type"] = {"$in": context_types}
+            
+            # Query ChromaDB
+            results = self.collection.get(
+                where=where_clause,
+                include=['metadatas', 'documents']
+            )
+            
+            # Format results
+            contexts = []
+            if results['ids']:
+                for i, ctx_id in enumerate(results['ids']):
+                    metadata = results['metadatas'][i]
+                    try:
+                        # Parse stored metadata from document
+                        stored_metadata = json.loads(results['documents'][i])
+                    except:
+                        stored_metadata = {}
+                    
+                    contexts.append({
+                        "id": ctx_id,
+                        "type": metadata.get("type"),
+                        "source_id": metadata.get("source_id"),
+                        "priority": metadata.get("priority", 50),
+                        "metadata": {**stored_metadata, **metadata}
+                    })
+            
+            # Sort by priority (highest first)
+            contexts.sort(key=lambda x: x.get("priority", 0), reverse=True)
+            
+            logging.info(f"Retrieved {len(contexts)} contexts for task {task_id}")
+            return contexts
+            
+        except Exception as e:
+            logging.error(f"Error getting contexts: {str(e)}")
+            return []
+
+    async def delete_context(self, context_id: str) -> bool:
+        """Delete a context from the database."""
+        try:
+            self.collection.delete(ids=[context_id])
+            logging.info(f"Deleted context {context_id}")
+            return True
+        except Exception as e:
+            logging.error(f"Error deleting context: {str(e)}")
+            return False
+
+    async def update_context(self, context_id: str, metadata: Dict[str, Any]) -> bool:
+        """Update context metadata."""
+        try:
+            self.collection.update(
+                ids=[context_id],
+                metadatas=[metadata]
+            )
+            logging.info(f"Updated context {context_id}")
+            return True
+        except Exception as e:
+            logging.error(f"Error updating context: {str(e)}")
+            return False
