@@ -1,0 +1,19 @@
+{
+  "view_type": "tools_catalog",
+  "expanded_nodes": [],
+  "selected_node": null,
+  "chat_history": [
+    {
+      "role": "user",
+      "content": "aa",
+      "timestamp": null
+    },
+    {
+      "role": "assistant",
+      "content": "Tool management commands not yet implemented",
+      "timestamp": null
+    }
+  ],
+  "task_id": null,
+  "metadata": {}
+}
