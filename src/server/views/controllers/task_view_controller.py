@@ -1,7 +1,7 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
-from ...models.exceptions import StateError, StateNotFoundError
+from ...models.exceptions import StateError, StateNotFoundError, StateValidationError
 from ...models.task import Task
 from ..models.view_state import ViewState
 from ..models.view_types import ViewType
@@ -11,50 +11,88 @@ from ..components.dialogs.task_dialog import TaskDialog
 from ..state.state_manager import ViewStateManager
 from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
+from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 
 class TaskHierarchyController:
     """Controller for task hierarchy view with specialized state support."""
     
     def __init__(self, persistence_model):
-        self.persistence_model = persistence_model
+        self.global_persistence = persistence_model
         self.view_state = ViewState(view_type=ViewType.TASK_HIERARCHY)
-        self.tree_provider = TaskTreeProvider(persistence_model)
         self.state_manager = ViewStateManager(persistence_model)
-        self.task_state: Optional[TaskGenerationState] = None
-        
-        # Load existing state
-        state_ids = StateLoader.get_state_ids("task_management")
-        if state_ids:
-            self.task_manager_id = state_ids["task_manager_id"]
-            self.task_id = state_ids["task_id"]
+        self.local_persistence = None
+        self.task_state = None
         
     async def initialize(self):
         """Initialize controller with specialized state."""
-        # Try to load existing state first
-        state_file = StateLoader.get_state_file("task_management")
-        if state_file and state_file.exists():
-            self.task_state = await self.state_manager.load_specialized_state(state_file)
-        
-        # Create new state if none exists
-        if not self.task_state:
-            self.task_state = await self.state_manager.create_specialized_state(
-                state_type=StateType.TASK_GENERATION,
-                name="Task Generation State",
-                initial_data={
-                    "active_view": ViewType.TASK_HIERARCHY.value,
-                    "selected_task": None
-                }
-            )
+        try:
+            print("Starting controller initialization...")
+            state_file = StateLoader.get_state_file("task_management_state.json")
+            print(f"Checking state file path: {state_file}")
+            
+            if not state_file or not state_file.exists():
+                print(f"🔴 Specialized state file not found at {state_file}")
+                return
+
+            print(f"Loading state from: {state_file}")
+            
+            # Read state file content as string
+            with open(state_file, 'r', encoding='utf-8') as f:
+                json_str = f.read()
+            
+            # Create local persistence model and load state from string
+            self.local_persistence = InMemoryPersistenceModel()
+            self.local_persistence.from_json(json_str=json_str)
+            
+            if self.local_persistence:
+                print("Local persistence model created")
+                # Get task context from local persistence
+                task_managers = self.local_persistence.tasksmanagers.list()
+                tasks = self.local_persistence.tasks.list()
+                
+                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find the task management manager and task
+                    task_manager = next(
+                        (m for m in task_managers if "Task Management" in m.name),
+                        task_managers[0]
+                    )
+                    main_task = next(
+                        (t for t in tasks if t.tasksmanager_id == task_manager.id),
+                        None
+                    )
+                    
+                    if main_task:
+                        # Update view state with task context
+                        self.view_state.set_active_task(
+                            task_id=main_task.id,
+                            task_name=main_task.name,
+                            manager_id=task_manager.id,
+                            manager_name=task_manager.name
+                        )
+                        
+                        print(f"🟢 Loaded state for {task_manager.name}-{main_task.name}")
+                    else:
+                        print("🔴 No task management task found")
+                else:
+                    print("🔴 No task context found in state file")
+            else:
+                print("🔴 Failed to create local persistence model")
+                
+        except Exception as e:
+            print(f"Error initializing task controller: {str(e)}")
+            raise
 
     async def get_task_tree(self) -> Optional[TreeNode]:
         """Get task hierarchy as tree structure with state tracking."""
         try:
-            tasks = self.persistence_model.tasks.list()
-            
-            # Update task state
-            if self.task_state:
-                self.task_state.active_tasks = [task.id for task in tasks]
-                await self.state_manager._persist_specialized_state(self.task_state)
+            if not self.local_persistence:
+                print("No local persistence available")
+                return None
+
+            tasks = self.local_persistence.tasks.list()
+            print(f"Found {len(tasks)} tasks for tree")
             
             # Create root node
             root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Tasks", "root")
@@ -63,7 +101,7 @@ class TaskHierarchyController:
             task_map = {task.id: task for task in tasks}
             for task in tasks:
                 node = TreeNode(UUID(task.id), task.name, "task")
-                if task.parent_id and task.parent_id in task_map:
+                if hasattr(task, 'parent_id') and task.parent_id and task.parent_id in task_map:
                     # Find parent node
                     parent_id = UUID(task.parent_id)
                     parent_node = next(

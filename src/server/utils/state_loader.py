@@ -1,31 +1,40 @@
+import os
 from pathlib import Path
-import json
-from typing import Dict, Any, Optional
+from typing import Optional, Dict
 
 class StateLoader:
-    """Utility for loading application states."""
+    """Utility class for loading state files."""
     
     @staticmethod
-    def load_state_registry() -> Optional[Dict[str, Any]]:
-        """Load the state registry."""
-        registry_path = Path("state/state_registry.json")
-        if registry_path.exists():
-            with open(registry_path, 'r') as f:
-                return json.load(f)
-        return None
-    
+    def get_project_root() -> Path:
+        """Get the project root directory."""
+        current_file = Path(__file__).resolve()
+        return current_file.parent.parent.parent.parent
+
     @staticmethod
-    def get_state_file(state_type: str) -> Optional[Path]:
-        """Get state file path for a specific state type."""
-        registry = StateLoader.load_state_registry()
-        if registry and state_type in registry:
-            return Path("state") / registry[state_type]["state_file"]
-        return None
-    
+    def get_state_file(filename: str) -> Optional[Path]:
+        """Get the path to a state file in the specialized states directory."""
+        try:
+            root_dir = StateLoader.get_project_root()
+            state_path = root_dir / "state" / "specialized" / filename
+            print(f"Looking for state file at: {state_path}")
+            return state_path if state_path.exists() else None
+        except Exception as e:
+            print(f"Error getting state file path: {str(e)}")
+            return None
+
     @staticmethod
-    def get_state_ids(state_type: str) -> Optional[Dict[str, str]]:
-        """Get IDs for a specific state type."""
-        registry = StateLoader.load_state_registry()
-        if registry and state_type in registry:
-            return registry[state_type]["ids"]
-        return None
+    def get_state_ids(state_type: str) -> Dict[str, str]:
+        """Get state IDs from state file."""
+        try:
+            state_file = StateLoader.get_state_file(f"{state_type}_state.json")
+            if state_file and state_file.exists():
+                # Load and return IDs from state file
+                import json
+                with open(state_file, 'r') as f:
+                    data = json.load(f)
+                    return data.get('ids', {})
+            return {}
+        except Exception as e:
+            print(f"Error loading state IDs: {str(e)}")
+            return {}

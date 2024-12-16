@@ -1,136 +1,118 @@
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, Optional, Type
 from pathlib import Path
 import json
-import logging
 from datetime import datetime
-from uuid import UUID
-from asyncio import Lock
+import asyncio
 
+from ..models.exceptions import StateError, StateNotFoundError
 from ..models.specialized_state import (
     SpecializedState, StateType, TaskGenerationState,
-    ToolGenerationState, AgenticFrameworkState
-)
-from ..models.exceptions import (
-    StateError, StateNotFoundError, StateValidationError,
-    StateLockError, StateUpdateError
+    ToolManagementState, AgentFrameworkState, StateMetadata
 )
 
 class StateManager:
-    """Core service for managing application state."""
+    """Manages specialized state persistence and loading."""
     
-    def __init__(self, state_dir: Path = Path("state/specialized")):
-        self.state_dir = state_dir
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        self.states: Dict[UUID, SpecializedState] = {}
-        self.logger = logging.getLogger(__name__)
-        self.locks: Dict[UUID, Lock] = {}
-    
-    async def create_state(
-        self, 
-        state_type: StateType,
-        name: str,
-        initial_data: Optional[Dict[str, Any]] = None
-    ) -> SpecializedState:
-        """Create and persist a new state."""
-        state_class = self._get_state_class(state_type)
-        state = state_class(
-            state_type=state_type,
-            name=name,
-            data=initial_data or {}
-        )
-        self.states[state.id] = state
-        await self._persist_state(state)
-        return state
-    
-    async def get_state(self, state_id: UUID) -> Optional[SpecializedState]:
-        """Retrieve a state by ID."""
-        state = self.states.get(state_id)
-        if not state:
-            raise StateNotFoundError(f"State {state_id} not found")
-        return state
-    
-    async def update_state(
-        self, 
-        state_id: UUID,
-        data: Dict[str, Any]
-    ) -> Optional[SpecializedState]:
-        """Update state data with concurrency control."""
-        try:
-            await self._acquire_lock(state_id)
-            state = await self.get_state(state_id)
-            if not state:
-                raise StateNotFoundError(f"State {state_id} not found")
+    def __init__(self, persistence_model):
+        self.persistence_model = persistence_model
+        
+    async def create_specialized_state(self, state_type: StateType, name: str, initial_data: dict, metadata: Optional[StateMetadata] = None) -> SpecializedState:
+        if metadata is None:
+            metadata = StateMetadata()
             
-            try:
-                state.update(data)
-            except Exception as e:
-                raise StateUpdateError(f"Failed to update state: {str(e)}")
+        if state_type == StateType.TASK_GENERATION:
+            state = TaskGenerationState(
+                state_type=state_type,  # This was missing
+                name=name,
+                data=initial_data,
+                metadata=metadata
+            )
+        elif state_type == StateType.TOOL_MANAGEMENT:
+            state = ToolManagementState(
+                state_type=state_type,
+                name=name,
+                data=initial_data,
+                metadata=metadata
+            )
+        elif state_type == StateType.AGENT_FRAMEWORK:
+            state = AgentFrameworkState(
+                state_type=state_type,
+                name=name,
+                data=initial_data,
+                metadata=metadata
+            )
+        else:
+            raise ValueError(f"Unsupported state type: {state_type}")
+            
+        # Save the state
+        await self.persistence_model.write_state(str(state.id), state.dict())
+        return state
+            
+    async def load_specialized_state(self, state_id: str) -> Optional[SpecializedState]:
+        """Load specialized state by ID."""
+        try:
+            # Read state data
+            state_data = await self._read_state_data(state_id)
+            if not state_data:
+                return None
                 
-            await self._persist_state(state)
-            return state
+            # Map state types to their classes
+            state_classes = {
+                StateType.TASK_GENERATION: TaskGenerationState,
+                StateType.TOOL_MANAGEMENT: ToolManagementState,
+                StateType.AGENT_FRAMEWORK: AgentFrameworkState
+            }
             
-        except StateError:
-            raise
+            state_type = StateType(state_data.get("state_type"))
+            state_class = state_classes.get(state_type)
+            
+            if not state_class:
+                raise StateError(f"Unknown state type: {state_type}")
+                
+            # Create and return state instance
+            return state_class(**state_data)
+            
         except Exception as e:
-            raise StateError(f"State update failed: {str(e)}")
-        finally:
-            await self._release_lock(state_id)
-    
-    async def load_states(self) -> None:
-        """Load all persisted states."""
-        for file_path in self.state_dir.glob("*.json"):
-            try:
-                with open(file_path, 'r') as f:
-                    data = json.load(f)
-                    state_type = StateType(data['state_type'])
-                    state_class = self._get_state_class(state_type)
-                    state = state_class(**data)
-                    self.states[state.id] = state
-            except Exception as e:
-                self.logger.error(f"Error loading state from {file_path}: {str(e)}")
-    
-    def _get_state_class(self, state_type: StateType) -> type:
-        """Get appropriate state class for type."""
-        return {
-            StateType.TASK_GENERATION: TaskGenerationState,
-            StateType.TOOL_GENERATION: ToolGenerationState,
-            StateType.AGENTIC_FRAMEWORK: AgenticFrameworkState
-        }[state_type]
-    
-    async def _persist_state(self, state: SpecializedState) -> None:
-        """Persist state to filesystem."""
+            raise StateError(f"Failed to load specialized state: {str(e)}")
+            
+    async def update_state(self, state_id: str, data: Dict[str, Any]) -> None:
+        """Update specialized state data."""
         try:
-            file_path = self.state_dir / f"{state.id}.json"
-            with open(file_path, 'w') as f:
-                json.dump(state.dict(), f, indent=2, default=str)
+            state = await self.load_specialized_state(state_id)
+            if not state:
+                raise StateNotFoundError(f"State not found: {state_id}")
+                
+            await state.update(data)
+            await self._persist_specialized_state(state)
+            
         except Exception as e:
-            self.logger.error(f"Error persisting state {state.id}: {str(e)}")
-            raise 
-    
-    async def _acquire_lock(self, state_id: UUID) -> None:
-        """Acquire lock for state updates."""
-        if state_id not in self.locks:
-            self.locks[state_id] = Lock()
-        await self.locks[state_id].acquire()
-    
-    async def _release_lock(self, state_id: UUID) -> None:
-        """Release state lock."""
-        if state_id in self.locks:
-            self.locks[state_id].release()
-    
-    async def update_state_version(
-        self,
-        state_id: UUID,
-        new_version: str
-    ) -> Optional[SpecializedState]:
-        """Update state version."""
+            raise StateError(f"Failed to update state: {str(e)}")
+            
+    async def _generate_state_id(self) -> str:
+        """Generate unique state ID."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"state_{timestamp}"
+        
+    async def _persist_specialized_state(self, state: SpecializedState) -> None:
+        """Persist specialized state to storage."""
         try:
-            await self._acquire_lock(state_id)
-            state = await self.get_state(state_id)
-            if state:
-                state.metadata.version = new_version
-                state.metadata.updated_at = datetime.now()
-                await self._persist_state(state)
-            return state
-        finally:
-            await self._release_lock(state_id)
+            state_data = state.dict()
+            await self._write_state_data(state.id, state_data)
+        except Exception as e:
+            raise StateError(f"Failed to persist state: {str(e)}")
+            
+    async def _read_state_data(self, state_id: str) -> Optional[Dict[str, Any]]:
+        """Read state data from storage."""
+        try:
+            # TODO: Implement actual storage read
+            return {}
+        except Exception as e:
+            raise StateError(f"Failed to read state data: {str(e)}")
+            
+    async def _write_state_data(self, state_id: str, data: Dict[str, Any]) -> None:
+        """Write state data to storage."""
+        try:
+            # TODO: Implement actual storage write
+            pass
+        except Exception as e:
+            raise StateError(f"Failed to write state data: {str(e)}")

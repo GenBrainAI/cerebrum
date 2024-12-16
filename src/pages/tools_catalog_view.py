@@ -4,13 +4,17 @@ from server.views.controllers.tools_view_controller import ToolsCatalogControlle
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from server.views.components.tree_component import TreeComponent
 from server.views.components.header import render_header
+from server.views.components.sidebar.tools_catalog_sidebar import render_tools_catalog_sidebar
 
 async def render_tools_catalog_view():
     """Render the tools catalog view."""
     # Initialize controller if needed
     if 'tools_controller' not in st.session_state:
+        print("Initializing tools controller...")
         persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-        st.session_state.tools_controller = ToolsCatalogController(persistence_model)
+        controller = ToolsCatalogController(persistence_model)
+        await controller.initialize()
+        st.session_state.tools_controller = controller
     
     # Initialize tree component if needed
     if 'tools_tree' not in st.session_state:
@@ -18,12 +22,8 @@ async def render_tools_catalog_view():
             on_node_click=st.session_state.tools_controller.handle_node_click
         )
     
-    # Sidebar - Tree Component
-    with st.sidebar:
-        st.subheader("Tools Catalog")
-        tree_data = await st.session_state.tools_controller.get_tools_tree()
-        if tree_data:
-            st.session_state.tools_tree.render(tree_data)
+    # Render sidebar showing state context and tools
+    await render_tools_catalog_sidebar()
     
     # Main content - Chat
     render_header(

@@ -2,61 +2,96 @@
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
-from ...models.exceptions import StateError, StateNotFoundError
-from ...models.tool import Tool
+from ...models.exceptions import StateError, StateNotFoundError, StateValidationError
+from ...models.function import Tool
 from ..models.view_state import ViewState
 from ..models.view_types import ViewType
 from ...models.specialized_state import StateType, ToolManagementState
-from ..data.tools_tree_provider import ToolsTreeProvider
-from ..components.dialogs.tool_dialog import ToolDialog
 from ..state.state_manager import ViewStateManager
 from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
+from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 
 class ToolsCatalogController:
     """Controller for tools catalog view with specialized state support."""
     
     def __init__(self, persistence_model):
-        self.persistence_model = persistence_model
+        self.global_persistence = persistence_model
         self.view_state = ViewState(view_type=ViewType.TOOLS_CATALOG)
-        self.tree_provider = ToolsTreeProvider(persistence_model)
         self.state_manager = ViewStateManager(persistence_model)
-        self.tool_state: Optional[ToolManagementState] = None
-        
-        # Load existing state
-        state_ids = StateLoader.get_state_ids("tools_management")
-        if state_ids:
-            self.tools_manager_id = state_ids["tools_manager_id"]
-            self.task_id = state_ids["task_id"]
+        self.local_persistence = None
+        self.tool_state = None
         
     async def initialize(self):
         """Initialize controller with specialized state."""
-        # Try to load existing state first
-        state_file = StateLoader.get_state_file("tools_management")
-        if state_file and state_file.exists():
-            self.tool_state = await self.state_manager.load_specialized_state(state_file)
-        
-        # Create new state if none exists
-        if not self.tool_state:
-            self.tool_state = await self.state_manager.create_specialized_state(
-                state_type=StateType.TOOL_MANAGEMENT,
-                name="Tool Management State",
-                initial_data={
-                    "active_view": ViewType.TOOLS_CATALOG.value,
-                    "selected_tool": None,
-                    "active_tools": []
-                }
-            )
+        try:
+            print("Starting controller initialization...")
+            state_file = StateLoader.get_state_file("tools_management_state.json")
+            print(f"Checking state file path: {state_file}")
+            
+            if not state_file or not state_file.exists():
+                print(f"🔴 Specialized state file not found at {state_file}")
+                return
+
+            print(f"Loading state from: {state_file}")
+            
+            # Read state file content as string
+            with open(state_file, 'r', encoding='utf-8') as f:
+                json_str = f.read()
+            
+            # Create local persistence model and load state from string
+            self.local_persistence = InMemoryPersistenceModel()
+            self.local_persistence.from_json(json_str=json_str)
+            
+            if self.local_persistence:
+                print("Local persistence model created")
+                # Get task context from local persistence
+                task_managers = self.local_persistence.tasksmanagers.list()
+                tasks = self.local_persistence.tasks.list()
+                
+                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find the tools management manager and task
+                    tools_manager = next(
+                        (m for m in task_managers if "Tools Management" in m.name),
+                        task_managers[0]
+                    )
+                    tools_task = next(
+                        (t for t in tasks if t.tasksmanager_id == tools_manager.id),
+                        None
+                    )
+                    
+                    if tools_task:
+                        # Update view state with task context
+                        self.view_state.set_active_task(
+                            task_id=tools_task.id,
+                            task_name=tools_task.name,
+                            manager_id=tools_manager.id,
+                            manager_name=tools_manager.name
+                        )
+                        
+                        print(f"🟢 Loaded state for {tools_manager.name}-{tools_task.name}")
+                    else:
+                        print("🔴 No tools management task found")
+                else:
+                    print("🔴 No task context found in state file")
+            else:
+                print("🔴 Failed to create local persistence model")
+                
+        except Exception as e:
+            print(f"Error initializing tools controller: {str(e)}")
+            raise
     
     async def get_tools_tree(self) -> Optional[TreeNode]:
         """Get tools catalog as tree structure with state tracking."""
         try:
-            tools = self.persistence_model.tools.list()
-            
-            # Update tool state
-            if self.tool_state:
-                self.tool_state.active_tools = [tool.id for tool in tools]
-                await self.state_manager._persist_specialized_state(self.tool_state)
+            if not self.local_persistence:
+                print("No local persistence available")
+                return None
+
+            tools = self.local_persistence.tools.list()
+            print(f"Found {len(tools)} tools for tree")
             
             # Create root node
             root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Tools", "root")
@@ -74,7 +109,7 @@ class ToolsCatalogController:
             
             # Add tools to appropriate categories
             for tool in tools:
-                tool_type = tool.metadata.get('type', 'custom')
+                tool_type = tool.metadata.get('type', 'custom') if hasattr(tool, 'metadata') else 'custom'
                 node = TreeNode(UUID(tool.id), tool.name, "tool")
                 if tool_type in categories:
                     categories[tool_type].children.append(node)

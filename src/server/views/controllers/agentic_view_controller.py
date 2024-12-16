@@ -2,89 +2,156 @@
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from datetime import datetime
-from ...models.exceptions import StateError, StateNotFoundError
-from ...models.agent import Agent
+import json
+from ...models.exceptions import StateError, StateNotFoundError, StateValidationError
+from ...models.agent import Agentic
 from ..models.view_state import ViewState
 from ..models.view_types import ViewType
-from ...models.specialized_state import StateType, AgentFrameworkState
-from ..data.agent_tree_provider import AgentTreeProvider
-from ..components.dialogs.agent_dialog import AgentDialog
+from ...models.specialized_state import StateType, AgentFrameworkState, StateMetadata
 from ..state.state_manager import ViewStateManager
 from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
+from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
     
     def __init__(self, persistence_model):
-        self.persistence_model = persistence_model
+        self.global_persistence = persistence_model
         self.view_state = ViewState(view_type=ViewType.AGENTIC_CONFIG)
-        self.tree_provider = AgentTreeProvider(persistence_model)
         self.state_manager = ViewStateManager(persistence_model)
-        self.agent_state: Optional[AgentFrameworkState] = None
-        
-        # Load existing state
-        state_ids = StateLoader.get_state_ids("agentic_framework")
-        if state_ids:
-            self.agentic_manager_id = state_ids["agentic_manager_id"]
-            self.task_id = state_ids["task_id"]
+        self.local_persistence = None
+        self.agent_state = None
         
     async def initialize(self):
         """Initialize controller with specialized state."""
-        # Try to load existing state first
-        state_file = StateLoader.get_state_file("agentic_framework")
-        if state_file and state_file.exists():
-            self.agent_state = await self.state_manager.load_specialized_state(state_file)
-        
-        # Create new state if none exists
-        if not self.agent_state:
-            self.agent_state = await self.state_manager.create_specialized_state(
-                state_type=StateType.AGENT_FRAMEWORK,
-                name="Agent Framework State",
-                initial_data={
-                    "active_view": ViewType.AGENTIC_CONFIG.value,
-                    "selected_agent": None,
-                    "active_agents": []
-                }
-            )
-    
-    async def get_agents_tree(self) -> Optional[TreeNode]:
-        """Get agent hierarchy as tree structure with state tracking."""
         try:
-            agents = self.persistence_model.agents.list()
+            print("Starting controller initialization...")
+            state_file = StateLoader.get_state_file("agentic_framework_state.json")
+            print(f"Checking state file path: {state_file}")
             
-            # Update agent state
-            if self.agent_state:
-                self.agent_state.active_agents = [agent.id for agent in agents]
-                await self.state_manager._persist_specialized_state(self.agent_state)
+            if not state_file or not state_file.exists():
+                print(f"🔴 Specialized state file not found at {state_file}")
+                # Create initial state file
+                root_dir = StateLoader.get_project_root()
+                state_dir = root_dir / "state" / "specialized"
+                state_dir.mkdir(parents=True, exist_ok=True)
+                
+                initial_state = {
+                    "type": "agent_framework",
+                    "task_context": None,
+                    "frameworks": [],
+                    "tasks": [],
+                    "tasksmanagers": []
+                }
+                
+                state_file = state_dir / "agent_framework_state.json"
+                with open(state_file, 'w') as f:
+                    json.dump(initial_state, f, indent=2)
+                print(f"Created initial state file at: {state_file}")
+
+            print(f"Loading state from: {state_file}")
+            
+            # Read state file content as string
+            with open(state_file, 'r', encoding='utf-8') as f:
+                json_str = f.read()
+            
+            # Create local persistence model and load state from string
+            self.local_persistence = InMemoryPersistenceModel()
+            self.local_persistence.from_json(json_str=json_str)
+            
+            if self.local_persistence:
+                print("Local persistence model created")
+                # Get task context from local persistence
+                task_managers = self.local_persistence.tasksmanagers.list()
+                tasks = self.local_persistence.tasks.list()
+                
+                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find the agentic framework manager and task
+                    agentic_manager = next(
+                        (m for m in task_managers if "Agentic Framework" in m.name),
+                        task_managers[0]
+                    )
+                    agentic_task = next(
+                        (t for t in tasks if t.tasksmanager_id == agentic_manager.id),
+                        None
+                    )
+                    
+                    if agentic_task:
+                        # Update view state with task context
+                        self.view_state.set_active_task(
+                            task_id=agentic_task.id,
+                            task_name=agentic_task.name,
+                            manager_id=agentic_manager.id,
+                            manager_name=agentic_manager.name
+                        )
+                        
+                        # Set agent state using task context
+                        self.agent_state = AgentFrameworkState(
+                            state_type=StateType.AGENT_FRAMEWORK,
+                            name=f"{agentic_manager.name}-{agentic_task.name}",
+                            data={},
+                            metadata=StateMetadata(),
+                            frameworks=[],
+                            task_context={
+                                "task_id": agentic_task.id,
+                                "manager_id": agentic_manager.id
+                            }
+                        )
+                        
+                        # Check for framework configuration in task
+                        if hasattr(agentic_task, 'crewai_info_id') and agentic_task.crewai_info_id:
+                            print("Found CrewAI configuration in task")
+                            # TODO: Load framework configuration from CrewAI info
+                        elif hasattr(agentic_task, 'autogen_config_id') and agentic_task.autogen_config_id:
+                            print("Found Autogen configuration in task")
+                            # TODO: Load framework configuration from Autogen config
+                        
+                        print(f"🟢 Loaded state for {agentic_manager.name}-{agentic_task.name}")
+                    else:
+                        print("🔴 No agentic framework task found")
+                else:
+                    print("🔴 No task context found in state file")
+            else:
+                print("🔴 Failed to create local persistence model")
+                
+        except Exception as e:
+            print(f"Error initializing agentic controller: {str(e)}")
+            raise
+
+    async def get_agent_tree(self) -> Optional[TreeNode]:
+        """Get agentic frameworks as tree structure."""
+        try:
+            if not self.local_persistence:
+                return None
+            
+            # Get frameworks from local persistence
+            frameworks = self.local_persistence.agents.list()
+            if not frameworks:
+                print("No frameworks found in local persistence")
+                return None
             
             # Create root node
-            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Agents", "root")
+            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Frameworks", "root")
             
-            # Create category nodes
-            categories = {
-                "task": TreeNode(UUID('11111111-1111-1111-1111-111111111111'), "Task Agents", "category"),
-                "tool": TreeNode(UUID('22222222-2222-2222-2222-222222222222'), "Tool Agents", "category"),
-                "system": TreeNode(UUID('33333333-3333-3333-3333-333333333333'), "System Agents", "category")
-            }
-            
-            # Add categories to root
-            for category in categories.values():
-                root.children.append(category)
-            
-            # Add agents to appropriate categories
-            for agent in agents:
-                agent_type = agent.metadata.get('type', 'system')
-                node = TreeNode(UUID(agent.id), agent.name, "agent")
-                if agent_type in categories:
-                    categories[agent_type].children.append(node)
-                else:
-                    categories['system'].children.append(node)
+            # Add framework nodes
+            for framework in frameworks:
+                try:
+                    node = TreeNode(
+                        UUID(framework.id), 
+                        framework.name, 
+                        "agentic"
+                    )
+                    root.children.append(node)
+                except Exception as e:
+                    print(f"Error adding framework node: {str(e)}")
             
             return root
             
         except Exception as e:
-            print(f"Error building agents tree: {str(e)}")
+            print(f"Error building frameworks tree: {str(e)}")
             return None
             
     async def handle_chat(self, message: str) -> None:
@@ -98,20 +165,20 @@ class AgenticViewController:
             self.view_state.add_message("assistant", error_msg)
             
     async def _process_agent_command(self, message: str) -> str:
-        """Process agent management commands with state tracking."""
+        """Process agentic management commands with state tracking."""
         try:
             command = message.lower().strip()
             
-            if "create agent" in command:
-                name = command.split("create agent")[-1].strip()
+            if "create agentic" in command:
+                name = command.split("create agentic")[-1].strip()
                 if not name:
                     raise StateValidationError("Agent name is required")
                     
-                agent = await self._create_agent(name)
+                agentic = await self._create_agent(name)
                 if self.agent_state:
-                    self.agent_state.active_agents.append(agent.id)
+                    self.agent_state.active_agents.append(agentic.id)
                     await self.state_manager._persist_specialized_state(self.agent_state)
-                return f"Created agent: {agent.name}"
+                return f"Created agentic: {agentic.name}"
                 
             elif "list agents" in command:
                 agents = await self._get_active_agents()
@@ -121,7 +188,7 @@ class AgenticViewController:
                 
             elif "help" in command:
                 return """Available commands:
-- create agent <name>
+- create agentic <name>
 - list agents
 - help"""
                 
@@ -133,11 +200,11 @@ class AgenticViewController:
             print(f"Command processing error: {str(e)}")
             raise StateError(f"Failed to process command: {str(e)}")
             
-    async def _create_agent(self, name: str) -> Agent:
-        """Create an agent with state tracking."""
+    async def _create_agent(self, name: str) -> Agentic:
+        """Create an agentic with state tracking."""
         try:
-            agent = Agent(name=name)
-            created = self.persistence_model.agents.create(agent)
+            agentic = Agentic(name=name)
+            created = self.persistence_model.agents.create(agentic)
             
             if self.agent_state:
                 await self.state_manager.update_state(
@@ -151,9 +218,9 @@ class AgenticViewController:
             return created
             
         except Exception as e:
-            raise StateError(f"Failed to create agent: {str(e)}")
+            raise StateError(f"Failed to create agentic: {str(e)}")
             
-    async def _get_active_agents(self) -> List[Agent]:
+    async def _get_active_agents(self) -> List[Agentic]:
         """Get active agents from state."""
         if not self.agent_state:
             raise StateNotFoundError("Agent state not initialized")
@@ -167,7 +234,88 @@ class AgenticViewController:
         except Exception as e:
             raise StateError(f"Failed to get active agents: {str(e)}")
             
-    def show_agent_dialog(self) -> Optional[Dict[str, Any]]:
-        """Show dialog for creating/editing agents."""
-        dialog = AgentDialog(self.view_state)
-        return dialog.render()
+    
+    async def handle_node_click(self, node: TreeNode):
+        """Handle click events on tree nodes."""
+        try:
+            if not node:
+                return
+                
+            # Update selected node in view state
+            self.view_state.selected_node_id = node.id
+            
+            # Handle different node types
+            if node.node_type == "agentic":
+                # Load agentic details in the main content area
+                agentic = await self.persistence_model.agents.read(node.id)
+                if agentic:
+                    self.view_state.selected_agentic = agentic
+                    
+            elif node.node_type == "group":
+                # Clear selected agentic when group is selected
+                self.view_state.selected_agentic = None
+                # Load group details if needed
+                group = await self.persistence_model.agent_groups.read(node.id)
+                if group:
+                    self.view_state.selected_group = group
+                    
+            # Update state
+            if self.agent_state:
+                await self.state_manager.update_state(
+                    self.agent_state.id,
+                    {"selected_node": node.id}
+                )
+                
+        except Exception as e:
+            import streamlit as st
+            st.error(f"Error handling node click: {str(e)}")
+            
+    async def refresh_view(self):
+        """Refresh the view state."""
+        try:
+            # Reload tree data
+            tree_data = await self.tree_provider.get_tree_data()
+            self.view_state.tree_data = tree_data
+            
+            # Reload selected items if any
+            if self.view_state.selected_node_id:
+                node = next(
+                    (n for n in tree_data if n.id == self.view_state.selected_node_id),
+                    None
+                )
+                if node:
+                    await self.handle_node_click(node)
+                    
+        except Exception as e:
+            import streamlit as st
+            st.error(f"Error refreshing view: {str(e)}")
+            
+    async def handle_agent_save(self, agentic: Agentic):
+        """Handle saving of agentic configuration."""
+        try:
+            if not agentic.id:
+                # Create new agentic
+                agent_id = await self.persistence_model.agents.create(agentic)
+                agentic.id = agent_id
+            else:
+                # Update existing agentic
+                await self.persistence_model.agents.update(agentic.id, agentic)
+                
+            # Refresh view
+            await self.refresh_view()
+            
+            # Update state
+            if self.agent_state:
+                await self.state_manager.update_state(
+                    self.agent_state.id,
+                    {"last_modified_agent": str(agentic.id)}
+                )
+                
+        except Exception as e:
+            import streamlit as st
+            st.error(f"Error saving agentic: {str(e)}")
+            
+    def handle_agent_cancel(self):
+        """Handle cancellation of agentic configuration."""
+        self.view_state.selected_agentic = None
+        self.view_state.selected_node_id = None

@@ -1,0 +1,27 @@
+{
+  "id": "e0deb575-db03-4ac0-ad45-e7619e9cf1fd",
+  "state_type": "tool_management",
+  "name": "Test Tool State",
+  "data": {
+    "active_view": "tools_catalog",
+    "selected_tool": null,
+    "tool_templates": {},
+    "registered_tools": [],
+    "active_tools": [],
+    "last_created_tool": null,
+    "total_tools": 0
+  },
+  "metadata": {
+    "created_at": "2024-12-16 20:56:45.034932",
+    "updated_at": "2024-12-16 20:56:45.034935",
+    "version": "1.0.0",
+    "tags": [],
+    "description": null
+  },
+  "parent_id": null,
+  "tool_templates": {},
+  "registered_tools": [],
+  "active_tools": [],
+  "last_created_tool": null,
+  "total_tools": 0
+}

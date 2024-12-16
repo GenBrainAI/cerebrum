@@ -5,13 +5,17 @@ from server.views.controllers.task_view_controller import TaskHierarchyControlle
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from server.views.components.tree_component import TreeComponent
 from server.views.components.header import render_header
+from server.views.components.sidebar.task_hierarchy_sidebar import render_task_hierarchy_sidebar
 
 async def render_task_hierarchy_view():
     """Render the task hierarchy view."""
     # Initialize controller if needed
     if 'task_controller' not in st.session_state:
+        print("Initializing task controller...")
         persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-        st.session_state.task_controller = TaskHierarchyController(persistence_model)
+        controller = TaskHierarchyController(persistence_model)
+        await controller.initialize()
+        st.session_state.task_controller = controller
     
     # Initialize tree component if needed
     if 'task_tree' not in st.session_state:
@@ -19,12 +23,8 @@ async def render_task_hierarchy_view():
             on_node_click=st.session_state.task_controller.handle_node_click
         )
     
-    # Sidebar - Tree Component
-    with st.sidebar:
-        st.subheader("Task Hierarchy")
-        tree_data = await st.session_state.task_controller.get_task_tree()
-        if tree_data:
-            st.session_state.task_tree.render(tree_data)
+    # Render sidebar showing state context and tasks
+    await render_task_hierarchy_sidebar()
     
     # Main content - Chat
     render_header(

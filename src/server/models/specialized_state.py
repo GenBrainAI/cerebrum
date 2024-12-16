@@ -3,11 +3,12 @@ from datetime import datetime
 from pydantic import BaseModel, Field, validator
 from enum import Enum
 from uuid import UUID, uuid4
+from dataclasses import dataclass, field
 
 class StateType(str, Enum):
     TASK_GENERATION = "task_generation"
-    TOOL_GENERATION = "tool_generation"
-    AGENTIC_FRAMEWORK = "agentic_framework"
+    TOOL_MANAGEMENT = "tool_management"
+    AGENT_FRAMEWORK = "agent_framework"
 
 class StateMetadata(BaseModel):
     """Metadata for state tracking"""
@@ -31,8 +32,8 @@ class SpecializedState(BaseModel):
         """Validate state type matches the class."""
         expected_type = {
             TaskGenerationState: StateType.TASK_GENERATION,
-            ToolGenerationState: StateType.TOOL_GENERATION,
-            AgenticFrameworkState: StateType.AGENTIC_FRAMEWORK
+            ToolManagementState: StateType.TOOL_MANAGEMENT,
+            AgentFrameworkState: StateType.AGENT_FRAMEWORK
         }.get(cls)
         
         if expected_type and v != expected_type:
@@ -48,13 +49,42 @@ class TaskGenerationState(SpecializedState):
     """State for task generation processes"""
     task_templates: Dict[str, Any] = Field(default_factory=dict)
     active_tasks: List[str] = Field(default_factory=list)
+    last_created_task: Optional[str] = None
+    total_tasks: int = 0
     
-class ToolGenerationState(SpecializedState):
-    """State for tool generation processes"""
+class ToolManagementState(SpecializedState):
+    """State for tool management processes"""
     tool_templates: Dict[str, Any] = Field(default_factory=dict)
     registered_tools: List[str] = Field(default_factory=list)
+    active_tools: List[str] = Field(default_factory=list)
+    last_created_tool: Optional[str] = None
+    total_tools: int = 0
 
-class AgenticFrameworkState(SpecializedState):
-    """State for agentic framework configuration"""
-    framework_config: Dict[str, Any] = Field(default_factory=dict)
-    active_agents: List[str] = Field(default_factory=list) 
+class AgentFrameworkState(SpecializedState):
+    """Specialized state for agent framework configuration."""
+    active_view: str = Field(default="agentic_config")
+    selected_agentic: Optional[Dict[str, Any]] = Field(default=None)
+    frameworks: List[Any] = Field(default_factory=list)
+    task_context: Dict[str, Any] = Field(default_factory=dict)
+
+    def get_frameworks(self) -> List[Dict[str, Any]]:
+        """Get list of configured frameworks."""
+        return self.frameworks
+
+    def add_framework(self, framework: Dict[str, Any]) -> None:
+        """Add a new framework configuration."""
+        self.frameworks.append(framework)
+
+    def update_task_context(self, task_id: str, manager_id: str) -> None:
+        """Update the task context."""
+        self.task_context = {
+            "task_id": task_id,
+            "manager_id": manager_id
+        }
+
+    def clear_task_context(self) -> None:
+        """Clear the task context."""
+        self.task_context = {}
+
+    class Config:
+        arbitrary_types_allowed = True

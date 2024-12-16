@@ -162,3 +162,11 @@ test_context_db/**
 
 test_persistent_state/vector_store/
 test_persistent_state/vector_store/**
+
+state/views/specialized/agent_framework
+state/views/specialized/task_generation
+state/views/specialized/tool_management
+state/views/specialized/agent_framework/**
+state/views/specialized/task_generation/**
+state/views/specialized/tool_management/**
+

@@ -1,64 +1,49 @@
 # src/server/views/components/sidebar/agentic_config_sidebar.py
 import streamlit as st
 from ...models.view_state import ViewState
+from ...models.view_types import ViewType
 
 class AgenticConfigSidebar:
     def __init__(self, view_state: ViewState):
         self.view_state = view_state
 
-    def render(self):
+    async def render(self):
         """Render agentic configuration sidebar."""
-        st.subheader("Agent Configuration")
+        st.sidebar.subheader("Agentic Framework")
         
-        # Add new agent role
-        if st.button("New Agent Role", use_container_width=True):
-            self.view_state.show_dialog = True
-            self.view_state.dialog_type = "new_role"
-        
-        # Add new workflow
-        if st.button("New Workflow", use_container_width=True):
-            self.view_state.show_dialog = True
-            self.view_state.dialog_type = "new_workflow"
-        
-        # Configuration templates
-        st.markdown("---")
-        st.subheader("Templates")
-        
-        template_type = st.selectbox(
-            "Template Type",
-            ["Role Templates", "Workflow Templates"]
-        )
-        
-        if template_type == "Role Templates":
-            templates = ["Researcher", "Writer", "Analyst", "Custom"]
-            selected = st.selectbox("Select Template", templates)
-            if selected and st.button("Use Template"):
-                self.view_state.show_dialog = True
-                self.view_state.dialog_type = "new_role"
-                self.view_state.template = selected
+        # Get state status from controller
+        controller = st.session_state.agentic_controller
+        if controller.local_persistence:
+            status = controller.view_state.task_status
+            if status["loaded"]:
+                st.sidebar.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
+                st.sidebar.markdown("**State:** Agentic Framework loaded")
+            else:
+                st.sidebar.markdown("🔴 State loaded but no task context found")
         else:
-            templates = ["Sequential", "Parallel", "Conditional", "Custom"]
-            selected = st.selectbox("Select Template", templates)
-            if selected and st.button("Use Template"):
-                self.view_state.show_dialog = True
-                self.view_state.dialog_type = "new_workflow"
-                self.view_state.template = selected
+            st.sidebar.markdown("🔴 No framework state loaded")
         
-        # Import/Export section
-        st.markdown("---")
-        st.subheader("Import/Export")
+        st.sidebar.markdown("---")
         
-        if st.button("Import Configuration", use_container_width=True):
-            st.file_uploader("Upload Config File", type=["json", "yaml"])
-        
-        if st.button("Export Configuration", use_container_width=True):
-            # TODO: Implement export functionality
-            pass
+        # Show frameworks tree
+        if hasattr(st.session_state, 'agent_tree'):
+            try:
+                tree_data = await st.session_state.agentic_controller.get_agent_tree()
+                if tree_data:
+                    with st.sidebar:
+                        st.session_state.agent_tree.render(tree_data)
+                else:
+                    st.sidebar.info("No frameworks configured in current state")
+            except Exception as e:
+                st.sidebar.error(f"Error loading frameworks: {str(e)}")
 
-def render_agentic_config_sidebar():
+async def render_agentic_config_sidebar():
     """Render sidebar content for agentic configuration view."""
     if 'agentic_sidebar' not in st.session_state:
         st.session_state.agentic_sidebar = AgenticConfigSidebar(
             st.session_state.agentic_controller.view_state
         )
-    st.session_state.agentic_sidebar.render()
+    
+    with st.sidebar:
+        st.session_state.current_view = ViewType.AGENTIC_CONFIG
+        await st.session_state.agentic_sidebar.render()
