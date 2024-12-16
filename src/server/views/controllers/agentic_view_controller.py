@@ -1,159 +1,173 @@
 # src/server/views/controllers/agentic_view_controller.py
 from typing import Optional, Dict, Any, List
 from uuid import UUID
+from datetime import datetime
+from ...models.exceptions import StateError, StateNotFoundError
+from ...models.agent import Agent
 from ..models.view_state import ViewState
 from ..models.view_types import ViewType
+from ...models.specialized_state import StateType, AgentFrameworkState
+from ..data.agent_tree_provider import AgentTreeProvider
+from ..components.dialogs.agent_dialog import AgentDialog
+from ..state.state_manager import ViewStateManager
 from ..components.tree_component import TreeNode
-from datetime import datetime
+from ...utils.state_loader import StateLoader
 
 class AgenticViewController:
-    """Controller for agentic configuration view."""
+    """Controller for agentic configuration view with specialized state support."""
     
     def __init__(self, persistence_model):
         self.persistence_model = persistence_model
         self.view_state = ViewState(view_type=ViewType.AGENTIC_CONFIG)
+        self.tree_provider = AgentTreeProvider(persistence_model)
+        self.state_manager = ViewStateManager(persistence_model)
+        self.agent_state: Optional[AgentFrameworkState] = None
         
-    async def get_agent_tree(self) -> Optional[TreeNode]:
-        """Get agent configurations as tree structure."""
+        # Load existing state
+        state_ids = StateLoader.get_state_ids("agentic_framework")
+        if state_ids:
+            self.agentic_manager_id = state_ids["agentic_manager_id"]
+            self.task_id = state_ids["task_id"]
+        
+    async def initialize(self):
+        """Initialize controller with specialized state."""
+        # Try to load existing state first
+        state_file = StateLoader.get_state_file("agentic_framework")
+        if state_file and state_file.exists():
+            self.agent_state = await self.state_manager.load_specialized_state(state_file)
+        
+        # Create new state if none exists
+        if not self.agent_state:
+            self.agent_state = await self.state_manager.create_specialized_state(
+                state_type=StateType.AGENT_FRAMEWORK,
+                name="Agent Framework State",
+                initial_data={
+                    "active_view": ViewType.AGENTIC_CONFIG.value,
+                    "selected_agent": None,
+                    "active_agents": []
+                }
+            )
+    
+    async def get_agents_tree(self) -> Optional[TreeNode]:
+        """Get agent hierarchy as tree structure with state tracking."""
         try:
+            agents = self.persistence_model.agents.list()
+            
+            # Update agent state
+            if self.agent_state:
+                self.agent_state.active_agents = [agent.id for agent in agents]
+                await self.state_manager._persist_specialized_state(self.agent_state)
+            
             # Create root node
             root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Agents", "root")
             
-            # Create category nodes with metadata
-            roles = TreeNode(
-                UUID('11111111-1111-1111-1111-111111111111'), 
-                "Roles", 
-                "category",
-                {"description": "Agent roles and capabilities"}
-            )
-            workflows = TreeNode(
-                UUID('22222222-2222-2222-2222-222222222222'), 
-                "Workflows", 
-                "category",
-                {"description": "Agent workflow configurations"}
-            )
-            configs = TreeNode(
-                UUID('33333333-3333-3333-3333-333333333333'), 
-                "Configurations", 
-                "category",
-                {"description": "General agent configurations"}
-            )
+            # Create category nodes
+            categories = {
+                "task": TreeNode(UUID('11111111-1111-1111-1111-111111111111'), "Task Agents", "category"),
+                "tool": TreeNode(UUID('22222222-2222-2222-2222-222222222222'), "Tool Agents", "category"),
+                "system": TreeNode(UUID('33333333-3333-3333-3333-333333333333'), "System Agents", "category")
+            }
             
             # Add categories to root
-            root.children.extend([roles, workflows, configs])
+            for category in categories.values():
+                root.children.append(category)
             
-            # Get agent configurations from persistence model
-            if hasattr(self.persistence_model, 'agent_configs'):
-                agent_configs = self.persistence_model.agent_configs.list()
-                
-                for config in agent_configs:
-                    config_type = config.metadata.get('type', 'config')
-                    node = TreeNode(
-                        UUID(config.id), 
-                        config.name, 
-                        config_type,
-                        config.metadata
-                    )
-                    
-                    # Add to appropriate category
-                    if config_type == 'role':
-                        roles.children.append(node)
-                    elif config_type == 'workflow':
-                        workflows.children.append(node)
-                    else:
-                        configs.children.append(node)
+            # Add agents to appropriate categories
+            for agent in agents:
+                agent_type = agent.metadata.get('type', 'system')
+                node = TreeNode(UUID(agent.id), agent.name, "agent")
+                if agent_type in categories:
+                    categories[agent_type].children.append(node)
+                else:
+                    categories['system'].children.append(node)
             
             return root
             
         except Exception as e:
-            print(f"Error building agent tree: {str(e)}")
+            print(f"Error building agents tree: {str(e)}")
             return None
             
-    async def handle_chat(self, message: str) -> str:
-        """Process chat messages for agent configuration."""
+    async def handle_chat(self, message: str) -> None:
+        """Handle chat messages with state tracking."""
         try:
-            # Add message to chat history
-            self.view_state.chat_history.append({
-                "role": "user",
-                "content": message
-            })
+            response = await self._process_agent_command(message)
+            self.view_state.add_message("user", message)
+            self.view_state.add_message("assistant", response)
+        except Exception as e:
+            error_msg = f"Error processing message: {str(e)}"
+            self.view_state.add_message("assistant", error_msg)
             
-            # Process the command
-            response = await self._process_config_command(message)
+    async def _process_agent_command(self, message: str) -> str:
+        """Process agent management commands with state tracking."""
+        try:
+            command = message.lower().strip()
             
-            # Add response to chat history
-            self.view_state.chat_history.append({
-                "role": "assistant",
-                "content": response
-            })
+            if "create agent" in command:
+                name = command.split("create agent")[-1].strip()
+                if not name:
+                    raise StateValidationError("Agent name is required")
+                    
+                agent = await self._create_agent(name)
+                if self.agent_state:
+                    self.agent_state.active_agents.append(agent.id)
+                    await self.state_manager._persist_specialized_state(self.agent_state)
+                return f"Created agent: {agent.name}"
+                
+            elif "list agents" in command:
+                agents = await self._get_active_agents()
+                if not agents:
+                    return "No active agents found"
+                return "Active agents:\n" + "\n".join(f"- {a.name}" for a in agents)
+                
+            elif "help" in command:
+                return """Available commands:
+- create agent <name>
+- list agents
+- help"""
+                
+            return f"Unknown command. Type 'help' for available commands."
             
-            return response
+        except StateError as e:
+            raise
+        except Exception as e:
+            print(f"Command processing error: {str(e)}")
+            raise StateError(f"Failed to process command: {str(e)}")
+            
+    async def _create_agent(self, name: str) -> Agent:
+        """Create an agent with state tracking."""
+        try:
+            agent = Agent(name=name)
+            created = self.persistence_model.agents.create(agent)
+            
+            if self.agent_state:
+                await self.state_manager.update_state(
+                    self.agent_state.id,
+                    {
+                        "last_created_agent": created.id,
+                        "total_agents": len(self.agent_state.active_agents) + 1
+                    }
+                )
+            
+            return created
             
         except Exception as e:
-            return f"Error processing message: {str(e)}"
+            raise StateError(f"Failed to create agent: {str(e)}")
             
-    async def _process_config_command(self, message: str) -> str:
-        """Process configuration management commands."""
+    async def _get_active_agents(self) -> List[Agent]:
+        """Get active agents from state."""
+        if not self.agent_state:
+            raise StateNotFoundError("Agent state not initialized")
+            
         try:
-            # Basic command processing
-            message = message.lower().strip()
-            
-            if "create role" in message:
-                # Extract role name and details
-                name = message.split("create role")[-1].strip()
-                if name:
-                    config = {
-                        "name": name,
-                        "type": "role",
-                        "metadata": {
-                            "created_at": str(datetime.now()),
-                            "type": "role"
-                        }
-                    }
-                    if hasattr(self.persistence_model, 'agent_configs'):
-                        self.persistence_model.agent_configs.create(config)
-                        return f"Created new agent role: {name}"
-                return "Please specify a name for the role"
-                
-            elif "create workflow" in message:
-                # Extract workflow name and details
-                name = message.split("create workflow")[-1].strip()
-                if name:
-                    config = {
-                        "name": name,
-                        "type": "workflow",
-                        "metadata": {
-                            "created_at": str(datetime.now()),
-                            "type": "workflow"
-                        }
-                    }
-                    if hasattr(self.persistence_model, 'agent_configs'):
-                        self.persistence_model.agent_configs.create(config)
-                        return f"Created new workflow: {name}"
-                return "Please specify a name for the workflow"
-                
-            elif "list" in message:
-                # List existing configurations
-                if hasattr(self.persistence_model, 'agent_configs'):
-                    configs = self.persistence_model.agent_configs.list()
-                    if configs:
-                        return "Existing configurations:\n" + "\n".join(
-                            f"- {c.name} ({c.metadata.get('type', 'config')})"
-                            for c in configs
-                        )
-                return "No configurations found"
-                
-            return "Available commands:\n- create role <name>\n- create workflow <name>\n- list"
-            
+            return [
+                self.persistence_model.agents.get(agent_id)
+                for agent_id in self.agent_state.active_agents
+                if self.persistence_model.agents.get(agent_id)
+            ]
         except Exception as e:
-            return f"Error processing command: {str(e)}"
+            raise StateError(f"Failed to get active agents: {str(e)}")
             
-    def handle_node_click(self, node: TreeNode):
-        """Handle tree node click events."""
-        self.view_state.selected_node = node.id
-        if node.type in ["role", "workflow", "config"]:
-            # Store metadata in view state
-            self.view_state.selected_node_metadata = node.metadata
-            # Show configuration dialog
-            if hasattr(self, 'show_config_dialog'):
-                self.show_config_dialog()
+    def show_agent_dialog(self) -> Optional[Dict[str, Any]]:
+        """Show dialog for creating/editing agents."""
+        dialog = AgentDialog(self.view_state)
+        return dialog.render()
