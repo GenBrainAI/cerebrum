@@ -1,0 +1,15 @@
+from enum import Enum
+from typing import Dict, Any, Optional
+from dataclasses import dataclass
+
+class ViewType(Enum):
+    TASK_HIERARCHY = "task_hierarchy"
+    TOOLS_CATALOG = "tools_catalog"
+    AGENTIC_CONFIG = "agentic_config"
+
+@dataclass
+class ViewMetadata:
+    title: str
+    description: str
+    task_id: Optional[str] = None
+    manager_id: Optional[str] = None

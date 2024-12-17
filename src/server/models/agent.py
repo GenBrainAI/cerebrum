@@ -5,7 +5,9 @@ from datetime import datetime
 # from autogen.agentchat.contrib.retrieve_assistant_agent import RetrieveAssistantAgent
 # from autogen.agentchat.contrib.retrieve_user_proxy_agent import RetrieveUserProxyAgent
 # from autogen.agentchat.contrib.math_user_proxy_agent import MathUserProxyAgent
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+from dataclasses import dataclass, field
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -153,141 +155,73 @@ class CrewAIConfig(BaseModel):
 #     else:
 #         raise ValueError(f"Unsupported agent type: {agent_type}")
 
+@dataclass
+class Role:
+    """Represents a role with associated capabilities and permissions."""
+    name: str
+    description: str
+    capabilities: List[str] = field(default_factory=list)
+    permissions: List[str] = field(default_factory=list)
 
-# Example JSON configuration for testing
-config_json = """
-{
-    "agents": [
-        {
-            "name": "Assistant_1",
-            "type": "AssistantAgent",
-            "llm_config": {
-                "timeout": 600,
-                "seed": 42,
-                "config_list": [
-                    {"model": "example_model"}
-                ]
-            }
-        },
-        {
-            "name": "Assistant_2",
-            "type": "AssistantAgent",
-            "llm_config": {
-                "timeout": 600,
-                "seed": 42,
-                "config_list": [
-                    {"model": "example_model"}
-                ]
-            }
-        },
-        {
-            "name": "Writer",
-            "type": "AssistantAgent",
-            "system_message": "You are a professional writer, known for your insightful and engaging articles. You transform complex concepts into compelling narratives.",
-            "llm_config": {
-                "timeout": 600,
-                "seed": 42,
-                "config_list": [
-                    {"model": "example_model"}
-                ]
-            }
-        },
-        {
-            "name": "Reviewer",
-            "type": "AssistantAgent",
-            "system_message": "You are a compliance reviewer, known for your thoroughness and commitment to standards. Your task is to scrutinize content for any harmful elements or regulatory violations, ensuring all materials align with required guidelines. You must review carefully, identify potential issues, and maintain the integrity of the organization. Your role demands fairness, a deep understanding of regulations, and a focus on protecting against harm while upholding a culture of responsibility.",
-            "llm_config": {
-                "timeout": 600,
-                "seed": 42,
-                "config_list": [
-                    {"model": "example_model"}
-                ]
-            }
-        },
-        {
-            "name": "User",
-            "type": "UserProxyAgent",
-            "human_input_mode": "NEVER",
-            "is_termination_msg": "lambda x: x.get('content', '').find('TERMINATE') >= 0",
-            "code_execution_config": {
-                "last_n_messages": 1,
-                "work_dir": "tasks",
-                "use_docker": false
-            }
+@dataclass
+class Agentic:
+    """
+    Represents an agentic entity with defined roles, capabilities, and configurations.
+    An agentic is an agent with specific roles and responsibilities.
+    """
+    name: str
+    description: str
+    id: UUID = field(default_factory=uuid4)
+    role: Optional[Role] = None
+    config: Dict[str, Any] = field(default_factory=dict)
+
+    def set_role(self, name: str, description: str, capabilities: List[str], permissions: List[str]) -> None:
+        """Set or update the role of the agentic."""
+        self.role = Role(
+            name=name,
+            description=description,
+            capabilities=capabilities,
+            permissions=permissions
+        )
+
+    def update_config(self, config: Dict[str, Any]) -> None:
+        """Update the configuration dictionary."""
+        self.config.update(config)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the agentic to a dictionary representation."""
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "role": {
+                "name": self.role.name,
+                "description": self.role.description,
+                "capabilities": self.role.capabilities,
+                "permissions": self.role.permissions
+            } if self.role else None,
+            "config": self.config
         }
-    ],
-    "tasks": [
-        {
-            "chat_id": 1,
-            "recipient": {
-                "name": "Assistant_1",
-                "type": "AssistantAgent",
-                "llm_config": {
-                    "timeout": 600,
-                    "seed": 42,
-                    "config_list": [
-                        {"model": "example_model"}
-                    ]
-                }
-            },
-            "message": "What are the current stock prices of NVDA and TESLA, and how is the performance over the past month in terms of percentage change?",
-            "silent": false,
-            "summary_method": "reflection_with_llm"
-        },
-        {
-            "chat_id": 2,
-            "prerequisites": [1],
-            "recipient": {
-                "name": "Assistant_2",
-                "type": "AssistantAgent",
-                "llm_config": {
-                    "timeout": 600,
-                    "seed": 42,
-                    "config_list": [
-                        {"model": "example_model"}
-                    ]
-                }
-            },
-            "message": "Investigate possible reasons of the stock performance.",
-            "silent": false,
-            "summary_method": "reflection_with_llm"
-        },
-        {
-            "chat_id": 3,
-            "prerequisites": [1],
-            "recipient": {
-                "name": "Assistant_1",
-                "type": "AssistantAgent",
-                "llm_config": {
-                    "timeout": 600,
-                    "seed": 42,
-                    "config_list": [
-                        {"model": "example_model"}
-                    ]
-                }
-            },
-            "message": "What are the possible future trends for these stocks?",
-            "silent": false,
-            "summary_method": "reflection_with_llm"
-        },
-        {
-            "chat_id": 4,
-            "prerequisites": [1, 2, 3],
-            "recipient": {
-                "name": "Writer",
-                "type": "AssistantAgent",
-                "system_message": "You are a professional writer, known for your insightful and engaging articles. You transform complex concepts into compelling narratives.",
-                "llm_config": {
-                    "timeout": 600,
-                    "seed": 42,
-                    "config_list": [
-                        {"model": "example_model"}
-                    ]
-                }
-            },
-            "message": "Develop an engaging blog post using any information provided.",
-            "carryover": "I want to include a figure or a table of data in the blogpost."
-        }
-    ]
-}
-"""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Agentic':
+        """Create an Agentic instance from a dictionary."""
+        agentic = cls(
+            name=data["name"],
+            description=data["description"],
+        )
+        agentic.id = UUID(data["id"]) if isinstance(data["id"], str) else data["id"]
+        
+        if data.get("role"):
+            agentic.set_role(
+                name=data["role"]["name"],
+                description=data["role"]["description"],
+                capabilities=data["role"]["capabilities"],
+                permissions=data["role"]["permissions"]
+            )
+        
+        if data.get("config"):
+            agentic.config = data["config"]
+            
+        return agentic
+

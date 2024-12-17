@@ -1,0 +1,23 @@
+{
+  "task_management": {
+    "state_file": "specialized/task_management_state.json",
+    "ids": {
+      "task_manager_id": "dbb0b25f-0a26-4272-a821-3ad9d86f5698",
+      "task_id": "777ba673-6806-4411-9aef-70acb0480f67"
+    }
+  },
+  "tools_management": {
+    "state_file": "specialized/tools_management_state.json",
+    "ids": {
+      "tools_manager_id": "8bfa1fbd-aed0-40ac-9520-0304f13e9209",
+      "task_id": "4d8af869-1826-4795-ba36-d456c37e1cb8"
+    }
+  },
+  "agentic_framework": {
+    "state_file": "specialized/agentic_framework_state.json",
+    "ids": {
+      "agentic_manager_id": "42234191-afe7-4345-a247-1c5813f13b95",
+      "task_id": "c9d5dfed-c37e-4e43-8c87-dd03191d8259"
+    }
+  }
+}

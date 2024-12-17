@@ -635,7 +635,7 @@ class VectorStore:
 
 
     async def get_index_contents(self, index_name: str) -> List[Dict[str, Any]]:
-        """Get all files stored in a specific index, grouped by root files."""
+        """Get all files stored in a specific index, including root files and chunks."""
         try:
             self._reload_indices()
             self._ensure_collection(index_name)
@@ -646,36 +646,19 @@ class VectorStore:
             if not results['ids']:
                 return []
             
-            # Group chunks by file_id
-            file_groups = {}
+            # Create a list of all documents (both root and chunks)
+            contents = []
             for doc_id, doc, meta in zip(results['ids'], results['documents'], results['metadatas']):
-                file_id = meta.get('file_id')
-                if file_id:
-                    if file_id not in file_groups:
-                        # Initialize group with root metadata if this is a root chunk
-                        if meta.get('is_root', False):
-                            file_groups[file_id] = {
-                                "id": doc_id,
-                                "content": doc,
-                                "metadata": {
-                                    **meta,
-                                    "chunks": []
-                                }
-                            }
-                    else:
-                        # Add non-root chunks to the chunks list
-                        if not meta.get('is_root', False):
-                            file_groups[file_id]["metadata"]["chunks"].append({
-                                "id": doc_id,
-                                "content": doc,
-                                "metadata": meta
-                            })
+                contents.append({
+                    "id": doc_id,
+                    "content": doc,
+                    "metadata": meta
+                })
             
-            # Convert groups to list and sort by added_at
-            contents = list(file_groups.values())
+            # Sort by added_at if available
             contents.sort(key=lambda x: x["metadata"].get("added_at", ""), reverse=True)
             
-            logging.info(f"Retrieved {len(contents)} root files from index {index_name}")
+            logging.info(f"Retrieved {len(contents)} files from index {index_name}")
             return contents
             
         except Exception as e:

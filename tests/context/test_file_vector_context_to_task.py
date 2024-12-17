@@ -205,11 +205,18 @@ async def test_vector_store_file_processing(vector_store):
     # Verify metadata
     for content in contents:
         assert content.get("metadata", {}).get("original_name") == mock_file.name
-        assert "chunk_index" in content.get("metadata", {}), "Each chunk should have a chunk_index"
-        assert "total_chunks" in content.get("metadata", {}), "Each chunk should have total_chunks count"
-        assert content.get("metadata", {}).get("total_chunks") == len(chunk_ids)
-        assert isinstance(content.get("metadata", {}).get("chunk_index"), int), "chunk_index should be an integer"
-        assert 0 <= content.get("metadata", {}).get("chunk_index") < len(chunk_ids), "chunk_index should be within bounds"
+        
+        # Check if this is a root chunk
+        if content.get("metadata", {}).get("is_root", False):
+            assert "total_chunks" in content.get("metadata", {}), "Root chunk should have total_chunks count"
+            assert content.get("metadata", {}).get("total_chunks") == len(chunk_ids) - 1  # Subtract 1 for root chunk
+            assert "original_text_length" in content.get("metadata", {}), "Root chunk should have original_text_length"
+        else:
+            assert "chunk_index" in content.get("metadata", {}), "Non-root chunks should have a chunk_index"
+            assert "total_chunks" in content.get("metadata", {}), "Non-root chunks should have total_chunks count"
+            assert content.get("metadata", {}).get("total_chunks") == len(chunk_ids) - 1  # Subtract 1 for root chunk
+            assert isinstance(content.get("metadata", {}).get("chunk_index"), int), "chunk_index should be an integer"
+            assert 0 <= content.get("metadata", {}).get("chunk_index") < len(chunk_ids) - 1, "chunk_index should be within bounds"
 
 @pytest.mark.asyncio
 async def test_vector_context_in_task(vector_store: VectorStore, 
