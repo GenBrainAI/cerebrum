@@ -14,12 +14,6 @@ class AgenticConfigSidebar:
         with st.sidebar:
             st.header("Agentic Frameworks")
             
-            # Debug prints
-            print("🔍 Rendering agentic sidebar...")
-            print(f"Controller exists: {self.controller is not None}")
-            if self.controller:
-                print(f"Local persistence exists: {self.controller.local_persistence is not None}")
-            
             # Get state status from controller
             if self.controller and self.controller.local_persistence:
                 status = self.controller.view_state.task_status

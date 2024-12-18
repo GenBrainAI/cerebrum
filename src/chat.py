@@ -71,6 +71,8 @@ def load_state(state_path: Optional[str] = None):
                 state_name=os.path.basename(state_path)
             )
             
+            print(f"📥 Loading state from: {state_path}")
+            
             # Store location in session state
             st.session_state.state_location = location
             
@@ -78,12 +80,19 @@ def load_state(state_path: Optional[str] = None):
             json_str = load_from_storage(location)
             state_data = json.loads(json_str)
             
+            # Debug state content
+            print("\n📋 State content summary:")
+            if 'tasksmanagers' in state_data:
+                print(f"Task Managers in state: {len(json.loads(state_data['tasksmanagers']))}")
+            if 'tasks' in state_data:
+                print(f"Tasks in state: {len(json.loads(state_data['tasks']))}")
+            
             # Load context state if present
             if 'context_state' in state_data:
                 context_provider = ContextProvider()
                 context_provider.load_state(state_data['context_state'])
             
-            return f"Successfully loaded state from {state_path} with length {len(json_str)}"
+            return f"Successfully loaded state from {state_path}"
         return "No state file specified"
     except Exception as e:
         if state_path == "state/default_state.json":
@@ -370,6 +379,8 @@ def load_state(state_path: Optional[str] = None):
                 state_name=os.path.basename(state_path)
             )
             
+            print(f"📥 Loading state from: {state_path}")
+            
             # Store location in session state
             st.session_state.state_location = location
             
@@ -377,12 +388,19 @@ def load_state(state_path: Optional[str] = None):
             json_str = load_from_storage(location)
             state_data = json.loads(json_str)
             
+            # Debug state content
+            print("\n📋 State content summary:")
+            if 'tasksmanagers' in state_data:
+                print(f"Task Managers in state: {len(json.loads(state_data['tasksmanagers']))}")
+            if 'tasks' in state_data:
+                print(f"Tasks in state: {len(json.loads(state_data['tasks']))}")
+            
             # Load context state if present
             if 'context_state' in state_data:
                 context_provider = ContextProvider()
                 context_provider.load_state(state_data['context_state'])
             
-            return f"Successfully loaded state from {state_path} with length {len(json_str)}"
+            return f"Successfully loaded state from {state_path}"
         return "No state file specified"
     except Exception as e:
         if state_path == "state/default_state.json":
@@ -588,7 +606,7 @@ def render_chat_management_sidebar():
         # TaskManager selection
         tm_options = {tm.name: tm.id for tm in tasksmanagers}
         selected_tm = st.selectbox(
-            "Select Chat",
+            "Select Task Manager",
             options=list(tm_options.keys()),
             key="tm_selector",
             on_change=on_tm_select

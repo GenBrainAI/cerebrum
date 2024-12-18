@@ -131,7 +131,7 @@ class AgenticViewController:
         """Get agentic frameworks as tree structure."""
         try:
             # Use global persistence to get crewai configs
-            crewai_configs = self.global_persistence.crewai_configs.list()
+            crewai_configs = self.global_persistence.crewai_config.list()
             if not crewai_configs:
                 print("No CrewAI configurations found")
                 return None

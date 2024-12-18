@@ -21,66 +21,69 @@ class TaskHierarchyController:
         self.global_persistence = persistence_model
         self.view_state = ViewState(view_type=ViewType.TASK_HIERARCHY)
         self.state_manager = ViewStateManager(persistence_model)
-        self.local_persistence = None
         self.task_state = None
         self.tree_component = TreeSelectComponent(self.handle_node_click)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            print("Starting controller initialization...")
-            state_file = StateLoader.get_state_file("task_management_state.json")
-            print(f"Checking state file path: {state_file}")
+            print("🔍 Starting task controller initialization...")
             
-            if not state_file or not state_file.exists():
-                print(f"🔴 Specialized state file not found at {state_file}")
-                return
-
-            print(f"Loading state from: {state_file}")
+            # Debug current persistence model state
+            print("📊 Current global persistence state:")
+            task_managers = self.global_persistence.tasksmanagers.list()
+            tasks = self.global_persistence.tasks.list()
             
-            # Read state file content as string
-            with open(state_file, 'r', encoding='utf-8') as f:
-                json_str = f.read()
+            print(f"Task Managers: {len(task_managers)}")
+            for tm in task_managers:
+                print(f"  - {tm.name} ({tm.id})")
             
-            # Create local persistence model and load state from string
-            self.local_persistence = InMemoryPersistenceModel()
-            self.local_persistence.from_json(json_str=json_str)
+            print(f"Tasks: {len(tasks)}")
+            for task in tasks:
+                print(f"  - {task.name} (Manager: {task.tasksmanager_id})")
             
-            if self.local_persistence:
-                print("Local persistence model created")
-                # Get task context from local persistence
-                task_managers = self.local_persistence.tasksmanagers.list()
-                tasks = self.local_persistence.tasks.list()
+            # Find task management context
+            task_manager = next(
+                (m for m in task_managers if "Task Management" in m.name),
+                task_managers[0] if task_managers else None
+            )
+            
+            if task_manager:
+                # First try to find a specific task management task
+                main_task = next(
+                    (t for t in tasks if t.tasksmanager_id == task_manager.id 
+                     and "Task Management" in t.name),
+                    None
+                )
                 
-                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
-                
-                if task_managers and tasks:
-                    # Find the task management manager and task
-                    task_manager = next(
-                        (m for m in task_managers if "Task Management" in m.name),
-                        task_managers[0]
-                    )
+                # If no specific task found, take the first task for this manager
+                if not main_task:
                     main_task = next(
                         (t for t in tasks if t.tasksmanager_id == task_manager.id),
                         None
                     )
+                
+                if main_task:
+                    # Update view state with task context
+                    self.view_state.set_active_task(
+                        task_id=main_task.id,
+                        task_name=main_task.name,
+                        manager_id=task_manager.id,
+                        manager_name=task_manager.name
+                    )
+                    print(f"🟢 Set active task: {task_manager.name}-{main_task.name}")
                     
-                    if main_task:
-                        # Update view state with task context
-                        self.view_state.set_active_task(
-                            task_id=main_task.id,
-                            task_name=main_task.name,
-                            manager_id=task_manager.id,
-                            manager_name=task_manager.name
-                        )
-                        
-                        print(f"🟢 Loaded state for {task_manager.name}-{main_task.name}")
-                    else:
-                        print("🔴 No task management task found")
+                    # Set task state
+                    self.task_state = {
+                        "active_tasks": [t.id for t in tasks if t.tasksmanager_id == task_manager.id],
+                        "total_tasks": len(tasks),
+                        "manager_id": task_manager.id,
+                        "task_id": main_task.id
+                    }
                 else:
-                    print("🔴 No task context found in state file")
+                    print("🔴 No main task found for task manager")
             else:
-                print("���� Failed to create local persistence model")
+                print("🔴 No task manager found")
                 
         except Exception as e:
             print(f"Error initializing task controller: {str(e)}")
@@ -89,12 +92,11 @@ class TaskHierarchyController:
     async def get_task_tree(self) -> Optional[TreeNode]:
         """Get task hierarchy as tree structure."""
         try:
-            if not self.local_persistence:
-                return None
-                
-            # Get tasks and managers from local persistence
-            task_managers = self.local_persistence.tasksmanagers.list()
-            tasks = self.local_persistence.tasks.list()
+            # Debug persistence state when building tree
+            print("\n🌳 Building task tree...")
+            task_managers = self.global_persistence.tasksmanagers.list()
+            tasks = self.global_persistence.tasks.list()
+            print(f"Found {len(task_managers)} managers and {len(tasks)} tasks")
             
             if not task_managers:
                 print("No task managers found")
@@ -105,24 +107,32 @@ class TaskHierarchyController:
             
             # Create nodes for each task manager
             for manager in task_managers:
-                manager_node = TreeNode(
-                    UUID(manager.id),
-                    manager.name,
-                    "manager"
-                )
-                
-                # Add tasks belonging to this manager
-                manager_tasks = [t for t in tasks if t.tasksmanager_id == manager.id]
-                for task in manager_tasks:
-                    task_node = TreeNode(
-                        UUID(task.id),
-                        task.name,
-                        "task"
+                try:
+                    manager_node = TreeNode(
+                        UUID(manager.id),
+                        manager.name,
+                        "manager"
                     )
-                    manager_node.children.append(task_node)
                     
-                root.children.append(manager_node)
-                
+                    # Add tasks belonging to this manager
+                    manager_tasks = [t for t in tasks if t.tasksmanager_id == manager.id]
+                    print(f"Adding {len(manager_tasks)} tasks for manager {manager.name}")
+                    
+                    for task in manager_tasks:
+                        try:
+                            task_node = TreeNode(
+                                UUID(task.id),
+                                task.name,
+                                "task"
+                            )
+                            manager_node.children.append(task_node)
+                        except Exception as e:
+                            print(f"Error adding task node {task.name}: {str(e)}")
+                    
+                    root.children.append(manager_node)
+                except Exception as e:
+                    print(f"Error processing manager {manager.name}: {str(e)}")
+            
             return root
             
         except Exception as e:

@@ -15,7 +15,7 @@ class TaskHierarchySidebar:
             st.header("Task Hierarchy")
             
             # Get state status from controller
-            if self.controller and self.controller.local_persistence:
+            if self.controller:
                 status = self.controller.view_state.task_status
                 if status["loaded"]:
                     st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
