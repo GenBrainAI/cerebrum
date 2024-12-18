@@ -28,15 +28,15 @@ class AgenticConfigSidebar:
             
             st.markdown("---")
             
-            # Add quick actions at the top
-            if st.button("➕ Add New Framework"):
-                # TODO: Implement framework creation dialog
-                st.info("Framework creation coming soon")
+            # # Add quick actions at the top
+            # if st.button("➕ Add New Framework"):
+            #     # TODO: Implement framework creation dialog
+            #     st.info("Framework creation coming soon")
                 
-            if st.button("🔄 Refresh Frameworks"):
-                st.rerun()
+            # if st.button("🔄 Refresh Frameworks"):
+            #     st.rerun()
                 
-            st.markdown("---")
+            # st.markdown("---")
             
             # Render frameworks tree as main sidebar content
             st.subheader("Framework Structure")

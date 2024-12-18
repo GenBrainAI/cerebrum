@@ -28,12 +28,12 @@ class TaskHierarchySidebar:
             st.markdown("---")
             
             # Add quick actions
-            if st.button("➕ Add New Task"):
-                # TODO: Implement task creation dialog
-                st.info("Task creation coming soon")
+            # if st.button("➕ Add New Task"):
+            #     # TODO: Implement task creation dialog
+            #     st.info("Task creation coming soon")
                 
-            if st.button("🔄 Refresh Tasks"):
-                st.rerun()
+            # if st.button("🔄 Refresh Tasks"):
+            #     st.rerun()
             
             st.markdown("---")
             

@@ -168,9 +168,9 @@ class ToolManagementState(SpecializedState):
 class AgentFrameworkState(SpecializedState):
     """Specialized state for agent framework configuration."""
     active_view: str = "agentic_config"
-    selected_agentic: Optional[Dict[str, Any]] = None
+    selected_agentic: Optional[Dict[str, Any]] = field(default=None)
     frameworks: List[Dict[str, Any]] = field(default_factory=list)
-    task_context: Optional[Dict[str, Any]] = None
+    task_context: Dict[str, Any] = field(default_factory=dict)
     
     class Config:
         arbitrary_types_allowed = True
@@ -193,7 +193,7 @@ class AgentFrameworkState(SpecializedState):
             parent_id=parent_id
         )
         self.frameworks = frameworks or []
-        self.task_context = task_context
+        self.task_context = task_context or {}
         self.active_view = "agentic_config"
         self.selected_agentic = None
 
@@ -239,4 +239,4 @@ class AgentFrameworkState(SpecializedState):
 
     def clear_task_context(self) -> None:
         """Clear the task context."""
-        self.task_context = None 
+        self.task_context = {}

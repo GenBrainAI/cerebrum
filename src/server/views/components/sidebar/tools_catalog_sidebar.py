@@ -28,14 +28,14 @@ class ToolsCatalogSidebar:
             st.markdown("---")
             
             # Add quick actions at the top
-            if st.button("➕ Add New Tool"):
-                # TODO: Implement tool creation dialog
-                st.info("Tool creation coming soon")
+            # if st.button("➕ Add New Tool"):
+            #     # TODO: Implement tool creation dialog
+            #     st.info("Tool creation coming soon")
                 
-            if st.button("🔄 Refresh Catalog"):
-                st.rerun()
+            # if st.button("🔄 Refresh Catalog"):
+            #     st.rerun()
                 
-            st.markdown("---")
+            # st.markdown("---")
             
             # Render tools catalog tree as main sidebar content
             st.subheader("Tools Catalog")
