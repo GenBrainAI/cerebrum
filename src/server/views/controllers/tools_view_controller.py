@@ -1,16 +1,18 @@
 # src/server/views/controllers/tools_view_controller.py
 from typing import Optional, Dict, Any, List
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime
 from ...models.exceptions import StateError, StateNotFoundError, StateValidationError
 from ...models.function import Tool
 from ..models.view_state import ViewState
 from ..models.view_types import ViewType
-from ...models.specialized_state import StateType, ToolManagementState
+from ...models.specialized_state import StateType, ToolManagementState, StateMetadata
 from ..state.state_manager import ViewStateManager
 from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
+from ..components.tree_select_component import TreeSelectComponent
+from ...tools.tools_catalog import tools_catalog
 
 class ToolsCatalogController:
     """Controller for tools catalog view with specialized state support."""
@@ -21,6 +23,7 @@ class ToolsCatalogController:
         self.state_manager = ViewStateManager(persistence_model)
         self.local_persistence = None
         self.tool_state = None
+        self.tree_component = TreeSelectComponent(self.handle_node_click)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
@@ -31,7 +34,23 @@ class ToolsCatalogController:
             
             if not state_file or not state_file.exists():
                 print(f"🔴 Specialized state file not found at {state_file}")
-                return
+                # Create initial state file
+                root_dir = StateLoader.get_project_root()
+                state_dir = root_dir / "state" / "specialized"
+                state_dir.mkdir(parents=True, exist_ok=True)
+                
+                initial_state = {
+                    "type": "tool_management",
+                    "task_context": None,
+                    "tools": [],
+                    "tasks": [],
+                    "tasksmanagers": []
+                }
+                
+                state_file = state_dir / "tools_management_state.json"
+                with open(state_file, 'w') as f:
+                    json.dump(initial_state, f, indent=2)
+                print(f"Created initial state file at: {state_file}")
 
             print(f"Loading state from: {state_file}")
             
@@ -72,6 +91,16 @@ class ToolsCatalogController:
                         )
                         
                         print(f"🟢 Loaded state for {tools_manager.name}-{tools_task.name}")
+                        # Update tool state initialization
+                        self.tool_state = ToolManagementState(
+                            state_type=StateType.TOOL_MANAGEMENT,
+                            name=f"{tools_manager.name}-{tools_task.name}",
+                            data={},
+                            metadata=StateMetadata(),
+                            tool_templates={},
+                            registered_tools=[],
+                            active_tools=[]
+                        )
                     else:
                         print("🔴 No tools management task found")
                 else:
@@ -84,37 +113,153 @@ class ToolsCatalogController:
             raise
     
     async def get_tools_tree(self) -> Optional[TreeNode]:
-        """Get tools catalog as tree structure with state tracking."""
+        """Get tools catalog as tree structure."""
         try:
-            if not self.local_persistence:
-                print("No local persistence available")
-                return None
-
-            tools = self.local_persistence.tools.list()
-            print(f"Found {len(tools)} tools for tree")
-            
             # Create root node
-            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Tools", "root")
+            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Tools Catalog", "root")
             
-            # Create category nodes
+            # Create category nodes with fixed UUIDs for consistency
             categories = {
-                "api": TreeNode(UUID('11111111-1111-1111-1111-111111111111'), "API Tools", "category"),
-                "local": TreeNode(UUID('22222222-2222-2222-2222-222222222222'), "Local Tools", "category"),
-                "custom": TreeNode(UUID('33333333-3333-3333-3333-333333333333'), "Custom Tools", "category")
+                "api": TreeNode(
+                    UUID('11111111-1111-1111-1111-111111111111'), 
+                    "API Tools", 
+                    "category"
+                ),
+                "function": TreeNode(
+                    UUID('22222222-2222-2222-2222-222222222222'), 
+                    "Functions", 
+                    "category"
+                ),
+                "langchain": TreeNode(
+                    UUID('33333333-3333-3333-3333-333333333333'), 
+                    "LangChain Tools", 
+                    "category"
+                ),
+                "utility": TreeNode(
+                    UUID('44444444-4444-4444-4444-444444444444'), 
+                    "Utility Tools", 
+                    "category"
+                ),
+                "custom": TreeNode(
+                    UUID('55555555-5555-5555-5555-555555555555'), 
+                    "Custom Tools", 
+                    "category"
+                ),
+                "other": TreeNode(
+                    UUID('66666666-6666-6666-6666-666666666666'), 
+                    "Other", 
+                    "category"
+                )
             }
             
-            # Add categories to root
+            # Add all categories to root (even if empty)
             for category in categories.values():
                 root.children.append(category)
             
-            # Add tools to appropriate categories
-            for tool in tools:
-                tool_type = tool.metadata.get('type', 'custom') if hasattr(tool, 'metadata') else 'custom'
-                node = TreeNode(UUID(tool.id), tool.name, "tool")
-                if tool_type in categories:
-                    categories[tool_type].children.append(node)
-                else:
-                    categories['custom'].children.append(node)
+            # Try to get tools from both sources
+            try:
+                persisted_tools = self.global_persistence.tools.list()
+            except Exception as e:
+                print(f"Error getting persisted tools: {str(e)}")
+                persisted_tools = []
+            
+            try:
+                catalog_tool_names = tools_catalog.list_tools()
+            except Exception as e:
+                print(f"Error getting catalog tools: {str(e)}")
+                catalog_tool_names = []
+            
+            # Process persisted tools if any
+            if persisted_tools:
+                for tool in persisted_tools:
+                    try:
+                        tool_node = TreeNode(
+                            UUID(tool.id),
+                            tool.name,
+                            "tool"
+                        )
+                        
+                        # Add tool details if available
+                        if hasattr(tool, 'description'):
+                            tool_node.description = tool.description
+                        if hasattr(tool, 'metadata'):
+                            tool_node.metadata = tool.metadata
+                        
+                        # Determine tool category
+                        category = 'other'
+                        if hasattr(tool, 'tool_type'):
+                            tool_type = tool.tool_type.lower()
+                            if tool_type in categories:
+                                category = tool_type
+                        elif hasattr(tool, 'metadata') and tool.metadata.get('type'):
+                            meta_type = tool.metadata['type'].lower()
+                            if meta_type in categories:
+                                category = meta_type
+                        
+                        # Add tool to appropriate category
+                        categories[category].children.append(tool_node)
+                        
+                    except Exception as e:
+                        print(f"Error processing persisted tool {tool.id}: {str(e)}")
+            
+            # Process catalog tools if any
+            if catalog_tool_names:
+                for tool_name in catalog_tool_names:
+                    try:
+                        # Get tool instance
+                        tool = tools_catalog.get_tool_instance(tool_name)
+                        if not tool:
+                            continue
+                        
+                        # Create unique UUID based on tool name
+                        tool_uuid = uuid4() # UUID(bytes=tool_name.encode()[:16], version=3)
+                        # print(f"Creating tool node for {tool_name} with UUID {tool_uuid}")
+                        tool_node = TreeNode(
+                            tool_uuid,
+                            tool_name,
+                            "catalog_tool"
+                        )
+                        
+                        # Add tool details
+                        if hasattr(tool, 'description'):
+                            tool_node.description = tool.description
+                        if hasattr(tool, '__doc__') and tool.__doc__:
+                            tool_node.description = tool.__doc__.strip()
+                        
+                        # Try to determine category from tool attributes or class name
+                        category = 'other'
+                        if hasattr(tool, 'tool_type'):
+                            tool_type = tool.tool_type.lower()
+                            if tool_type in categories:
+                                category = tool_type
+                        elif hasattr(tool, 'category'):
+                            cat_type = tool.category.lower()
+                            if cat_type in categories:
+                                category = cat_type
+                        elif 'langchain' in str(tool.__class__.__module__).lower():
+                            category = 'langchain'
+                        elif callable(tool):
+                            category = 'function'
+                        
+                        # Add tool to appropriate category
+                        categories[category].children.append(tool_node)
+                        
+                    except Exception as e:
+                        print(f"Error processing catalog tool {tool_name}: {str(e)}")
+            
+            # Sort tools within each category
+            for category in categories.values():
+                category.children.sort(key=lambda x: x.name)
+            
+            # Add empty state indicators to categories
+            for category in categories.values():
+                if not category.children:
+                    empty_node = TreeNode(
+                        uuid4(),
+                        "No tools available",
+                        "empty"
+                    )
+                    category.children.append(empty_node)
             
             return root
             

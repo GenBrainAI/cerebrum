@@ -56,7 +56,7 @@ class TaskRunner:
                 raise ValueError(f"Task {task_id} does not belong to TasksManager {tasksmanager_id}")
 
             # Determine execution path based on task type
-            if task.crewai_info_id:
+            if task.crewai_config_id:
                 return await self._run_crewai_task(task, tasksmanager, running_extra_params)
             else:
                 return await self._run_standard_task(task, tasksmanager, running_extra_params)

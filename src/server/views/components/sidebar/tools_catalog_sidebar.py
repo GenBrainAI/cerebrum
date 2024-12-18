@@ -4,46 +4,59 @@ from ...models.view_state import ViewState
 from ...models.view_types import ViewType
 
 class ToolsCatalogSidebar:
-    def __init__(self, view_state: ViewState):
-        self.view_state = view_state
-
-    async def render(self):
-        """Render tools catalog sidebar."""
-        st.sidebar.subheader("Tools Catalog")
-        
-        # Get state status from controller
-        controller = st.session_state.tools_controller
-        if controller.local_persistence:
-            status = controller.view_state.task_status
-            if status["loaded"]:
-                st.sidebar.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
-                st.sidebar.markdown("**State:** Tools Management loaded")
-            else:
-                st.sidebar.markdown("🔴 State loaded but no task context found")
-        else:
-            st.sidebar.markdown("🔴 No tools state loaded")
-        
-        st.sidebar.markdown("---")
-        
-        # Show tools tree
-        if hasattr(st.session_state, 'tools_tree'):
-            try:
-                tree_data = await st.session_state.tools_controller.get_tools_tree()
-                if tree_data:
-                    with st.sidebar:
-                        st.session_state.tools_tree.render(tree_data)
-                else:
-                    st.sidebar.info("No tools configured in current state")
-            except Exception as e:
-                st.sidebar.error(f"Error loading tools: {str(e)}")
-
-async def render_tools_catalog_sidebar():
-    """Render sidebar content for tools catalog view."""
-    if 'tools_sidebar' not in st.session_state:
-        st.session_state.tools_sidebar = ToolsCatalogSidebar(
-            st.session_state.tools_controller.view_state
-        )
+    """Sidebar component for tools catalog view."""
     
-    with st.sidebar:
-        st.session_state.current_view = ViewType.TOOLS_CATALOG
-        await st.session_state.tools_sidebar.render()
+    def __init__(self, controller=None):
+        self.controller = controller
+    
+    async def render(self):
+        """Render the tools catalog sidebar."""
+        with st.sidebar:
+            st.header("Tools Catalog")
+            
+            # Get state status from controller
+            if self.controller and self.controller.local_persistence:
+                status = self.controller.view_state.task_status
+                if status["loaded"]:
+                    st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
+                    st.markdown("**State:** Tools Management loaded")
+                else:
+                    st.markdown("🔴 State loaded but no task context found")
+            else:
+                st.markdown("🔴 No tools state loaded")
+            
+            st.markdown("---")
+            
+            # Add quick actions at the top
+            if st.button("➕ Add New Tool"):
+                # TODO: Implement tool creation dialog
+                st.info("Tool creation coming soon")
+                
+            if st.button("🔄 Refresh Catalog"):
+                st.rerun()
+                
+            st.markdown("---")
+            
+            # Render tools catalog tree as main sidebar content
+            st.subheader("Tools Catalog")
+            if self.controller:
+                tree_data = await self.controller.get_tools_tree()
+                if tree_data:
+                    result = self.controller.tree_component.render(
+                        tree_data,
+                        key="tools_tree_sidebar"
+                    )
+                    if result is None:
+                        st.warning("Failed to load tools catalog")
+                else:
+                    st.info("No tools available")
+
+# Legacy function for backward compatibility
+async def render_tools_catalog_sidebar():
+    """Legacy function to render the tools catalog sidebar."""
+    if 'tools_controller' in st.session_state:
+        sidebar = ToolsCatalogSidebar(st.session_state.tools_controller)
+        await sidebar.render()
+    else:
+        with st.sidebar:
+            st.warning("Tools controller not initialized")

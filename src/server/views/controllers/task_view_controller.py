@@ -5,13 +5,14 @@ from ...models.exceptions import StateError, StateNotFoundError, StateValidation
 from ...models.task import Task
 from ..models.view_state import ViewState
 from ..models.view_types import ViewType
-from ...models.specialized_state import StateType, TaskGenerationState
+from ...models.specialized_state import StateType, TaskGenerationState, StateMetadata
 from ..data.task_tree_provider import TaskTreeProvider
 from ..components.dialogs.task_dialog import TaskDialog
 from ..state.state_manager import ViewStateManager
 from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
+from ..components.tree_select_component import TreeSelectComponent
 
 class TaskHierarchyController:
     """Controller for task hierarchy view with specialized state support."""
@@ -22,6 +23,7 @@ class TaskHierarchyController:
         self.state_manager = ViewStateManager(persistence_model)
         self.local_persistence = None
         self.task_state = None
+        self.tree_component = TreeSelectComponent(self.handle_node_click)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
@@ -78,43 +80,51 @@ class TaskHierarchyController:
                 else:
                     print("🔴 No task context found in state file")
             else:
-                print("🔴 Failed to create local persistence model")
+                print("���� Failed to create local persistence model")
                 
         except Exception as e:
             print(f"Error initializing task controller: {str(e)}")
             raise
 
     async def get_task_tree(self) -> Optional[TreeNode]:
-        """Get task hierarchy as tree structure with state tracking."""
+        """Get task hierarchy as tree structure."""
         try:
             if not self.local_persistence:
-                print("No local persistence available")
                 return None
-
+                
+            # Get tasks and managers from local persistence
+            task_managers = self.local_persistence.tasksmanagers.list()
             tasks = self.local_persistence.tasks.list()
-            print(f"Found {len(tasks)} tasks for tree")
             
+            if not task_managers:
+                print("No task managers found")
+                return None
+                
             # Create root node
             root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Tasks", "root")
             
-            # Build tree structure
-            task_map = {task.id: task for task in tasks}
-            for task in tasks:
-                node = TreeNode(UUID(task.id), task.name, "task")
-                if hasattr(task, 'parent_id') and task.parent_id and task.parent_id in task_map:
-                    # Find parent node
-                    parent_id = UUID(task.parent_id)
-                    parent_node = next(
-                        (n for n in root.traverse() if n.id == parent_id), 
-                        None
+            # Create nodes for each task manager
+            for manager in task_managers:
+                manager_node = TreeNode(
+                    UUID(manager.id),
+                    manager.name,
+                    "manager"
+                )
+                
+                # Add tasks belonging to this manager
+                manager_tasks = [t for t in tasks if t.tasksmanager_id == manager.id]
+                for task in manager_tasks:
+                    task_node = TreeNode(
+                        UUID(task.id),
+                        task.name,
+                        "task"
                     )
-                    if parent_node:
-                        parent_node.children.append(node)
-                else:
-                    # Add to root if no parent
-                    root.children.append(node)
+                    manager_node.children.append(task_node)
                     
+                root.children.append(manager_node)
+                
             return root
+            
         except Exception as e:
             print(f"Error building task tree: {str(e)}")
             return None

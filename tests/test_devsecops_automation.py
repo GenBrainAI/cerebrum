@@ -47,7 +47,7 @@ def mock_task_runner():
     runner.mock_task = Mock(
         id="test-task-id",
         tasksmanager_id="test-tasksmanager-id",
-        crewai_info_id="test-crew-id",
+        crewai_config_id="test-crew-id",
         curried_proxy_id=None
     )
     return runner

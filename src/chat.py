@@ -17,7 +17,7 @@ from server.controllers.persistence_controller import load_from_storage, save_to
 from server.models.persistence_models import StorageLocation, StorageType
 from server.context.context_ui import ContextManagerUI
 from server.context.context_provider import ContextProvider
-from server.views.components.sidebar.task_hierarchy_sidebar import render_task_hierarchy_sidebar, TaskHierarchySidebar
+from server.views.components.sidebar.task_hierarchy_sidebar import render_task_hierarchy_sidebar
 from server.views.components.sidebar.tools_catalog_sidebar import render_tools_catalog_sidebar, ToolsCatalogSidebar
 from server.views.components.sidebar.agentic_config_sidebar import render_agentic_config_sidebar, AgenticConfigSidebar
 from server.views.components.chat_panel import ChatPanel
@@ -271,28 +271,6 @@ def initialize_session_state():
     # View state
     if 'current_view' not in st.session_state:
         st.session_state.current_view = None
-        
-    # Initialize controllers with persistence model
-    if 'task_controller' not in st.session_state:
-        st.session_state.task_controller = TaskHierarchyController(st.session_state.persistence_model)
-    if 'tools_controller' not in st.session_state:
-        st.session_state.tools_controller = ToolsCatalogController(st.session_state.persistence_model)
-    if 'agentic_controller' not in st.session_state:
-        st.session_state.agentic_controller = AgenticViewController(st.session_state.persistence_model)
-    
-    # Initialize tree components for each view
-    if 'task_tree' not in st.session_state:
-        st.session_state.task_tree = TreeComponent(
-            on_node_click=st.session_state.task_controller.handle_node_click
-        )
-    if 'tools_tree' not in st.session_state:
-        st.session_state.tools_tree = TreeComponent(
-            on_node_click=st.session_state.tools_controller.handle_node_click
-        )
-    if 'agent_tree' not in st.session_state:
-        st.session_state.agent_tree = TreeComponent(
-            on_node_click=st.session_state.agentic_controller.handle_node_click
-        )
     
     # State management
     if 'default_state_loaded' not in st.session_state:
@@ -498,7 +476,7 @@ def render_logo(width=150):
     else:
         st.warning("Logo not found", icon="⚠️")
 
-def render_sidebar():
+async def render_sidebar():
     """Render the sidebar UI"""
     with st.sidebar:
         # Logo and title
@@ -509,15 +487,142 @@ def render_sidebar():
         
         # Render appropriate sidebar content based on current page
         if st.session_state.current_view == ViewType.TASK_HIERARCHY:
-            render_task_hierarchy_sidebar()
+            await render_task_hierarchy_sidebar()
         elif st.session_state.current_view == ViewType.TOOLS_CATALOG:
-            render_tools_catalog_sidebar()
+            await render_tools_catalog_sidebar()
         elif st.session_state.current_view == ViewType.AGENTIC_CONFIG:
-            render_agentic_config_sidebar()
+            await render_agentic_config_sidebar()
         else:
             # Render original chat sidebar content
             render_state_management()
             render_chat_management_sidebar()
+
+def render_chat_management_sidebar():
+    """Render the chat management section in the sidebar."""
+    # Get persistence model from session state
+    persistence_model = st.session_state.persistence_model
+    
+    # Chat Management section
+    tasksmanagers = get_available_tasksmanagers()
+    
+    st.subheader("Chat Management")
+    
+    # Create New Chat button
+    create_new = st.button("Create New Chat")
+    
+    if create_new:
+        st.session_state.creating_new_chat = True
+    
+    # New Chat Creation Form
+    if st.session_state.get('creating_new_chat', False):
+        with st.expander("New Chat Details", expanded=True):
+            new_chat_name = st.text_input(
+                "Chat Name",
+                value=f"Chat {len(tasksmanagers) + 1}",
+                key="new_chat_name"
+            )
+            
+            # Show existing task selection if state is loaded
+            if tasksmanagers:
+                use_existing = st.checkbox("Use existing task", key="use_existing")
+                
+                if use_existing:
+                    # TaskManager selection
+                    tm_names = [tm.name for tm in tasksmanagers]
+                    selected_tm_name = st.selectbox(
+                        "Select Task Manager",
+                        options=tm_names,
+                        key="select_existing_tm"
+                    )
+                    
+                    # Task selection for chosen TaskManager
+                    if selected_tm_name:
+                        selected_tm = next(tm for tm in tasksmanagers if tm.name == selected_tm_name)
+                        tasks = get_tasks_for_tasksmanager(selected_tm.id)
+                        task_names = [t.name for t in tasks]
+                        selected_task_name = st.selectbox(
+                            "Select Task",
+                            options=task_names,
+                            key="select_existing_task"
+                        )
+                else:
+                    selected_tm_name = None
+                    selected_task_name = None
+            else:
+                selected_tm_name = None
+                selected_task_name = None
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Create", key="confirm_create"):
+                    # Select or create new chat
+                    tasksmanager_id, task_id = select_or_create_chat(
+                        new_chat_name,
+                        selected_tm_name,
+                        selected_task_name
+                    )
+                    
+                    # Update session state
+                    st.session_state.current_tasksmanager_id = tasksmanager_id
+                    st.session_state.current_task_id = task_id
+                    st.session_state.messages = []
+                    st.session_state.chat_title = new_chat_name
+                    st.session_state.creating_new_chat = False
+                    
+                    # Create new session
+                    session_id = create_new_session(task_id)
+                    st.session_state.current_session_id = session_id
+                    
+                    st.rerun()
+            
+            with col2:
+                if st.button("Cancel", key="cancel_create"):
+                    st.session_state.creating_new_chat = False
+                    st.rerun()
+    
+    # Existing Chats Section
+    if tasksmanagers:
+        st.markdown("---")
+        st.subheader("Existing Chats")
+        
+        # TaskManager selection
+        tm_options = {tm.name: tm.id for tm in tasksmanagers}
+        selected_tm = st.selectbox(
+            "Select Chat",
+            options=list(tm_options.keys()),
+            key="tm_selector",
+            on_change=on_tm_select
+        )
+        
+        if selected_tm:
+            selected_tm_id = tm_options[selected_tm]
+            tasks = get_tasks_for_tasksmanager(selected_tm_id)
+            
+            if tasks:
+                # Task selection
+                task_options = {task.name: task.id for task in tasks}
+                selected_task = st.selectbox(
+                    "Select Task",
+                    options=list(task_options.keys()),
+                    key="task_selector"
+                )
+                
+                if selected_task:
+                    selected_task_id = task_options[selected_task]
+                    
+                    if (selected_tm_id != st.session_state.current_tasksmanager_id or 
+                        selected_task_id != st.session_state.current_task_id):
+                        
+                        # Update session state
+                        st.session_state.current_tasksmanager_id = selected_tm_id
+                        st.session_state.current_task_id = selected_task_id
+                        st.session_state.messages = []
+                        
+                        # Create new session
+                        session_id = create_new_session(selected_task_id)
+                        st.session_state.current_session_id = session_id
+                        
+                        st.rerun()
 
 def render_main_chat():
     """Render the main chat interface with context information."""
@@ -644,274 +749,23 @@ def render_main_chat():
             except Exception as e:
                 st.error(f"Error processing request: {str(e)}")
 
-def render_task_hierarchy_sidebar():
-    """Render task hierarchy sidebar."""
-    if 'task_sidebar' not in st.session_state:
-        st.session_state.task_sidebar = TaskHierarchySidebar(
-            st.session_state.task_controller.view_state
-        )
-    st.session_state.task_sidebar.render()
-
-def render_tools_catalog_sidebar():
-    """Render tools catalog sidebar."""
-    if 'tools_sidebar' not in st.session_state:
-        st.session_state.tools_sidebar = ToolsCatalogSidebar(
-            st.session_state.tools_controller.view_state
-        )
-    st.session_state.tools_sidebar.render()
-
-def render_agentic_config_sidebar():
-    """Render agentic configuration sidebar."""
-    if 'agentic_sidebar' not in st.session_state:
-        st.session_state.agentic_sidebar = AgenticConfigSidebar(
-            st.session_state.agentic_controller.view_state
-        )
-    st.session_state.agentic_sidebar.render()
-
 async def render_main_content():
     """Render the main content area based on selected view."""
-    if st.session_state.current_view == ViewType.TASK_HIERARCHY:
-        await render_task_hierarchy_view()
-    elif st.session_state.current_view == ViewType.TOOLS_CATALOG:
-        await render_tools_catalog_view()
-    elif st.session_state.current_view == ViewType.AGENTIC_CONFIG:
-        await render_agentic_config_view()
-    else:
-        await render_main_chat()
-
-async def render_task_hierarchy_view():
-    """Render the task hierarchy view."""
-    controller = st.session_state.task_controller
-    
-    left_col, right_col = st.columns([1, 2])
-    
-    with left_col:
-        st.subheader("Task Hierarchy")
-        tree_data = await controller.get_task_tree()
-        if tree_data:
-            st.session_state.task_tree.render(tree_data)
-    
-    with right_col:
-        st.subheader("Task Management Chat")
-        
-        chat_container = st.container()
-        input_container = st.container()
-        
-        with chat_container:
-            for msg in controller.view_state.chat_history:
-                with st.chat_message(msg["role"]):
-                    st.write(msg["content"])
-        
-        with input_container:
-            if prompt := st.chat_input("Type your message..."):
-                await controller.handle_chat(prompt)
-                st.rerun()
-
-async def render_tools_catalog_view():
-    """Render the tools catalog view."""
-    controller = st.session_state.tools_controller
-    
-    left_col, right_col = st.columns([1, 2])
-    
-    with left_col:
-        st.subheader("Tools Catalog")
-        tree_data = await controller.get_tools_tree()
-        if tree_data:
-            st.session_state.tools_tree.render(tree_data)
-    
-    with right_col:
-        st.subheader("Tools Management Chat")
-        
-        chat_container = st.container()
-        input_container = st.container()
-        
-        with chat_container:
-            for msg in controller.view_state.chat_history:
-                with st.chat_message(msg["role"]):
-                    st.write(msg["content"])
-        
-        with input_container:
-            if prompt := st.chat_input("Type your message..."):
-                await controller.handle_chat(prompt)
-                st.rerun()
-
-async def render_agentic_config_view():
-    """Render the agentic configuration view."""
-    controller = st.session_state.agentic_controller
-    
-    left_col, right_col = st.columns([1, 2])
-    
-    with left_col:
-        st.subheader("Agentic Configurations")
-        tree_data = await controller.get_agent_tree()
-        if tree_data:
-            st.session_state.agent_tree.render(tree_data)
-    
-    with right_col:
-        st.subheader("Configuration Chat")
-        
-        chat_container = st.container()
-        input_container = st.container()
-        
-        with chat_container:
-            for msg in controller.view_state.chat_history:
-                with st.chat_message(msg["role"]):
-                    st.write(msg["content"])
-        
-        with input_container:
-            if prompt := st.chat_input("Type your message..."):
-                await controller.handle_chat(prompt)
-                st.rerun()
-
-def render_chat_management_sidebar():
-    """Render the chat management section in the sidebar."""
-    # Get persistence model from session state
-    persistence_model = st.session_state.persistence_model
-    
-    # Chat Management section
-    tasksmanagers = get_available_tasksmanagers()
-    
-    st.subheader("Chat Management")
-    
-    # Create New Chat button
-    create_new = st.button("Create New Chat")
-    
-    if create_new:
-        st.session_state.creating_new_chat = True
-    
-    # New Chat Creation Form
-    if st.session_state.get('creating_new_chat', False):
-        with st.expander("New Chat Details", expanded=True):
-            new_chat_name = st.text_input(
-                "Chat Name",
-                value=f"Chat {len(tasksmanagers) + 1}",
-                key="new_chat_name"
-            )
-            
-            # Show existing task selection if state is loaded
-            if tasksmanagers:
-                use_existing = st.checkbox("Use existing task", key="use_existing")
-                
-                if use_existing:
-                    # TaskManager selection
-                    tm_names = [tm.name for tm in tasksmanagers]
-                    selected_tm_name = st.selectbox(
-                        "Select Task Manager",
-                        options=tm_names,
-                        key="select_existing_tm"
-                    )
-                    
-                    # Task selection for chosen TaskManager
-                    if selected_tm_name:
-                        selected_tm = next(tm for tm in tasksmanagers if tm.name == selected_tm_name)
-                        tasks = get_tasks_for_tasksmanager(selected_tm.id)
-                        task_names = [t.name for t in tasks]
-                        selected_task_name = st.selectbox(
-                            "Select Task",
-                            options=task_names,
-                            key="select_existing_task"
-                        )
-                else:
-                    selected_tm_name = None
-                    selected_task_name = None
-            else:
-                selected_tm_name = None
-                selected_task_name = None
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Create", key="confirm_create"):
-                    # Select or create new chat
-                    tasksmanager_id, task_id = select_or_create_chat(
-                        new_chat_name,
-                        selected_tm_name,
-                        selected_task_name
-                    )
-                    
-                    # Update session state
-                    st.session_state.current_tasksmanager_id = tasksmanager_id
-                    st.session_state.current_task_id = task_id
-                    st.session_state.messages = []
-                    st.session_state.chat_title = new_chat_name
-                    st.session_state.creating_new_chat = False
-                    
-                    # Create new session
-                    task = persistence_model.tasks.read(task_id)
-                    if not task.chat_sessions:
-                        session_id = task.create_session()
-                        st.session_state.current_session_id = session_id
-                    
-                    # Save state if location exists
-                    if st.session_state.get('state_location'):
-                        save_current_state(st.session_state.state_location.state_name)
-                    
-                    st.rerun()
-            
-            with col2:
-                if st.button("Cancel", key="cancel_create"):
-                    st.session_state.creating_new_chat = False
-                    st.rerun()
-    
-    # Existing Chats Section
-    if tasksmanagers:
-        st.markdown("---")
-        st.subheader("Existing Chats")
-        
-        # TaskManager selection
-        tm_options = {tm.name: tm.id for tm in tasksmanagers}
-        
-        # Default to current selection if exists
-        default_index = 0
-        if st.session_state.current_tasksmanager_id:
-            current_tm = next((tm for tm in tasksmanagers 
-                            if tm.id == st.session_state.current_tasksmanager_id), None)
-            if current_tm and current_tm.name in tm_options:
-                default_index = list(tm_options.keys()).index(current_tm.name)
-        
-        selected_tm = st.selectbox(
-            "Select Chat",
-            options=list(tm_options.keys()),
-            index=default_index,
-            key="tm_selector"
-        )
-        
-        if selected_tm:
-            selected_tm_id = tm_options[selected_tm]
-            tasks = get_tasks_for_tasksmanager(selected_tm_id)
-            
-            if tasks:
-                # Task selection
-                task_options = {task.name: task.id for task in tasks}
-                selected_task = st.selectbox(
-                    "Select Task",
-                    options=list(task_options.keys()),
-                    key="task_selector"
-                )
-                
-                if selected_task:
-                    selected_task_id = task_options[selected_task]
-                    
-                    if (selected_tm_id != st.session_state.current_tasksmanager_id or 
-                        selected_task_id != st.session_state.current_task_id):
-                        
-                        # Update session state
-                        st.session_state.current_tasksmanager_id = selected_tm_id
-                        st.session_state.current_task_id = selected_task_id
-                        
-                        # Load task and handle session
-                        selected_task_obj = persistence_model.tasks.read(selected_task_id)
-                        if selected_task_obj:
-                            if not selected_task_obj.chat_sessions:
-                                session_id = selected_task_obj.create_session()
-                                st.session_state.messages = []
-                            else:
-                                # Use most recent session
-                                session_id = max(selected_task_obj.chat_sessions.keys())
-                                st.session_state.messages = selected_task_obj.get_session_messages(session_id)
-                            
-                            st.session_state.current_session_id = session_id
-                            persistence_model.tasks.update(selected_task_obj.id, selected_task_obj)
-                            st.rerun()
+    try:
+        if st.session_state.current_view == ViewType.TASK_HIERARCHY:
+            from server.pages.task_hierarchy_view import render_task_hierarchy_view
+            await render_task_hierarchy_view()
+        elif st.session_state.current_view == ViewType.TOOLS_CATALOG:
+            from server.pages.tools_catalog_view import render_tools_catalog_view
+            await render_tools_catalog_view()
+        elif st.session_state.current_view == ViewType.AGENTIC_CONFIG:
+            from server.pages.agentic_config_view import render_agentic_config_view
+            await render_agentic_config_view()
+        else:
+            await render_main_chat()
+    except Exception as e:
+        st.error(f"Error rendering content: {str(e)}")
+        print(f"Error in render_main_content: {str(e)}")
 
 def main():
     """Main application entry point."""
@@ -927,12 +781,16 @@ def main():
     # Initialize session state
     initialize_session_state()
     
-    # Render sidebar
-    render_sidebar()
+    # Render sidebar and main content
+    asyncio.run(async_main())
+
+async def async_main():
+    """Async main function to handle async operations."""
+    await render_sidebar()
     
     # Render appropriate main content
     if st.session_state.current_view:
-        asyncio.run(render_main_content())
+        await render_main_content()
     else:
         render_main_chat()  # Original chat interface
 

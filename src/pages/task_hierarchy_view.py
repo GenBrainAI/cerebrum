@@ -17,12 +17,6 @@ async def render_task_hierarchy_view():
         await controller.initialize()
         st.session_state.task_controller = controller
     
-    # Initialize tree component if needed
-    if 'task_tree' not in st.session_state:
-        st.session_state.task_tree = TreeComponent(
-            on_node_click=st.session_state.task_controller.handle_node_click
-        )
-    
     # Render sidebar showing state context and tasks
     await render_task_hierarchy_sidebar()
     
@@ -41,11 +35,9 @@ async def render_task_hierarchy_view():
     
     # Chat input
     if prompt := st.chat_input("Type your message..."):
-        # Add user message to display
         with st.chat_message("user"):
             st.write(prompt)
         
-        # Process message
         await st.session_state.task_controller.handle_chat(prompt)
         st.rerun()
 

@@ -50,3 +50,4 @@ PyPDF2
 python-docx
 gitpython
 chardet
+streamlit-tree-select

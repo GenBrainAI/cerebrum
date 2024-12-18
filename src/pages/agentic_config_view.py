@@ -9,28 +9,14 @@ from server.views.components.sidebar.agentic_config_sidebar import render_agenti
 async def render_agentic_config_view():
     """Render the agentic configuration view."""
     try:
-        # Initialize controller with specialized state
+        # Initialize controller if needed
         if 'agentic_controller' not in st.session_state:
-            print("Initializing agentic controller...")
+            print("📦 Creating new agentic controller...")
             persistence_model = PersistenceModelFactory.persistence_model("inmemory")
             controller = AgenticViewController(persistence_model)
-            await controller.initialize()  # This loads/creates specialized state
-            
-            if controller.local_persistence:
-                print("Controller initialized with local persistence")
-                st.session_state.agentic_controller = controller
-            else:
-                print("Failed to initialize controller with local persistence")
-                return
-        else:
-            print("Using existing controller from session state")
-        
-        # Initialize tree component
-        if 'agent_tree' not in st.session_state:
-            print("Initializing agent tree component...")
-            st.session_state.agent_tree = TreeComponent(
-                on_node_click=st.session_state.agentic_controller.handle_node_click
-            )
+            await controller.initialize()  # Initialize here
+            st.session_state.agentic_controller = controller
+            print("✅ Agentic controller initialized")
         
         # Render header
         render_header(
@@ -41,7 +27,7 @@ async def render_agentic_config_view():
         # Render sidebar showing state context and frameworks
         await render_agentic_config_sidebar()
         
-        # Main content area - Chat interface
+        # Main content - Chat interface
         st.subheader("Framework Configuration Chat")
         
         # Display chat history

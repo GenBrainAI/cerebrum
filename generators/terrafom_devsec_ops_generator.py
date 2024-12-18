@@ -56,7 +56,7 @@ class TerrafomDevSecOpsGenerator:
             "name": "DevOps Automation",
             "description": "Automate DevOps tasks for microservices communication",
             "tasksmanager_id": self.tasksmanager_id,
-            "crewai_info_id": self.crew_id,
+            "crewai_config_id": self.crew_id,
             "curried_proxy_id": self.curried_proxy_id
         }
         task_response = requests.post(f"{self.base_url}/task", json=task_data)

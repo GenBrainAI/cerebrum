@@ -118,7 +118,7 @@ async def setup_application_state():
         name="Process Application Response",
         description="Analyze email response and send SMS notification if positive",
         tasksmanager_id=tasksmanager.id,
-        crewai_info_id=crewai_config.id,
+        crewai_config_id=crewai_config.id,
         curried_proxy_id=curried_proxy_id
     )
     task = persistence_model.tasks.create(task)
