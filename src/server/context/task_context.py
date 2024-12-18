@@ -29,7 +29,7 @@ class TaskContext(BaseModel):
     toolsets: Optional[List[str]] = None
     curried_tools: Optional[List[str]] = None
     curried_proxy_id: Optional[str] = None
-    crewai_info_id: Optional[str] = None
+    crewai_config_id: Optional[str] = None
     created_at: Optional[datetime] = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = Field(default_factory=datetime.now)
     

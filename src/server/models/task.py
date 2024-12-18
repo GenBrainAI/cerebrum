@@ -72,7 +72,7 @@ class Task(BaseModel):
     toolsets: Optional[List[str]] = Field(default=None)
     curried_tools: Optional[List[str]] = Field(default=None)
     curried_proxy_id: Optional[str] = Field(default=None)
-    crewai_info_id: Optional[str] = Field(default=None)
+    crewai_config_id: Optional[str] = Field(default=None)
     autogen_config_id: Optional[str] = Field(default=None)
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)

@@ -34,12 +34,12 @@ async def run_crew_task(task_id: str, task_input: Optional[Dict[str, Any]] = Non
         
         # Get the task and its CrewAI configuration
         task = persistence_model.tasks.read(task_id)
-        if not task or not task.crewai_info_id:
+        if not task or not task.crewai_config_id:
             raise ValueError(f"Task {task_id} not found or is not a CrewAI task")
             
-        crewai_config = persistence_model.crewai_config.read(task.crewai_info_id)
+        crewai_config = persistence_model.crewai_config.read(task.crewai_config_id)
         if not crewai_config:
-            raise ValueError(f"CrewAI configuration {task.crewai_info_id} not found")
+            raise ValueError(f"CrewAI configuration {task.crewai_config_id} not found")
         
         # Create or get the curried proxy
         curried_proxy = None

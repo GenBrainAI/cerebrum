@@ -12,6 +12,7 @@ from ..state.state_manager import ViewStateManager
 from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
+from ..components.tree_select_component import TreeSelectComponent
 
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
@@ -22,13 +23,14 @@ class AgenticViewController:
         self.state_manager = ViewStateManager(persistence_model)
         self.local_persistence = None
         self.agent_state = None
+        self.tree_component = TreeSelectComponent(self.handle_node_click)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            print("Starting controller initialization...")
+            print("🔍 Starting agentic controller initialization...")
             state_file = StateLoader.get_state_file("agentic_framework_state.json")
-            print(f"Checking state file path: {state_file}")
+            print(f"📁 Checking state file path: {state_file}")
             
             if not state_file or not state_file.exists():
                 print(f"🔴 Specialized state file not found at {state_file}")
@@ -45,23 +47,27 @@ class AgenticViewController:
                     "tasksmanagers": []
                 }
                 
-                state_file = state_dir / "agent_framework_state.json"
+                state_file = state_dir / "agentic_framework_state.json"
                 with open(state_file, 'w') as f:
                     json.dump(initial_state, f, indent=2)
-                print(f"Created initial state file at: {state_file}")
+                print(f"📝 Created initial state file at: {state_file}")
 
-            print(f"Loading state from: {state_file}")
+            print(f"📖 Loading state from: {state_file}")
             
             # Read state file content as string
             with open(state_file, 'r', encoding='utf-8') as f:
                 json_str = f.read()
+                print(f"📄 Loaded JSON content length: {len(json_str)}")
             
             # Create local persistence model and load state from string
             self.local_persistence = InMemoryPersistenceModel()
+            print("🔄 Created local persistence model")
+            
             self.local_persistence.from_json(json_str=json_str)
+            print("✅ Loaded JSON into local persistence")
             
             if self.local_persistence:
-                print("Local persistence model created")
+                print("🟢 Local persistence model initialized successfully")
                 # Get task context from local persistence
                 task_managers = self.local_persistence.tasksmanagers.list()
                 tasks = self.local_persistence.tasks.list()
@@ -102,7 +108,7 @@ class AgenticViewController:
                         )
                         
                         # Check for framework configuration in task
-                        if hasattr(agentic_task, 'crewai_info_id') and agentic_task.crewai_info_id:
+                        if hasattr(agentic_task, 'crewai_config_id') and agentic_task.crewai_config_id:
                             print("Found CrewAI configuration in task")
                             # TODO: Load framework configuration from CrewAI info
                         elif hasattr(agentic_task, 'autogen_config_id') and agentic_task.autogen_config_id:
@@ -124,29 +130,76 @@ class AgenticViewController:
     async def get_agent_tree(self) -> Optional[TreeNode]:
         """Get agentic frameworks as tree structure."""
         try:
-            if not self.local_persistence:
-                return None
-            
-            # Get frameworks from local persistence
-            frameworks = self.local_persistence.agents.list()
-            if not frameworks:
-                print("No frameworks found in local persistence")
+            # Use global persistence to get crewai configs
+            crewai_configs = self.global_persistence.crewai_config.list()
+            if not crewai_configs:
+                print("No CrewAI configurations found")
                 return None
             
             # Create root node
-            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Frameworks", "root")
+            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Agentic Frameworks", "root")
             
-            # Add framework nodes
-            for framework in frameworks:
+            # Create framework type nodes
+            framework_types = {
+                "crewai": TreeNode(
+                    UUID('11111111-1111-1111-1111-111111111111'), 
+                    "CrewAI", 
+                    "group"
+                ),
+                "autogen": TreeNode(
+                    UUID('22222222-2222-2222-2222-222222222222'), 
+                    "AutoGen", 
+                    "group"
+                ),
+                "other": TreeNode(
+                    UUID('33333333-3333-3333-3333-333333333333'), 
+                    "Other", 
+                    "group"
+                )
+            }
+            
+            # Add framework type nodes to root
+            for type_node in framework_types.values():
+                root.children.append(type_node)
+            
+            # Process CrewAI configurations
+            for config in crewai_configs:
                 try:
-                    node = TreeNode(
-                        UUID(framework.id), 
-                        framework.name, 
-                        "agentic"
-                    )
-                    root.children.append(node)
+                    # Get agents from the CrewAI config
+                    if hasattr(config, 'agents') and config.agents:
+                        for agent in config.agents:
+                            agent_node = TreeNode(
+                                UUID(agent.id), 
+                                agent.name,
+                                "agentic"
+                            )
+                            
+                            # Add agent details if available
+                            if hasattr(agent, 'role'):
+                                agent_node.description = f"Role: {agent.role}"
+                            if hasattr(agent, 'goal'):
+                                agent_node.metadata = {"goal": agent.goal}
+                            if hasattr(agent, 'backstory'):
+                                agent_node.metadata = {
+                                    **agent_node.metadata, 
+                                    "backstory": agent.backstory
+                                }
+                            
+                            # Add to CrewAI group
+                            framework_types['crewai'].children.append(agent_node)
+                
                 except Exception as e:
-                    print(f"Error adding framework node: {str(e)}")
+                    print(f"Error processing CrewAI config {config.id}: {str(e)}")
+            
+            # Sort agents within each framework type
+            for framework in framework_types.values():
+                framework.children.sort(key=lambda x: x.name)
+            
+            # Remove empty framework types
+            root.children = [
+                framework for framework in root.children 
+                if framework.children or framework.node_type == "group"
+            ]
             
             return root
             

@@ -3,9 +3,11 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 
 class ViewType(Enum):
+    """Enum for different view types."""
     TASK_HIERARCHY = "task_hierarchy"
     TOOLS_CATALOG = "tools_catalog"
     AGENTIC_CONFIG = "agentic_config"
+    CHAT = "chat"
 
 @dataclass
 class ViewMetadata:

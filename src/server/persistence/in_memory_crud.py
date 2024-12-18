@@ -42,15 +42,37 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
         # Serialize the storage dictionary to JSON
         return json.dumps(self.storage, default=pydantic_encoder)
 
-    def from_json(self, data: str):
-        try:
-            # Deserialize JSON data to storage dictionary
-            items = json.loads(data)
-            self.storage = {k: self._model_class.parse_obj(v) for k, v in items.items()}
-        except Exception as e:
-            print(str(e))
-            # raise e
+    # def from_json_old(self, data: str):
+    #     try:
+    #         # Deserialize JSON data to storage dictionary
+    #         items = json.loads(data)
+    #         self.storage = {k: self._model_class.parse_obj(v) for k, v in items.items()}
+    #     except Exception as e:
+    #         print(str(e))
+    #         # raise e
 
+    def from_json(self, data: str):
+        """Deserialize JSON data to storage dictionary with validation."""
+        try:
+            items = json.loads(data)
+            new_storage = {}
+            
+            for k, v in items.items():
+                try:
+                    # Try to parse each item individually
+                    parsed_item = self._model_class.parse_obj(v)
+                    new_storage[k] = parsed_item
+                except Exception as e:
+                    print(f"Failed to parse item {k}: {str(e)}")
+                    print(f"Raw item data: {v}")
+                    raise  # Re-raise to catch invalid items
+                    
+            self.storage = new_storage
+            
+        except Exception as e:
+            print(f"Error in from_json for {self._model_class.__name__}: {str(e)}")
+            print(f"Raw data: {data[:200]}...")  # Print first 200 chars of raw data
+            raise
 
     @property
     def model_class(self):
@@ -88,6 +110,26 @@ class TasksManagerCrud(InMemoryCrud[TasksManager]):
 class TaskCrud(InMemoryCrud[Task]):
     def __init__(self):
         super().__init__(Task)
+    
+    def list(self) -> List[Task]:
+        """Override list to ensure all items are proper Task instances."""
+        items = super().list()
+        valid_items = []
+        
+        for item in items:
+            if isinstance(item, dict):
+                print(f"Warning: Found raw dict instead of Task: {item}")
+                try:
+                    # Try to convert dict to Task
+                    valid_items.append(Task.parse_obj(item))
+                except Exception as e:
+                    print(f"Failed to convert dict to Task: {str(e)}")
+            elif isinstance(item, Task):
+                valid_items.append(item)
+            else:
+                print(f"Warning: Invalid item type {type(item)}: {item}")
+                
+        return valid_items
 
 class MessageCrud(InMemoryCrud[Message]):
     def __init__(self):
