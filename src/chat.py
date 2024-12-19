@@ -7,6 +7,9 @@ from typing import Optional
 from typing import List, Dict
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
+import random
+import hashlib
 
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from server.controllers.task_runner import TaskRunner
@@ -41,16 +44,26 @@ def save_current_state(state_name: str) -> str:
             state_name=f"{state_name}"
         )
         
-        # Get context state before saving
-        context_provider = ContextProvider()
-        context_state = context_provider.get_state()
-        result = save_to_storage(location)
+        # Create context state with only session info (no messages)
+        context_state = {
+            'current_tasksmanager_id': st.session_state.current_tasksmanager_id,
+            'current_task_id': st.session_state.current_task_id,
+            'current_session_id': st.session_state.current_session_id
+        }
+        
+        print(f"\n🔍 Context state to save:")
+        print(f"  Content: {context_state}")
+        
+        # Save state with context
+        result = save_to_storage(location, context_state=context_state)
+        print(f"  Save result: {result}")
         
         # Save metadata about last used state
         save_last_used_state(f"{state_name}")
         
         return result
     except Exception as e:
+        print(f"❌ Error saving state: {str(e)}")
         st.error(f"Error saving state: {str(e)}")
         return str(e)
 
@@ -66,6 +79,8 @@ def load_state(state_path: Optional[str] = None):
             st.session_state.default_state_loaded = True
         
         if state_path:
+            print(f"\n📥 Loading state from: {state_path}")
+            
             location = StorageLocation(
                 type=StorageType.file,
                 location=os.path.dirname(state_path),
@@ -79,13 +94,22 @@ def load_state(state_path: Optional[str] = None):
             json_str = load_from_storage(location)
             state_data = json.loads(json_str)
             
+            print(f"\n🔍 Loaded state data:")
+            print(f"  Has context_state: {'context_state' in state_data}")
+            if 'context_state' in state_data:
+                context_state = state_data['context_state']
+                print(f"  Context state content: {context_state}")
+                
+                # Restore session state from context
+                if 'messages' in context_state:
+                    st.session_state.messages = [Message(**msg) if isinstance(msg, dict) else msg 
+                                               for msg in context_state['messages']]
+                st.session_state.current_tasksmanager_id = context_state.get('current_tasksmanager_id')
+                st.session_state.current_task_id = context_state.get('current_task_id')
+                st.session_state.current_session_id = context_state.get('current_session_id')
+            
             # Save this as the last used state
             save_last_used_state(os.path.basename(state_path))
-            
-            # Load context state if present
-            if 'context_state' in state_data:
-                context_provider = ContextProvider()
-                context_provider.load_state(state_data['context_state'])
             
             return f"Successfully loaded state from {state_path}"
         return "No state file specified"
@@ -175,6 +199,12 @@ def render_state_management():
             if selected_state and st.session_state.state_loaded:
                 if st.button("Save State", use_container_width=True):
                     try:
+                        # Save current state including chat messages
+                        if st.session_state.get('messages') and st.session_state.get('current_task_id'):
+                            save_chat_messages(
+                                st.session_state.current_task_id, 
+                                st.session_state.messages
+                            )
                         result = save_current_state(selected_state)
                         st.success("State saved successfully")
                     except Exception as e:
@@ -275,21 +305,7 @@ def initialize_session_state():
     if 'task_runner' not in st.session_state:
         st.session_state.task_runner = TaskRunner(st.session_state.persistence_model)
     
-    # Load last used state if available
-    if 'default_state_loaded' not in st.session_state:
-        metadata = get_last_used_state()
-        if metadata.get("last_used_state"):
-            state_path = str(get_state_dir() / metadata["last_used_state"])
-            load_state(state_path)
-            st.session_state.default_state_loaded = True
-            
-            # Restore last used TM and Task
-            st.session_state.current_tasksmanager_id = metadata.get("last_tm_id")
-            st.session_state.current_task_id = metadata.get("last_task_id")
-        else:
-            st.session_state.default_state_loaded = False
-    
-    # Other session state initializations...
+    # Initialize basic session state
     if 'messages' not in st.session_state:
         st.session_state.messages = []
     if 'current_tasksmanager_id' not in st.session_state:
@@ -302,12 +318,8 @@ def initialize_session_state():
         st.session_state.chat_title = "New Chat"
     if 'creating_new_chat' not in st.session_state:
         st.session_state.creating_new_chat = False
-        
-    # View state
     if 'current_view' not in st.session_state:
         st.session_state.current_view = None
-    
-    # State management
     if 'default_state_loaded' not in st.session_state:
         st.session_state.default_state_loaded = False
     if 'state_location' not in st.session_state:
@@ -632,6 +644,11 @@ async def render_main_chat():
         else:
             current_task = task_data
 
+    # Load chat messages for current session
+    if st.session_state.current_task_id and st.session_state.current_session_id:
+        if not st.session_state.messages:  # Only load if messages are empty
+            st.session_state.messages = load_chat_messages(st.session_state.current_task_id)
+    
     # Display chat messages
     if st.session_state.messages is not None:
         for msg in st.session_state.messages:
@@ -719,7 +736,7 @@ async def render_main_chat():
                     message_placeholder.write(current_response + "▌")
                 message_placeholder.write(current_response)
 
-                # Add assistant response to state
+                # Add assistant response and save state
                 assistant_message = Message(
                     role="assistant",
                     content=current_response,
@@ -729,13 +746,16 @@ async def render_main_chat():
                 )
                 st.session_state.messages.append(assistant_message)
 
-                # Save session messages if task supports sessions
-                if hasattr(current_task, 'add_message_to_session') and st.session_state.current_session_id:
-                    current_task.add_message_to_session(
-                        st.session_state.current_session_id,
-                        assistant_message
-                    )
-                    persistence_model.tasks.update(current_task.id, current_task)
+                # Save messages to both task and session
+                save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+                
+                # Save to local session file
+                if 'browser_session_id' in st.session_state:
+                    save_local_session(st.session_state.browser_session_id)
+                
+                # Save full state
+                if st.session_state.state_location:
+                    save_current_state(st.session_state.state_location.state_name)
 
             except Exception as e:
                 st.error(f"Error processing request: {str(e)}")
@@ -743,6 +763,12 @@ async def render_main_chat():
 async def render_main_content():
     """Render the main content area based on selected view."""
     try:
+        # Save current state before switching views
+        if st.session_state.messages and st.session_state.current_task_id:
+            save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+            if st.session_state.state_location:
+                save_current_state(st.session_state.state_location.state_name)
+            
         if st.session_state.current_view == ViewType.TASK_HIERARCHY:
             from src.pages.task_hierarchy_view import render_task_hierarchy_view
             await render_task_hierarchy_view()
@@ -785,6 +811,170 @@ def get_last_used_state() -> dict:
         st.error(f"Error loading metadata: {str(e)}")
     return {}
 
+def save_session_state():
+    """Save current session state to browser storage."""
+    session_data = {
+        'messages': st.session_state.messages,
+        'current_view': st.session_state.current_view,
+        'current_tasksmanager_id': st.session_state.current_tasksmanager_id,
+        'current_task_id': st.session_state.current_task_id,
+        'current_session_id': st.session_state.current_session_id,
+        'chat_sessions': {}  # Store chat history by session ID
+    }
+    
+    # Convert to JSON-serializable format
+    serialized_data = json.dumps(session_data, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
+    
+    # Save to browser storage using Streamlit's experimental_set_query_params
+    st.experimental_set_query_params(
+        session_data=serialized_data
+    )
+
+def load_session_state():
+    """Load session state from browser storage."""
+    params = st.experimental_get_query_params()
+    if 'session_data' in params:
+        try:
+            session_data = json.loads(params['session_data'][0])
+            
+            # Restore session state
+            st.session_state.messages = [Message(**msg) if isinstance(msg, dict) else msg 
+                                       for msg in session_data.get('messages', [])]
+            st.session_state.current_view = session_data.get('current_view')
+            st.session_state.current_tasksmanager_id = session_data.get('current_tasksmanager_id')
+            st.session_state.current_task_id = session_data.get('current_task_id')
+            st.session_state.current_session_id = session_data.get('current_session_id')
+            
+            return True
+        except Exception as e:
+            st.error(f"Error loading session state: {str(e)}")
+    return False
+
+def generate_session_id():
+    """Generate a unique session ID for the browser."""
+    if 'browser_session_id' not in st.session_state:
+        st.session_state.browser_session_id = "anonymous"
+    return st.session_state.browser_session_id
+
+def save_local_session(session_id: str):
+    """Save session data to local storage."""
+    session_dir = get_state_dir() / "sessions"
+    session_dir.mkdir(exist_ok=True)
+    
+    session_data = {
+        'messages': st.session_state.messages,
+        'current_view': st.session_state.current_view,
+        'current_tasksmanager_id': st.session_state.current_tasksmanager_id,
+        'current_task_id': st.session_state.current_task_id,
+        'current_session_id': st.session_state.current_session_id,
+        'last_access': datetime.now().isoformat()
+    }
+    
+    session_file = session_dir / "anonymous.json"
+    with open(session_file, 'w') as f:
+        json.dump(session_data, f, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
+
+def load_local_session(session_id: str = None):
+    """Load session data from local storage."""
+    session_file = get_state_dir() / "sessions" / "anonymous.json"
+    if session_file.exists():
+        with open(session_file) as f:
+            session_data = json.load(f)
+            
+        # Restore session state
+        st.session_state.messages = [Message(**msg) if isinstance(msg, dict) else msg 
+                                   for msg in session_data.get('messages', [])]
+        st.session_state.current_view = session_data.get('current_view')
+        st.session_state.current_tasksmanager_id = session_data.get('current_tasksmanager_id')
+        st.session_state.current_task_id = session_data.get('current_task_id')
+        st.session_state.current_session_id = session_data.get('current_session_id')
+
+def cleanup_old_sessions(max_age_days: int = 7):
+    """Clean up old session files."""
+    session_dir = get_state_dir() / "sessions"
+    if not session_dir.exists():
+        return
+        
+    now = datetime.now()
+    for session_file in session_dir.glob("*.json"):
+        try:
+            with open(session_file) as f:
+                session_data = json.load(f)
+            last_access = datetime.fromisoformat(session_data['last_access'])
+            
+            if (now - last_access).days > max_age_days:
+                session_file.unlink()
+        except Exception as e:
+            print(f"Error cleaning up session {session_file}: {str(e)}")
+
+def clear_session_state():
+    """Clear the current session state."""
+    if st.session_state.current_task_id and st.session_state.messages:
+        # Save current messages before clearing
+        save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+    
+    # Clean up session files
+    cleanup_session_files()
+    
+    st.session_state.messages = []
+    st.session_state.current_session_id = None
+    st.session_state.current_tasksmanager_id = None
+    st.session_state.current_task_id = None
+
+def save_chat_messages(task_id: str, messages: List[Message]):
+    """Save chat messages to task's current session."""
+    persistence_model = st.session_state.persistence_model
+    task: Task = persistence_model.tasks.read(task_id)
+    session_id = st.session_state.current_session_id
+    
+    if task and session_id:
+        # Save to task
+        if not hasattr(task, 'chat_sessions') or task.chat_sessions is None:
+            task.chat_sessions = {}
+        task.chat_sessions[session_id] = [
+            msg.dict() if hasattr(msg, 'dict') else msg for msg in messages
+        ]
+        persistence_model.tasks.update(task_id, task)
+        
+        # Save to local session
+        if 'browser_session_id' in st.session_state:
+            session_data = {
+                'messages': messages,
+                'current_view': st.session_state.current_view,
+                'current_tasksmanager_id': st.session_state.current_tasksmanager_id,
+                'current_task_id': st.session_state.current_task_id,
+                'current_session_id': st.session_state.current_session_id,
+                'last_access': datetime.now().isoformat()
+            }
+            
+            session_dir = get_state_dir() / "sessions"
+            session_dir.mkdir(exist_ok=True)
+            session_file = session_dir / f"{st.session_state.browser_session_id}.json"
+            
+            with open(session_file, 'w') as f:
+                json.dump(session_data, f, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
+
+def load_chat_messages(task_id: str) -> List[Message]:
+    """Load chat messages from task's current session."""
+    persistence_model = st.session_state.persistence_model
+    task: Task = persistence_model.tasks.read(task_id)
+    session_id = st.session_state.current_session_id
+    
+    if task and session_id and task.chat_sessions and session_id in task.chat_sessions:
+        return [Message(**msg) if isinstance(msg, dict) else msg 
+                for msg in task.chat_sessions[session_id]]
+    return []
+
+def cleanup_session_files():
+    """Remove all session files."""
+    session_dir = get_state_dir() / "sessions"
+    if session_dir.exists():
+        for file in session_dir.glob("*.json"):
+            try:
+                file.unlink()
+            except Exception as e:
+                print(f"Error removing session file {file}: {e}")
+
 def main():
     """Main application entry point."""
     st.set_page_config(
@@ -796,25 +986,51 @@ def main():
         }
     )
     
-    # Initialize session state
+    # Initialize basic session state
     initialize_session_state()
     
-    # Render logo and title in sidebar
+    # Generate session ID
+    session_id = generate_session_id()
+    
+    # Load anonymous session if it exists
+    load_local_session()
+    
+    # Load last used state if available
+    if not st.session_state.default_state_loaded:
+        metadata = get_last_used_state()
+        if metadata.get("last_used_state"):
+            state_path = str(get_state_dir() / metadata["last_used_state"])
+            load_state(state_path)
+            st.session_state.default_state_loaded = True
+            
+            # Restore last used TM and Task
+            st.session_state.current_tasksmanager_id = metadata.get("last_tm_id")
+            st.session_state.current_task_id = metadata.get("last_task_id")
+    
+    # Render UI
     with st.sidebar:
         render_logo(width=150)
         st.title("Cerebrum")
         st.divider()
         
-        # Render state management and chat management
+        # Add session management
+        if st.button("Clear Session"):
+            clear_session_state()
+            st.rerun()
+        
         render_state_management()
         render_chat_management_sidebar()
+    
+    # Save current session state
+    if st.session_state.get('messages') and st.session_state.get('current_task_id'):
+        save_local_session(session_id)
     
     # Create placeholder for main content
     if 'main_content_placeholder' not in st.session_state:
         st.session_state.main_content_placeholder = st.empty()
     
     try:
-        # Only run async content
+        # Run async content
         asyncio.run(render_main_content())
     except Exception as e:
         st.error(f"Error in application: {str(e)}")
