@@ -12,11 +12,12 @@ from ..context.context_provider import ContextProvider
 from ..context.crew_context_enhancer import CrewContextEnhancer, CrewContextConfig
 from ..context.context_analytics import ContextAnalytics
 from ..controllers.task_tree_controller import TaskNode
+from ..persistence.persistence_model import PersistenceModelBase
 
 class TaskRunner:
     """Task runner with added context awareness through ContextProvider."""
 
-    def __init__(self, persistence_model):
+    def __init__(self, persistence_model: PersistenceModelBase):
         self.persistence_model = persistence_model
         self.operator = ToolsOperator()
         self.context_provider = ContextProvider()

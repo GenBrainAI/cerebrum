@@ -150,6 +150,10 @@ class Task(BaseModel):
             updated = True
         return updated
 
+    def get_chat_sessions(self) -> Dict[str, List[Dict]]:
+        """Get all chat sessions."""
+        return self.model_dump().get('chat_sessions', {})
+
     class Config:
         arbitrary_types_allowed = True
         json_encoders = {

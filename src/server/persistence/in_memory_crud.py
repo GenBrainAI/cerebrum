@@ -57,21 +57,31 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
             items = json.loads(data)
             new_storage = {}
             
+            print(f"\n🔍 Loading {self._model_class.__name__} items:")
             for k, v in items.items():
                 try:
+                    # Log the item before parsing
+                    print(f"  📝 Processing {k}:")
+                    print(f"    Type before parsing: {type(v)}")
+                    
                     # Try to parse each item individually
                     parsed_item = self._model_class.parse_obj(v)
+                    
+                    # Log the parsed item
+                    print(f"    Type after parsing: {type(parsed_item)}")
+                    print(f"    Is instance of {self._model_class.__name__}: {isinstance(parsed_item, self._model_class)}")
+                    
                     new_storage[k] = parsed_item
                 except Exception as e:
-                    print(f"Failed to parse item {k}: {str(e)}")
-                    print(f"Raw item data: {v}")
+                    print(f"❌ Failed to parse item {k}: {str(e)}")
+                    print(f"   Raw item data: {v}")
                     raise  # Re-raise to catch invalid items
                     
             self.storage = new_storage
             
         except Exception as e:
-            print(f"Error in from_json for {self._model_class.__name__}: {str(e)}")
-            print(f"Raw data: {data[:200]}...")  # Print first 200 chars of raw data
+            print(f"❌ Error in from_json for {self._model_class.__name__}: {str(e)}")
+            print(f"   Raw data: {data[:200]}...")  # Print first 200 chars of raw data
             raise
 
     @property
@@ -80,7 +90,12 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
         return self._model_class
 
     def read(self, item_id: str) -> T:
-        return self.storage.get(item_id)
+        item = self.storage.get(item_id)
+        if item is not None:
+            print(f"\n📖 Reading {self._model_class.__name__} {item_id}:")
+            print(f"  Type: {type(item)}")
+            print(f"  Is instance of {self._model_class.__name__}: {isinstance(item, self._model_class)}")
+        return item
 
     def update(self, item_id: str, item: T) -> T:
         if item_id in self.storage:
@@ -130,6 +145,24 @@ class TaskCrud(InMemoryCrud[Task]):
                 print(f"Warning: Invalid item type {type(item)}: {item}")
                 
         return valid_items
+
+    def read(self, item_id: str) -> Task:
+        """Override read to ensure proper Task instance is returned."""
+        item = super().read(item_id)
+        if item is None:
+            return None
+            
+        if isinstance(item, dict):
+            print(f"⚠️ Converting dict to Task for id {item_id}")
+            try:
+                return Task.parse_obj(item)
+            except Exception as e:
+                print(f"❌ Failed to convert dict to Task: {str(e)}")
+                return item
+        elif not isinstance(item, Task):
+            print(f"⚠️ Unexpected type for Task: {type(item)}")
+            
+        return item
 
 class MessageCrud(InMemoryCrud[Message]):
     def __init__(self):
