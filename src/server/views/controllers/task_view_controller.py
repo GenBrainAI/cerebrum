@@ -13,80 +13,106 @@ from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
+from ...models.message import Message
+import logging
+import json
+from pathlib import Path
 
 class TaskHierarchyController:
     """Controller for task hierarchy view with specialized state support."""
     
     def __init__(self, persistence_model):
         self.global_persistence = persistence_model
-        self.view_state = ViewState(view_type=ViewType.TASK_HIERARCHY)
+        self.view_state = ViewState(view_name="task_hierarchy")
         self.state_manager = ViewStateManager(persistence_model)
         self.task_state = None
         self.tree_component = TreeSelectComponent(self.handle_node_click)
+        self.logger = logging.getLogger(__name__)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
+            await self.state_manager.initialize()
+            
+            # Load session state if available
+            try:
+                session_dir = Path("state/sessions")
+                state_file = session_dir / "task_hierarchy_view_default.json"
+                if state_file.exists():
+                    with open(state_file) as f:
+                        session_data = json.load(f)
+                        self.view_state.chat_history = session_data.get('chat_history', [])
+            except Exception as e:
+                self.logger.error(f"Failed to load session state: {str(e)}")
+            
             print("🔍 Starting task controller initialization...")
             
-            # Debug current persistence model state
-            print("📊 Current global persistence state:")
+            # Initialize task context from persistence model
             task_managers = self.global_persistence.tasksmanagers.list()
             tasks = self.global_persistence.tasks.list()
             
-            print(f"Task Managers: {len(task_managers)}")
-            for tm in task_managers:
-                print(f"  - {tm.name} ({tm.id})")
-            
-            print(f"Tasks: {len(tasks)}")
-            for task in tasks:
-                print(f"  - {task.name} (Manager: {task.tasksmanager_id})")
-            
-            # Find task management context
-            task_manager = next(
-                (m for m in task_managers if "Task Management" in m.name),
-                task_managers[0] if task_managers else None
-            )
-            
-            if task_manager:
-                # First try to find a specific task management task
-                main_task = next(
-                    (t for t in tasks if t.tasksmanager_id == task_manager.id 
-                     and "Task Management" in t.name),
-                    None
-                )
+            if task_managers and tasks:
+                # Set up task context...
                 
-                # If no specific task found, take the first task for this manager
-                if not main_task:
+                # Create default task manager and task if none exist
+                if not task_managers:
+                    print("Creating default task manager and tasks...")
+                    # Create Task Management manager
+                    task_manager = self.global_persistence.tasksmanagers.create({
+                        "name": "Task Management",
+                        "description": "Default task management system"
+                    })
+                    
+                    # Create default task
+                    main_task = self.global_persistence.tasks.create({
+                        "name": "Task Management",
+                        "description": "Main task management task",
+                        "tasksmanager_id": task_manager.id
+                    })
+                    
+                    # Refresh lists
+                    task_managers = [task_manager]
+                    tasks = [main_task]
+                    print(f"Created default task manager: {task_manager.name}")
+                    print(f"Created default task: {main_task.name}")
+                
+                print(f"Found {len(task_managers)} managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find task management task
+                    task_manager = next(
+                        (m for m in task_managers if "Task Management" in m.name),
+                        task_managers[0]
+                    )
                     main_task = next(
                         (t for t in tasks if t.tasksmanager_id == task_manager.id),
                         None
                     )
-                
-                if main_task:
-                    # Update view state with task context
-                    self.view_state.set_active_task(
-                        task_id=main_task.id,
-                        task_name=main_task.name,
-                        manager_id=task_manager.id,
-                        manager_name=task_manager.name
-                    )
-                    print(f"🟢 Set active task: {task_manager.name}-{main_task.name}")
                     
-                    # Set task state
-                    self.task_state = {
-                        "active_tasks": [t.id for t in tasks if t.tasksmanager_id == task_manager.id],
-                        "total_tasks": len(tasks),
-                        "manager_id": task_manager.id,
-                        "task_id": main_task.id
-                    }
+                    if main_task:
+                        # Set active task context
+                        self.view_state.set_active_task(
+                            task_id=main_task.id,
+                            task_name=main_task.name,
+                            manager_id=task_manager.id,
+                            manager_name=task_manager.name
+                        )
+                        print(f"🟢 Set active task: {task_manager.name}-{main_task.name}")
+                        
+                        # Set task state
+                        self.task_state = {
+                            "active_tasks": [t.id for t in tasks if t.tasksmanager_id == task_manager.id],
+                            "total_tasks": len(tasks),
+                            "manager_id": task_manager.id,
+                            "task_id": main_task.id
+                        }
+                    else:
+                        print("🔴 No main task found for task manager")
                 else:
-                    print("🔴 No main task found for task manager")
-            else:
-                print("🔴 No task manager found")
+                    print("🔴 No task managers found")
                 
         except Exception as e:
-            print(f"Error initializing task controller: {str(e)}")
+            self.logger.error(f"Error in controller initialization: {str(e)}")
             raise
 
     async def get_task_tree(self) -> Optional[TreeNode]:
@@ -142,40 +168,25 @@ class TaskHierarchyController:
     async def handle_chat(self, message: str) -> str:
         """Process chat messages for task management."""
         try:
-            # Add message to chat history
+            # Process message and get response
+            response = await self._process_task_command(message)
+            
+            # Add messages to chat history
             self.view_state.chat_history.append({
                 "role": "user",
                 "content": message
             })
-            
-            # Update task state
-            if self.task_state:
-                await self.task_state.update({
-                    "last_message": message,
-                    "timestamp": datetime.now().isoformat()
-                })
-            
-            # Process command
-            try:
-                response = await self._process_task_command(message)
-            except StateError as e:
-                response = f"State error: {str(e)}"
-            except Exception as e:
-                response = f"Error processing command: {str(e)}"
-                self.logger.error(f"Command processing error: {str(e)}")
-            
-            # Add response to history
             self.view_state.chat_history.append({
                 "role": "assistant",
                 "content": response
             })
             
-            # Save state
+            # Save state after chat update
             try:
-                await self.state_manager.save_state(ViewType.TASK_HIERARCHY, self.view_state)
-            except StateError as e:
-                self.logger.error(f"Failed to save state: {str(e)}")
-                return f"Command processed but state save failed: {str(e)}"
+                state_data = self.view_state.dict()
+                await self.state_manager.save_session_state("task_hierarchy", state_data)
+            except Exception as e:
+                self.logger.error(f"Failed to save session state: {str(e)}")
             
             return response
             
@@ -203,10 +214,11 @@ class TaskHierarchyController:
         return None
         
     async def _process_task_command(self, message: str) -> str:
-        """Process task management commands with state tracking."""
+        """Process task management commands or run active task."""
         try:
             command = message.lower().strip()
             
+            # Check for specific commands
             if "create task" in command:
                 name = command.split("create task")[-1].strip()
                 if not name:
@@ -214,8 +226,7 @@ class TaskHierarchyController:
                     
                 task = await self._create_task(name)
                 if self.task_state:
-                    self.task_state.active_tasks.append(task.id)
-                    await self.state_manager._persist_specialized_state(self.task_state)
+                    self.task_state["active_tasks"].append(task.id)
                 return f"Created task: {task.name}"
                 
             elif "list tasks" in command:
@@ -229,8 +240,57 @@ class TaskHierarchyController:
 - create task <name>
 - list tasks
 - help"""
+            
+            # If no command matched, run the active task
+            if self.view_state.task_status and self.view_state.task_status.get("loaded"):
+                task_id = self.view_state.task_status.get("task_id")
+                manager_id = self.view_state.task_status.get("tasksmanager_id")
                 
-            return f"Unknown command. Type 'help' for available commands."
+                if task_id and manager_id:
+                    # Prepare messages context
+                    current_messages = []
+                    
+                    # Add existing chat history
+                    for msg in self.view_state.chat_history:
+                        if isinstance(msg, Message):
+                            current_messages.append(msg)
+                        elif isinstance(msg, dict):
+                            current_messages.append(Message(**msg))
+                        else:
+                            current_messages.append(Message(
+                                role=getattr(msg, 'role', 'user'),
+                                content=str(msg),
+                                file_ids=getattr(msg, 'file_ids', None),
+                                created_at=getattr(msg, 'created_at', None),
+                                updated_at=getattr(msg, 'updated_at', None)
+                            ))
+                    
+                    # Add current message
+                    user_message = Message(
+                        role="user",
+                        content=message,
+                        file_ids=None,
+                        created_at=None,
+                        updated_at=None
+                    )
+                    current_messages.append(user_message)
+                    
+                    # Run task with message context
+                    response = await self.state_manager.task_runner.run_task(
+                        tasksmanager_id=manager_id,
+                        task_id=task_id,
+                        running_extra_params={'messages': current_messages}
+                    )
+                    
+                    # Process response
+                    if isinstance(response, dict) and 'response' in response:
+                        response_text = response['response']
+                    else:
+                        response_text = str(response)
+                    
+                    return response_text
+                
+            return "No active task to process message."
             
         except StateError as e:
             raise

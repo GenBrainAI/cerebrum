@@ -15,10 +15,10 @@ class TaskHierarchySidebar:
             st.header("Task Hierarchy")
             
             # Get state status from controller
-            if self.controller:
-                status = self.controller.view_state.task_status
-                if status["loaded"]:
-                    st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
+            if self.controller and self.controller.view_state:
+                task_status = self.controller.view_state.task_status
+                if task_status.get("loaded"):
+                    st.markdown(f"🟢 **Active Task:** {task_status['tasksmanager_name']}-{task_status['task_name']}")
                     st.markdown("**State:** Task Management loaded")
                 else:
                     st.markdown("🔴 State loaded but no task context found")
@@ -27,28 +27,29 @@ class TaskHierarchySidebar:
             
             st.markdown("---")
             
-            # Add quick actions
-            # if st.button("➕ Add New Task"):
-            #     # TODO: Implement task creation dialog
-            #     st.info("Task creation coming soon")
-                
-            # if st.button("🔄 Refresh Tasks"):
-            #     st.rerun()
-            
-            st.markdown("---")
-            
             # Render tree in sidebar
             st.subheader("Task Structure")
             if self.controller:
+                print("\n🌳 Getting task tree for sidebar...")
                 tree_data = await self.controller.get_task_tree()
+                
                 if tree_data:
-                    result = self.controller.tree_component.render(
-                        tree_data,
-                        key="task_tree_sidebar"
-                    )
-                    if result is None:
-                        st.warning("Failed to load task tree")
+                    print(f"Tree data received: {len(tree_data.children)} root children")
+                    try:
+                        result = self.controller.tree_component.render(
+                            tree_data,
+                            key="task_tree_sidebar"
+                        )
+                        if result is None:
+                            print("❌ Tree render returned None")
+                            st.warning("Failed to load task tree")
+                        else:
+                            print("✅ Tree rendered successfully")
+                    except Exception as e:
+                        print(f"❌ Error rendering tree: {str(e)}")
+                        st.error(f"Error rendering tree: {str(e)}")
                 else:
+                    print("❌ No tree data received")
                     st.info("No tasks available")
 
 # Legacy function for backward compatibility

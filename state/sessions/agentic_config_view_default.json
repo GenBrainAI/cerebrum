@@ -1,0 +1,15 @@
+{
+  "chat_history": [
+    {
+      "role": "user",
+      "content": "write 5 words sentence about ai agents\n\n"
+    },
+    {
+      "role": "assistant",
+      "content": "AI agents can perform complex tasks."
+    }
+  ],
+  "selected_node": null,
+  "expanded_nodes": [],
+  "last_access": "2024-12-20T02:43:24.776256"
+}

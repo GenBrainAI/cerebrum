@@ -13,118 +13,106 @@ from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
+import logging
+from pathlib import Path
+from ...models.message import Message
 
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
     
     def __init__(self, persistence_model):
         self.global_persistence = persistence_model
-        self.view_state = ViewState(view_type=ViewType.AGENTIC_CONFIG)
+        self.view_state = ViewState(view_name="agentic_config")
         self.state_manager = ViewStateManager(persistence_model)
         self.local_persistence = None
         self.agent_state = None
         self.tree_component = TreeSelectComponent(self.handle_node_click)
+        self.logger = logging.getLogger(__name__)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            print("🔍 Starting agentic controller initialization...")
-            state_file = StateLoader.get_state_file("agentic_framework_state.json")
-            print(f"📁 Checking state file path: {state_file}")
+            await self.state_manager.initialize()
             
-            if not state_file or not state_file.exists():
-                print(f"🔴 Specialized state file not found at {state_file}")
-                # Create initial state file
-                root_dir = StateLoader.get_project_root()
-                state_dir = root_dir / "state" / "specialized"
-                state_dir.mkdir(parents=True, exist_ok=True)
+            # Load existing state if available
+            try:
+                session_dir = Path("state/sessions")
+                state_file = session_dir / "agentic_config_view_default.json"
+                if state_file.exists():
+                    with open(state_file) as f:
+                        state_data = json.load(f)
+                        print(f"\n📖 Loading agentic state:")
+                        print(f"  Chat history: {len(state_data.get('chat_history', []))} messages")
+                        print(f"  Task status: {state_data.get('task_status', {})}")
+                        
+                        self.view_state.chat_history = state_data.get('chat_history', [])
+                        if 'task_status' in state_data:
+                            self.view_state.task_status = state_data['task_status']
+            except Exception as e:
+                self.logger.error(f"Failed to load existing state: {str(e)}")
+            
+            # Initialize task context
+            task_managers = self.global_persistence.tasksmanagers.list()
+            tasks = self.global_persistence.tasks.list()
+            
+            # Create default task manager and task if none exist
+            if not task_managers:
+                print("Creating default task manager and tasks...")
+                task_manager = self.global_persistence.tasksmanagers.create({
+                    "name": "Agentic Framework",
+                    "description": "Default agentic framework system"
+                })
                 
-                initial_state = {
-                    "type": "agent_framework",
-                    "task_context": None,
-                    "frameworks": [],
-                    "tasks": [],
-                    "tasksmanagers": []
-                }
+                main_task = self.global_persistence.tasks.create({
+                    "name": "Agentic Framework",
+                    "description": "Main agentic framework task",
+                    "tasksmanager_id": task_manager.id
+                })
                 
-                state_file = state_dir / "agentic_framework_state.json"
-                with open(state_file, 'w') as f:
-                    json.dump(initial_state, f, indent=2)
-                print(f"📝 Created initial state file at: {state_file}")
-
-            print(f"📖 Loading state from: {state_file}")
+                task_managers = [task_manager]
+                tasks = [main_task]
+                print(f"Created default task manager: {task_manager.name}")
+                print(f"Created default task: {main_task.name}")
             
-            # Read state file content as string
-            with open(state_file, 'r', encoding='utf-8') as f:
-                json_str = f.read()
-                print(f"📄 Loaded JSON content length: {len(json_str)}")
-            
-            # Create local persistence model and load state from string
-            self.local_persistence = InMemoryPersistenceModel()
-            print("🔄 Created local persistence model")
-            
-            self.local_persistence.from_json(json_str=json_str)
-            print("✅ Loaded JSON into local persistence")
-            
-            if self.local_persistence:
-                print("🟢 Local persistence model initialized successfully")
-                # Get task context from local persistence
-                task_managers = self.local_persistence.tasksmanagers.list()
-                tasks = self.local_persistence.tasks.list()
+            if task_managers and tasks:
+                # Find agentic framework task
+                agentic_manager = next(
+                    (m for m in task_managers if "Agentic Framework" in m.name),
+                    task_managers[0]
+                )
+                agentic_task = next(
+                    (t for t in tasks if t.tasksmanager_id == agentic_manager.id),
+                    None
+                )
                 
-                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
-                
-                if task_managers and tasks:
-                    # Find the agentic framework manager and task
-                    agentic_manager = next(
-                        (m for m in task_managers if "Agentic Framework" in m.name),
-                        task_managers[0]
+                if agentic_task:
+                    # Set active task context
+                    self.view_state.set_active_task(
+                        task_id=agentic_task.id,
+                        task_name=agentic_task.name,
+                        manager_id=agentic_manager.id,
+                        manager_name=agentic_manager.name
                     )
-                    agentic_task = next(
-                        (t for t in tasks if t.tasksmanager_id == agentic_manager.id),
-                        None
-                    )
+                    print(f"🟢 Set active task: {agentic_manager.name}-{agentic_task.name}")
                     
-                    if agentic_task:
-                        # Update view state with task context
-                        self.view_state.set_active_task(
-                            task_id=agentic_task.id,
-                            task_name=agentic_task.name,
-                            manager_id=agentic_manager.id,
-                            manager_name=agentic_manager.name
-                        )
-                        
-                        # Set agent state using task context
-                        self.agent_state = AgentFrameworkState(
-                            state_type=StateType.AGENT_FRAMEWORK,
-                            name=f"{agentic_manager.name}-{agentic_task.name}",
-                            data={},
-                            metadata=StateMetadata(),
-                            frameworks=[],
-                            task_context={
-                                "task_id": agentic_task.id,
-                                "manager_id": agentic_manager.id
-                            }
-                        )
-                        
-                        # Check for framework configuration in task
-                        if hasattr(agentic_task, 'crewai_config_id') and agentic_task.crewai_config_id:
-                            print("Found CrewAI configuration in task")
-                            # TODO: Load framework configuration from CrewAI info
-                        elif hasattr(agentic_task, 'autogen_config_id') and agentic_task.autogen_config_id:
-                            print("Found Autogen configuration in task")
-                            # TODO: Load framework configuration from Autogen config
-                        
-                        print(f"🟢 Loaded state for {agentic_manager.name}-{agentic_task.name}")
-                    else:
-                        print("🔴 No agentic framework task found")
+                    # Set agent state
+                    self.agent_state = {
+                        "active_agents": [],
+                        "total_agents": 0,
+                        "manager_id": agentic_manager.id,
+                        "task_id": agentic_task.id
+                    }
                 else:
-                    print("🔴 No task context found in state file")
+                    print("🔴 No main task found for agentic manager")
             else:
-                print("🔴 Failed to create local persistence model")
-                
+                print("🔴 No task managers found")
+            
+            # Initialize other components
+            self.local_persistence = InMemoryPersistenceModel()
+            print("Local persistence model initialized")
+            
         except Exception as e:
-            print(f"Error initializing agentic controller: {str(e)}")
+            self.logger.error(f"Error in controller initialization: {str(e)}")
             raise
 
     async def get_agent_tree(self) -> Optional[TreeNode]:
@@ -133,7 +121,7 @@ class AgenticViewController:
             # Use global persistence to get crewai configs
             crewai_configs = self.global_persistence.crewai_config.list()
             if not crewai_configs:
-                print("No CrewAI configurations found")
+                # print("No CrewAI configurations found")
                 return None
             
             # Create root node
@@ -207,21 +195,41 @@ class AgenticViewController:
             print(f"Error building frameworks tree: {str(e)}")
             return None
             
-    async def handle_chat(self, message: str) -> None:
-        """Handle chat messages with state tracking."""
+    async def handle_chat(self, message: str) -> str:
+        """Process chat messages."""
         try:
+            # Process message and get response
             response = await self._process_agent_command(message)
-            self.view_state.add_message("user", message)
-            self.view_state.add_message("assistant", response)
+            
+            # Add messages to chat history
+            self.view_state.chat_history.append({
+                "role": "user",
+                "content": message
+            })
+            self.view_state.chat_history.append({
+                "role": "assistant",
+                "content": response
+            })
+            
+            # Save session state after chat update
+            try:
+                state_data = self.view_state.dict()
+                await self.state_manager.save_session_state("agentic_config", state_data)
+            except Exception as e:
+                self.logger.error(f"Failed to save session state: {str(e)}")
+            
+            return response
+            
         except Exception as e:
-            error_msg = f"Error processing message: {str(e)}"
-            self.view_state.add_message("assistant", error_msg)
+            self.logger.error(f"Chat handling error: {str(e)}")
+            return f"An error occurred: {str(e)}"
             
     async def _process_agent_command(self, message: str) -> str:
-        """Process agentic management commands with state tracking."""
+        """Process agentic management commands or run active task."""
         try:
             command = message.lower().strip()
             
+            # Check for specific commands
             if "create agentic" in command:
                 name = command.split("create agentic")[-1].strip()
                 if not name:
@@ -230,7 +238,6 @@ class AgenticViewController:
                 agentic = await self._create_agent(name)
                 if self.agent_state:
                     self.agent_state.active_agents.append(agentic.id)
-                    await self.state_manager._persist_specialized_state(self.agent_state)
                 return f"Created agentic: {agentic.name}"
                 
             elif "list agents" in command:
@@ -245,12 +252,61 @@ class AgenticViewController:
 - list agents
 - help"""
                 
-            return f"Unknown command. Type 'help' for available commands."
+            # If no command matched, run the active task
+            if self.view_state.task_status and self.view_state.task_status.get("loaded"):
+                task_id = self.view_state.task_status.get("task_id")
+                manager_id = self.view_state.task_status.get("tasksmanager_id")
+                
+                if task_id and manager_id:
+                    # Prepare messages context
+                    current_messages = []
+                    
+                    # Add existing chat history
+                    for msg in self.view_state.chat_history:
+                        if isinstance(msg, Message):
+                            current_messages.append(msg)
+                        elif isinstance(msg, dict):
+                            current_messages.append(Message(**msg))
+                        else:
+                            current_messages.append(Message(
+                                role=getattr(msg, 'role', 'user'),
+                                content=str(msg),
+                                file_ids=getattr(msg, 'file_ids', None),
+                                created_at=getattr(msg, 'created_at', None),
+                                updated_at=getattr(msg, 'updated_at', None)
+                            ))
+                    
+                    # Add current message
+                    user_message = Message(
+                        role="user",
+                        content=message,
+                        file_ids=None,
+                        created_at=None,
+                        updated_at=None
+                    )
+                    current_messages.append(user_message)
+                    
+                    # Run task with message context
+                    response = await self.state_manager.task_runner.run_task(
+                        tasksmanager_id=manager_id,
+                        task_id=task_id,
+                        running_extra_params={'messages': current_messages}
+                    )
+                    
+                    # Process response
+                    if isinstance(response, dict) and 'response' in response:
+                        response_text = response['response']
+                    else:
+                        response_text = str(response)
+                    
+                    return response_text
+            
+            return "No active task to process message. Try 'help' for available commands."
             
         except StateError as e:
             raise
         except Exception as e:
-            print(f"Command processing error: {str(e)}")
+            self.logger.error(f"Command processing error: {str(e)}")
             raise StateError(f"Failed to process command: {str(e)}")
             
     async def _create_agent(self, name: str) -> Agentic:

@@ -10,6 +10,12 @@ from ..models.task import Task
 from ..models.message import Message
 from ..models.agent import CrewAIConfig
 from ..controllers.curried_proxy import CurriedProxy
+from ..models.specialized_state import (
+    SpecializedState, 
+    TaskGenerationState, 
+    ToolManagementState, 
+    AgentFrameworkState
+)
 
 class PersistenceModelBase(ABC):
 
@@ -68,3 +74,29 @@ class PersistenceModelBase(ABC):
     @abstractmethod
     def curried_proxies(self) -> CrudInterface[CurriedProxy]:
         pass
+
+    def initialize_from_state(self, state: SpecializedState):
+        """Initialize model from specialized state."""
+        if isinstance(state, TaskGenerationState):
+            self._initialize_tasks(state)
+        elif isinstance(state, ToolManagementState):
+            self._initialize_tools(state)
+        elif isinstance(state, AgentFrameworkState):
+            self._initialize_agents(state)
+
+    def _initialize_tasks(self, state: TaskGenerationState):
+        """Initialize tasks and managers from state."""
+        for manager in state.tasksmanagers:
+            self.tasksmanagers.create(manager)
+        for task in state.tasks:
+            self.tasks.create(task)
+
+    def _initialize_tools(self, state: ToolManagementState):
+        """Initialize tools from state."""
+        for tool in state.tools:
+            self.tools.create(tool)
+
+    def _initialize_agents(self, state: AgentFrameworkState):
+        """Initialize agents from state."""
+        for agent in state.agents:
+            self.agents.create(agent)

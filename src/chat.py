@@ -7,9 +7,6 @@ from typing import Optional
 from typing import List, Dict
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
-import random
-import hashlib
 
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from server.controllers.task_runner import TaskRunner
@@ -19,7 +16,6 @@ from server.models.task import Task
 from server.controllers.persistence_controller import load_from_storage, save_to_storage
 from server.models.persistence_models import StorageLocation, StorageType
 from server.persistence.persistence_model import PersistenceModelBase 
-from server.context.context_provider import ContextProvider
 from server.views.models.view_types import ViewType
 
 
@@ -752,7 +748,7 @@ async def render_main_chat():
                 # Save to local session file
                 if 'browser_session_id' in st.session_state:
                     save_local_session(st.session_state.browser_session_id)
-                
+
                 # Save full state
                 if st.session_state.state_location:
                     save_current_state(st.session_state.state_location.state_name)
@@ -856,7 +852,18 @@ def generate_session_id():
         st.session_state.browser_session_id = "anonymous"
     return st.session_state.browser_session_id
 
-def save_local_session(session_id: str):
+def get_session_filename(view_type: ViewType = None) -> str:
+    """Get the appropriate session filename based on view type."""
+    if view_type == ViewType.TASK_HIERARCHY:
+        return "task_hierarchy_view_default.json"
+    elif view_type == ViewType.TOOLS_CATALOG:
+        return "tools_catalog_view_default.json"
+    elif view_type == ViewType.AGENTIC_CONFIG:
+        return "agentic_config_view_default.json"
+    else:
+        return "chat_view_default.json"
+
+def save_local_session(session_id: str = None):
     """Save session data to local storage."""
     session_dir = get_state_dir() / "sessions"
     session_dir.mkdir(exist_ok=True)
@@ -870,13 +877,14 @@ def save_local_session(session_id: str):
         'last_access': datetime.now().isoformat()
     }
     
-    session_file = session_dir / "anonymous.json"
+    # Use view-specific session file
+    session_file = session_dir / get_session_filename(st.session_state.current_view)
     with open(session_file, 'w') as f:
         json.dump(session_data, f, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
 
 def load_local_session(session_id: str = None):
     """Load session data from local storage."""
-    session_file = get_state_dir() / "sessions" / "anonymous.json"
+    session_file = get_state_dir() / "sessions" / get_session_filename(st.session_state.current_view)
     if session_file.exists():
         with open(session_file) as f:
             session_data = json.load(f)

@@ -1,0 +1,15 @@
+{
+  "chat_history": [
+    {
+      "role": "user",
+      "content": "write 5 words sentence about ai tools "
+    },
+    {
+      "role": "assistant",
+      "content": "AI tools automate complex data analysis."
+    }
+  ],
+  "selected_node": null,
+  "expanded_nodes": [],
+  "last_access": "2024-12-20T02:46:31.933474"
+}
