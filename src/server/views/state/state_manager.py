@@ -18,19 +18,29 @@ from ..models.view_state import ViewState
 from ..models.view_types import ViewType
 from .view_serializer import ViewStateSerializer
 from ...models.exceptions import StateNotFoundError
+from ...controllers.task_runner import TaskRunner
 
 T = TypeVar('T', bound=SpecializedState)
 
 class ViewStateManager:
-    def __init__(self, persistence_model, state_dir: Optional[Path] = None):
+    def __init__(self, persistence_model):
         self.persistence_model = persistence_model
-        self.state_dir = state_dir or Path("state/views")
+        self.task_runner = TaskRunner(persistence_model)
+        self.state_dir = Path("state/views")
         self.specialized_dir = self.state_dir / "specialized"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.specialized_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__name__)
         self.states: Dict[UUID, SpecializedState] = {}
         self.serializer = ViewStateSerializer()
+
+    async def initialize(self):
+        """Initialize the state manager and its components."""
+        try:
+            await self.task_runner.initialize()
+        except Exception as e:
+            print(f"Error initializing state manager: {str(e)}")
+            raise
 
     async def create_specialized_state(
         self, 
@@ -160,24 +170,30 @@ class ViewStateManager:
             self.logger.error(f"Error persisting specialized state {state.id}: {str(e)}")
             raise
 
-    def save_state(self, view_type: ViewType, state: ViewState) -> bool:
+    async def save_state(self, view_name: str, state_data: Dict[str, Any]) -> bool:
         """Save view state to disk."""
         try:
-            state_data = self.serializer.serialize(state)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{view_type.value}_{timestamp}.json"
-            filepath = self.state_dir / filename
+            # Create ViewState from dict
+            state = ViewState(
+                view_name=view_name,
+                task_status=state_data.get('task_status', {}),
+                chat_history=state_data.get('chat_history', []),
+                selected_node=state_data.get('selected_node'),
+                expanded_nodes=state_data.get('expanded_nodes', [])
+            )
             
+            # Get session directory and filename
+            session_dir = self.state_dir.parent / "sessions"  # Go up one level to state/ then into sessions/
+            session_dir.mkdir(exist_ok=True)
+            
+            # Use view-specific default filename
+            filename = f"{view_name}_view_default.json"
+            filepath = session_dir / filename
+            
+            # Save state
             with open(filepath, 'w') as f:
-                json.dump(state_data, f, indent=2)
+                json.dump(state.dict(), f, indent=2)
                 
-            if hasattr(self.persistence_model, 'view_states'):
-                self.persistence_model.view_states.create({
-                    'type': view_type.value,
-                    'filename': filename,
-                    'created_at': timestamp,
-                    'state': state_data
-                })
             return True
             
         except Exception as e:

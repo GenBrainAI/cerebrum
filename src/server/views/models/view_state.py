@@ -1,38 +1,22 @@
-from typing import Optional, List, Dict, Any
-from dataclasses import dataclass, field
-from .view_types import ViewType
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel
 
-@dataclass
-class TaskContext:
-    """Task context information."""
-    task_id: str
-    task_name: str
-    manager_id: str
-    manager_name: str
-
-@dataclass
-class ViewState:
-    """State for view components."""
-    view_type: ViewType
-    chat_history: List[Dict[str, str]] = field(default_factory=list)
-    selected_node_id: Optional[str] = None
-    active_task: Optional[TaskContext] = None
-    task_status: Dict[str, Any] = field(default_factory=lambda: {
+class ViewState(BaseModel):
+    """View state model."""
+    view_name: str
+    task_status: Dict[str, Any] = {
         "loaded": False,
         "task_id": None,
         "task_name": None,
         "tasksmanager_id": None,
         "tasksmanager_name": None
-    })
+    }
+    chat_history: List[Dict[str, Any]] = []
+    selected_node: Optional[str] = None
+    expanded_nodes: List[str] = []
 
     def set_active_task(self, task_id: str, task_name: str, manager_id: str, manager_name: str):
-        """Set the active task context."""
-        self.active_task = TaskContext(
-            task_id=task_id,
-            task_name=task_name,
-            manager_id=manager_id,
-            manager_name=manager_name
-        )
+        """Set active task context."""
         self.task_status = {
             "loaded": True,
             "task_id": task_id,

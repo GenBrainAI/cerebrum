@@ -13,105 +13,83 @@ from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
 from ...tools.tools_catalog import tools_catalog
+from ...models.message import Message
+import logging
+import json
+from pathlib import Path
 
 class ToolsCatalogController:
     """Controller for tools catalog view with specialized state support."""
     
     def __init__(self, persistence_model):
         self.global_persistence = persistence_model
-        self.view_state = ViewState(view_type=ViewType.TOOLS_CATALOG)
+        self.view_state = ViewState(view_name="tools_catalog")
         self.state_manager = ViewStateManager(persistence_model)
         self.local_persistence = None
         self.tool_state = None
         self.tree_component = TreeSelectComponent(self.handle_node_click)
+        self.logger = logging.getLogger(__name__)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            print("Starting controller initialization...")
-            state_file = StateLoader.get_state_file("tools_management_state.json")
-            print(f"Checking state file path: {state_file}")
+            await self.state_manager.initialize()
             
-            if not state_file or not state_file.exists():
-                print(f"🔴 Specialized state file not found at {state_file}")
-                # Create initial state file
-                root_dir = StateLoader.get_project_root()
-                state_dir = root_dir / "state" / "specialized"
-                state_dir.mkdir(parents=True, exist_ok=True)
+            # Load existing state if available
+            try:
+                session_dir = Path("state/sessions")
+                state_file = session_dir / "tools_catalog_view_default.json"
+                if state_file.exists():
+                    with open(state_file) as f:
+                        state_data = json.load(f)
+                        self.view_state.chat_history = state_data.get('chat_history', [])
+                        if 'task_status' in state_data:
+                            self.view_state.task_status = state_data['task_status']
+                        print(f"Loaded chat history: {len(self.view_state.chat_history)} messages")
+            except Exception as e:
+                self.logger.error(f"Failed to load existing state: {str(e)}")
+            
+            # Initialize task context
+            task_managers = self.global_persistence.tasksmanagers.list()
+            tasks = self.global_persistence.tasks.list()
+            
+            if task_managers and tasks:
+                # Find tools management task
+                tools_manager = next(
+                    (m for m in task_managers if "Tools Management" in m.name),
+                    task_managers[0]
+                )
+                tools_task = next(
+                    (t for t in tasks if t.tasksmanager_id == tools_manager.id),
+                    None
+                )
                 
-                initial_state = {
-                    "type": "tool_management",
-                    "task_context": None,
-                    "tools": [],
-                    "tasks": [],
-                    "tasksmanagers": []
-                }
-                
-                state_file = state_dir / "tools_management_state.json"
-                with open(state_file, 'w') as f:
-                    json.dump(initial_state, f, indent=2)
-                print(f"Created initial state file at: {state_file}")
-
-            print(f"Loading state from: {state_file}")
+                if tools_task:
+                    # Set active task context
+                    self.view_state.set_active_task(
+                        task_id=tools_task.id,
+                        task_name=tools_task.name,
+                        manager_id=tools_manager.id,
+                        manager_name=tools_manager.name
+                    )
+                    print(f"Set active task: {tools_manager.name}-{tools_task.name}")
             
-            # Read state file content as string
-            with open(state_file, 'r', encoding='utf-8') as f:
-                json_str = f.read()
-            
-            # Create local persistence model and load state from string
+            # Initialize other components
             self.local_persistence = InMemoryPersistenceModel()
-            self.local_persistence.from_json(json_str=json_str)
+            print("Local persistence model initialized")
             
-            if self.local_persistence:
-                print("Local persistence model created")
-                # Get task context from local persistence
-                task_managers = self.local_persistence.tasksmanagers.list()
-                tasks = self.local_persistence.tasks.list()
-                
-                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
-                
-                if task_managers and tasks:
-                    # Find the tools management manager and task
-                    tools_manager = next(
-                        (m for m in task_managers if "Tools Management" in m.name),
-                        task_managers[0]
-                    )
-                    tools_task = next(
-                        (t for t in tasks if t.tasksmanager_id == tools_manager.id),
-                        None
-                    )
-                    
-                    if tools_task:
-                        # Update view state with task context
-                        self.view_state.set_active_task(
-                            task_id=tools_task.id,
-                            task_name=tools_task.name,
-                            manager_id=tools_manager.id,
-                            manager_name=tools_manager.name
-                        )
-                        
-                        print(f"🟢 Loaded state for {tools_manager.name}-{tools_task.name}")
-                        # Update tool state initialization
-                        self.tool_state = ToolManagementState(
-                            state_type=StateType.TOOL_MANAGEMENT,
-                            name=f"{tools_manager.name}-{tools_task.name}",
-                            data={},
-                            metadata=StateMetadata(),
-                            tool_templates={},
-                            registered_tools=[],
-                            active_tools=[]
-                        )
-                    else:
-                        print("🔴 No tools management task found")
-                else:
-                    print("🔴 No task context found in state file")
-            else:
-                print("🔴 Failed to create local persistence model")
-                
+            # Initialize tools state
+            state_file = StateLoader.get_state_file("tools_management_state.json")
+            if state_file and state_file.exists():
+                with open(state_file, 'r', encoding='utf-8') as f:
+                    json_str = f.read()
+                    self.local_persistence.from_json(json_str=json_str)
+                    print("Tools state loaded from file")
+            
         except Exception as e:
-            print(f"Error initializing tools controller: {str(e)}")
+            self.logger.error(f"Error in controller initialization: {str(e)}")
             raise
-    
+        
     async def get_tools_tree(self) -> Optional[TreeNode]:
         """Get tools catalog as tree structure."""
         try:
@@ -267,21 +245,41 @@ class ToolsCatalogController:
             print(f"Error building tools tree: {str(e)}")
             return None
             
-    async def handle_chat(self, message: str) -> None:
-        """Handle chat messages with state tracking."""
+    async def handle_chat(self, message: str) -> str:
+        """Process chat messages."""
         try:
+            # Process message and get response
             response = await self._process_tool_command(message)
-            self.view_state.add_message("user", message)
-            self.view_state.add_message("assistant", response)
+            
+            # Add messages to chat history
+            self.view_state.chat_history.append({
+                "role": "user",
+                "content": message
+            })
+            self.view_state.chat_history.append({
+                "role": "assistant",
+                "content": response
+            })
+            
+            # Save state after chat update
+            try:
+                state_data = self.view_state.dict()
+                await self.state_manager.save_state("tools_catalog", state_data)
+            except Exception as e:
+                self.logger.error(f"Failed to save state: {str(e)}")
+            
+            return response
+            
         except Exception as e:
-            error_msg = f"Error processing message: {str(e)}"
-            self.view_state.add_message("assistant", error_msg)
+            self.logger.error(f"Chat handling error: {str(e)}")
+            return f"An error occurred: {str(e)}"
             
     async def _process_tool_command(self, message: str) -> str:
-        """Process tool management commands with state tracking."""
+        """Process tool management commands or run active task."""
         try:
             command = message.lower().strip()
             
+            # Check for specific commands
             if "add tool" in command:
                 name = command.split("add tool")[-1].strip()
                 if not name:
@@ -290,7 +288,6 @@ class ToolsCatalogController:
                 tool = await self._create_tool(name)
                 if self.tool_state:
                     self.tool_state.active_tools.append(tool.id)
-                    await self.state_manager._persist_specialized_state(self.tool_state)
                 return f"Added tool: {tool.name}"
                 
             elif "list tools" in command:
@@ -304,13 +301,56 @@ class ToolsCatalogController:
 - add tool <name>
 - list tools
 - help"""
-                
-            return f"Unknown command. Type 'help' for available commands."
             
+            # If no command matched, run the active task
+            if self.view_state.task_status and self.view_state.task_status.get("loaded"):
+                task_id = self.view_state.task_status.get("task_id")
+                manager_id = self.view_state.task_status.get("tasksmanager_id")
+                
+                if task_id and manager_id:
+                    # Create message object
+                    user_message = Message(
+                        role="user",
+                        content=message,
+                        file_ids=None,
+                        created_at=None,
+                        updated_at=None
+                    )
+                    
+                    # Run task with proper message object
+                    response = await self.state_manager.task_runner.run_task(
+                        tasksmanager_id=manager_id,
+                        task_id=task_id,
+                        running_extra_params={'messages': [user_message]}
+                    )
+                    
+                    # Process response
+                    if isinstance(response, dict) and 'response' in response:
+                        response_text = response['response']
+                    else:
+                        response_text = str(response)
+                    
+                    # Create assistant message
+                    assistant_message = Message(
+                        role="assistant",
+                        content=response_text,
+                        file_ids=None,
+                        created_at=None,
+                        updated_at=None
+                    )
+                    
+                    # Add messages to view state
+                    self.view_state.chat_history.append(user_message)
+                    self.view_state.chat_history.append(assistant_message)
+                    
+                    return response_text
+                    
+            return "No active task to process message."
+                
         except StateError as e:
             raise
         except Exception as e:
-            print(f"Command processing error: {str(e)}")
+            self.logger.error(f"Command processing error: {str(e)}")
             raise StateError(f"Failed to process command: {str(e)}")
             
     async def _create_tool(self, name: str) -> Tool:
