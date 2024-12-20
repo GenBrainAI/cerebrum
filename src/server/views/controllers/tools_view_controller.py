@@ -53,6 +53,25 @@ class ToolsCatalogController:
             task_managers = self.global_persistence.tasksmanagers.list()
             tasks = self.global_persistence.tasks.list()
             
+            # Create default task manager and task if none exist
+            if not task_managers:
+                print("Creating default task manager and tasks...")
+                task_manager = self.global_persistence.tasksmanagers.create({
+                    "name": "Tools Management",
+                    "description": "Default tools management system"
+                })
+                
+                main_task = self.global_persistence.tasks.create({
+                    "name": "Tools Management",
+                    "description": "Main tools management task",
+                    "tasksmanager_id": task_manager.id
+                })
+                
+                task_managers = [task_manager]
+                tasks = [main_task]
+                print(f"Created default task manager: {task_manager.name}")
+                print(f"Created default task: {main_task.name}")
+            
             if task_managers and tasks:
                 # Find tools management task
                 tools_manager = next(
@@ -72,7 +91,19 @@ class ToolsCatalogController:
                         manager_id=tools_manager.id,
                         manager_name=tools_manager.name
                     )
-                    print(f"Set active task: {tools_manager.name}-{tools_task.name}")
+                    print(f"🟢 Set active task: {tools_manager.name}-{tools_task.name}")
+                    
+                    # Set tool state
+                    self.tool_state = {
+                        "active_tools": [],
+                        "total_tools": 0,
+                        "manager_id": tools_manager.id,
+                        "task_id": tools_task.id
+                    }
+                else:
+                    print("🔴 No main task found for tools manager")
+            else:
+                print("🔴 No task managers found")
             
             # Initialize other components
             self.local_persistence = InMemoryPersistenceModel()
@@ -261,12 +292,12 @@ class ToolsCatalogController:
                 "content": response
             })
             
-            # Save state after chat update
+            # Save session state after chat update
             try:
                 state_data = self.view_state.dict()
-                await self.state_manager.save_state("tools_catalog", state_data)
+                await self.state_manager.save_session_state("tools_catalog", state_data)
             except Exception as e:
-                self.logger.error(f"Failed to save state: {str(e)}")
+                self.logger.error(f"Failed to save session state: {str(e)}")
             
             return response
             
@@ -308,7 +339,25 @@ class ToolsCatalogController:
                 manager_id = self.view_state.task_status.get("tasksmanager_id")
                 
                 if task_id and manager_id:
-                    # Create message object
+                    # Prepare messages context
+                    current_messages = []
+                    
+                    # Add existing chat history
+                    for msg in self.view_state.chat_history:
+                        if isinstance(msg, Message):
+                            current_messages.append(msg)
+                        elif isinstance(msg, dict):
+                            current_messages.append(Message(**msg))
+                        else:
+                            current_messages.append(Message(
+                                role=getattr(msg, 'role', 'user'),
+                                content=str(msg),
+                                file_ids=getattr(msg, 'file_ids', None),
+                                created_at=getattr(msg, 'created_at', None),
+                                updated_at=getattr(msg, 'updated_at', None)
+                            ))
+                    
+                    # Add current message
                     user_message = Message(
                         role="user",
                         content=message,
@@ -316,12 +365,13 @@ class ToolsCatalogController:
                         created_at=None,
                         updated_at=None
                     )
+                    current_messages.append(user_message)
                     
-                    # Run task with proper message object
+                    # Run task with message context
                     response = await self.state_manager.task_runner.run_task(
                         tasksmanager_id=manager_id,
                         task_id=task_id,
-                        running_extra_params={'messages': [user_message]}
+                        running_extra_params={'messages': current_messages}
                     )
                     
                     # Process response
@@ -330,21 +380,8 @@ class ToolsCatalogController:
                     else:
                         response_text = str(response)
                     
-                    # Create assistant message
-                    assistant_message = Message(
-                        role="assistant",
-                        content=response_text,
-                        file_ids=None,
-                        created_at=None,
-                        updated_at=None
-                    )
-                    
-                    # Add messages to view state
-                    self.view_state.chat_history.append(user_message)
-                    self.view_state.chat_history.append(assistant_message)
-                    
                     return response_text
-                    
+            
             return "No active task to process message."
                 
         except StateError as e:

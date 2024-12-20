@@ -1,1 +1,15 @@
-{"current_view": "ViewType.AGENTIC_CONFIG", "current_tasksmanager_id": null, "current_task_id": null, "current_session_id": null, "last_access": "2024-12-20T01:37:01.381803", "selected_config": null, "config_params": {}, "active_tab": null}
+{
+  "chat_history": [
+    {
+      "role": "user",
+      "content": "write 5 words sentence about ai agents\n\n"
+    },
+    {
+      "role": "assistant",
+      "content": "AI agents can perform complex tasks."
+    }
+  ],
+  "selected_node": null,
+  "expanded_nodes": [],
+  "last_access": "2024-12-20T02:43:24.776256"
+}

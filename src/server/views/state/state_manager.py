@@ -27,20 +27,82 @@ class ViewStateManager:
         self.persistence_model = persistence_model
         self.task_runner = TaskRunner(persistence_model)
         self.state_dir = Path("state/views")
-        self.specialized_dir = self.state_dir / "specialized"
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        self.specialized_dir.mkdir(parents=True, exist_ok=True)
-        self.logger = logging.getLogger(__name__)
+        self.specialized_dir = Path("state/specialized")
+        self.sessions_dir = Path("state/sessions")
         self.states: Dict[UUID, SpecializedState] = {}
-        self.serializer = ViewStateSerializer()
+        self.logger = logging.getLogger(__name__)
 
     async def initialize(self):
         """Initialize the state manager and its components."""
         try:
+            # Load specialized states first
+            await self._load_specialized_states()
+            
+            # Initialize task runner
             await self.task_runner.initialize()
         except Exception as e:
-            print(f"Error initializing state manager: {str(e)}")
+            self.logger.error(f"Error initializing state manager: {str(e)}")
             raise
+
+    async def _load_specialized_states(self):
+        """Load all specialized states."""
+        try:
+            # Load task management state
+            task_state = await self._load_state_file(
+                self.specialized_dir / "task_management_state.json",
+                StateType.TASK_GENERATION
+            )
+            if task_state:
+                self.persistence_model.initialize_from_state(task_state)
+
+            # Load tools state
+            tools_state = await self._load_state_file(
+                self.specialized_dir / "tools_management_state.json",
+                StateType.TOOL_MANAGEMENT
+            )
+            if tools_state:
+                self.persistence_model.initialize_from_state(tools_state)
+
+            # Load agentic state
+            agentic_state = await self._load_state_file(
+                self.specialized_dir / "agentic_framework_state.json",
+                StateType.AGENT_FRAMEWORK
+            )
+            if agentic_state:
+                self.persistence_model.initialize_from_state(agentic_state)
+
+        except Exception as e:
+            self.logger.error(f"Error loading specialized states: {str(e)}")
+            raise
+
+    async def save_session_state(self, view_name: str, session_data: Dict[str, Any]) -> bool:
+        """Save session-specific state (UI state, chat history, etc)."""
+        try:
+            filepath = self.sessions_dir / f"{view_name}_view_default.json"
+            
+            # Load existing session state
+            existing_state = {}
+            if filepath.exists():
+                with open(filepath, 'r') as f:
+                    existing_state = json.load(f)
+            
+            # Update with new session data
+            existing_state.update({
+                'chat_history': session_data.get('chat_history', []),
+                'selected_node': session_data.get('selected_node'),
+                'expanded_nodes': session_data.get('expanded_nodes', []),
+                'last_access': datetime.now().isoformat()
+            })
+            
+            # Save updated session state
+            with open(filepath, 'w') as f:
+                json.dump(existing_state, f, indent=2)
+                
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error saving session state: {str(e)}")
+            return False
 
     async def create_specialized_state(
         self, 
@@ -170,36 +232,6 @@ class ViewStateManager:
             self.logger.error(f"Error persisting specialized state {state.id}: {str(e)}")
             raise
 
-    async def save_state(self, view_name: str, state_data: Dict[str, Any]) -> bool:
-        """Save view state to disk."""
-        try:
-            # Create ViewState from dict
-            state = ViewState(
-                view_name=view_name,
-                task_status=state_data.get('task_status', {}),
-                chat_history=state_data.get('chat_history', []),
-                selected_node=state_data.get('selected_node'),
-                expanded_nodes=state_data.get('expanded_nodes', [])
-            )
-            
-            # Get session directory and filename
-            session_dir = self.state_dir.parent / "sessions"  # Go up one level to state/ then into sessions/
-            session_dir.mkdir(exist_ok=True)
-            
-            # Use view-specific default filename
-            filename = f"{view_name}_view_default.json"
-            filepath = session_dir / filename
-            
-            # Save state
-            with open(filepath, 'w') as f:
-                json.dump(state.dict(), f, indent=2)
-                
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error saving view state: {str(e)}")
-            return False
-
     def load_state(self, view_type: ViewType, filename: Optional[str] = None) -> Optional[ViewState]:
         """Load view state from disk."""
         try:
@@ -276,3 +308,27 @@ class ViewStateManager:
             metadata=metadata
         )
         return state
+
+    async def _load_state_file(self, filepath: Path, state_type: StateType) -> Optional[SpecializedState]:
+        """Load state from file."""
+        try:
+            if filepath.exists():
+                with open(filepath, 'r') as f:
+                    state_data = json.load(f)
+                    
+                # Get appropriate state class
+                state_class = self._get_state_class(state_type)
+                if not state_class:
+                    self.logger.error(f"No state class found for type {state_type}")
+                    return None
+                    
+                # Create state instance
+                state = state_class(**state_data)
+                self.states[state.id] = state
+                return state
+                
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error loading state file {filepath}: {str(e)}")
+            return None

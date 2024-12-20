@@ -1,54 +1,23 @@
 {
-  "view_name": "task_hierarchy",
-  "task_status": {
-    "loaded": true,
-    "task_id": "6e665695-1513-4c87-8ee3-bbec6094d8f7",
-    "task_name": "Extract Science Fiction Capabilities",
-    "tasksmanager_id": "24505b04-87e9-44f3-9e87-ccfeed1d55f7",
-    "tasksmanager_name": "Science Fiction Book Analysis"
-  },
   "chat_history": [
     {
       "role": "user",
-      "content": "write 5 words sentence about ai"
+      "content": "write 5 words sentence about ai tools"
     },
     {
       "role": "assistant",
-      "content": "AI transforms vast data into insights."
+      "content": "AI algorithms love data."
     },
     {
       "role": "user",
-      "content": "write 6 words sentence about ai"
+      "content": "write 5 words sentence about ai "
     },
     {
       "role": "assistant",
-      "content": "AI constantly learns and adapts intelligently."
-    },
-    {
-      "role": "user",
-      "content": "write 6 words sentence about ai\n\n"
-    },
-    {
-      "role": "assistant",
-      "content": "Artificial intelligence streamlines tasks with automation."
-    },
-    {
-      "role": "user",
-      "content": "write 5 words sentence about ai"
-    },
-    {
-      "role": "assistant",
-      "content": "AI predicts outcomes with data analysis."
-    },
-    {
-      "role": "user",
-      "content": "write 7 words sentence about ai\n\n"
-    },
-    {
-      "role": "assistant",
-      "content": "AI enhances efficiency, making complex decisions swiftly."
+      "content": "AI algorithms learn from data."
     }
   ],
   "selected_node": null,
-  "expanded_nodes": []
+  "expanded_nodes": [],
+  "last_access": "2024-12-20T02:47:33.792497"
 }

@@ -99,9 +99,6 @@ async def render_task_hierarchy_view():
             await st.session_state.task_controller.handle_chat(prompt)
             st.rerun()
         
-        # TODO: should be removed # Save session at appropriate points
-        # view.save_session()
-        
     except Exception as e:
         print(f"Error in render_task_hierarchy_view: {str(e)}")
         st.error("Error initializing view. Check console for details.")

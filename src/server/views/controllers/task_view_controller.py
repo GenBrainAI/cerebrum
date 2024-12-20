@@ -34,82 +34,82 @@ class TaskHierarchyController:
         try:
             await self.state_manager.initialize()
             
-            # Load existing state if available
+            # Load session state if available
             try:
                 session_dir = Path("state/sessions")
                 state_file = session_dir / "task_hierarchy_view_default.json"
                 if state_file.exists():
                     with open(state_file) as f:
-                        state_data = json.load(f)
-                        self.view_state.chat_history = state_data.get('chat_history', [])
-                        if 'task_status' in state_data:
-                            self.view_state.task_status = state_data['task_status']
-                        print(f"Loaded chat history: {len(self.view_state.chat_history)} messages")
+                        session_data = json.load(f)
+                        self.view_state.chat_history = session_data.get('chat_history', [])
             except Exception as e:
-                self.logger.error(f"Failed to load existing state: {str(e)}")
+                self.logger.error(f"Failed to load session state: {str(e)}")
             
             print("🔍 Starting task controller initialization...")
             
-            # Initialize task context
+            # Initialize task context from persistence model
             task_managers = self.global_persistence.tasksmanagers.list()
             tasks = self.global_persistence.tasks.list()
             
-            # Create default task manager and task if none exist
-            if not task_managers:
-                print("Creating default task manager and tasks...")
-                # Create Task Management manager
-                task_manager = self.global_persistence.tasksmanagers.create({
-                    "name": "Task Management",
-                    "description": "Default task management system"
-                })
-                
-                # Create default task
-                main_task = self.global_persistence.tasks.create({
-                    "name": "Task Management",
-                    "description": "Main task management task",
-                    "tasksmanager_id": task_manager.id
-                })
-                
-                # Refresh lists
-                task_managers = [task_manager]
-                tasks = [main_task]
-                print(f"Created default task manager: {task_manager.name}")
-                print(f"Created default task: {main_task.name}")
-            
-            print(f"Found {len(task_managers)} managers and {len(tasks)} tasks")
-            
             if task_managers and tasks:
-                # Find task management task
-                task_manager = next(
-                    (m for m in task_managers if "Task Management" in m.name),
-                    task_managers[0]
-                )
-                main_task = next(
-                    (t for t in tasks if t.tasksmanager_id == task_manager.id),
-                    None
-                )
+                # Set up task context...
                 
-                if main_task:
-                    # Set active task context
-                    self.view_state.set_active_task(
-                        task_id=main_task.id,
-                        task_name=main_task.name,
-                        manager_id=task_manager.id,
-                        manager_name=task_manager.name
-                    )
-                    print(f"🟢 Set active task: {task_manager.name}-{main_task.name}")
+                # Create default task manager and task if none exist
+                if not task_managers:
+                    print("Creating default task manager and tasks...")
+                    # Create Task Management manager
+                    task_manager = self.global_persistence.tasksmanagers.create({
+                        "name": "Task Management",
+                        "description": "Default task management system"
+                    })
                     
-                    # Set task state
-                    self.task_state = {
-                        "active_tasks": [t.id for t in tasks if t.tasksmanager_id == task_manager.id],
-                        "total_tasks": len(tasks),
-                        "manager_id": task_manager.id,
-                        "task_id": main_task.id
-                    }
+                    # Create default task
+                    main_task = self.global_persistence.tasks.create({
+                        "name": "Task Management",
+                        "description": "Main task management task",
+                        "tasksmanager_id": task_manager.id
+                    })
+                    
+                    # Refresh lists
+                    task_managers = [task_manager]
+                    tasks = [main_task]
+                    print(f"Created default task manager: {task_manager.name}")
+                    print(f"Created default task: {main_task.name}")
+                
+                print(f"Found {len(task_managers)} managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find task management task
+                    task_manager = next(
+                        (m for m in task_managers if "Task Management" in m.name),
+                        task_managers[0]
+                    )
+                    main_task = next(
+                        (t for t in tasks if t.tasksmanager_id == task_manager.id),
+                        None
+                    )
+                    
+                    if main_task:
+                        # Set active task context
+                        self.view_state.set_active_task(
+                            task_id=main_task.id,
+                            task_name=main_task.name,
+                            manager_id=task_manager.id,
+                            manager_name=task_manager.name
+                        )
+                        print(f"🟢 Set active task: {task_manager.name}-{main_task.name}")
+                        
+                        # Set task state
+                        self.task_state = {
+                            "active_tasks": [t.id for t in tasks if t.tasksmanager_id == task_manager.id],
+                            "total_tasks": len(tasks),
+                            "manager_id": task_manager.id,
+                            "task_id": main_task.id
+                        }
+                    else:
+                        print("🔴 No main task found for task manager")
                 else:
-                    print("🔴 No main task found for task manager")
-            else:
-                print("🔴 No task managers found")
+                    print("🔴 No task managers found")
                 
         except Exception as e:
             self.logger.error(f"Error in controller initialization: {str(e)}")
@@ -184,9 +184,9 @@ class TaskHierarchyController:
             # Save state after chat update
             try:
                 state_data = self.view_state.dict()
-                await self.state_manager.save_state("task_hierarchy", state_data)
+                await self.state_manager.save_session_state("task_hierarchy", state_data)
             except Exception as e:
-                self.logger.error(f"Failed to save state: {str(e)}")
+                self.logger.error(f"Failed to save session state: {str(e)}")
             
             return response
             

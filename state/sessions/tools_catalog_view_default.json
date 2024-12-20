@@ -1,38 +1,15 @@
 {
-  "view_name": "tools_catalog",
-  "task_status": {
-    "loaded": true,
-    "task_id": "6e665695-1513-4c87-8ee3-bbec6094d8f7",
-    "task_name": "Extract Science Fiction Capabilities",
-    "tasksmanager_id": "24505b04-87e9-44f3-9e87-ccfeed1d55f7",
-    "tasksmanager_name": "Science Fiction Book Analysis"
-  },
   "chat_history": [
     {
-      "id": null,
       "role": "user",
-      "content": "write 5 words sentence about ai tools",
-      "file_ids": null,
-      "created_at": null,
-      "updated_at": null
-    },
-    {
-      "id": null,
-      "role": "assistant",
-      "content": "AI tools streamline complex data analysis.",
-      "file_ids": null,
-      "created_at": null,
-      "updated_at": null
-    },
-    {
-      "role": "user",
-      "content": "write 5 words sentence about ai tools"
+      "content": "write 5 words sentence about ai tools "
     },
     {
       "role": "assistant",
-      "content": "AI tools streamline complex data analysis."
+      "content": "AI tools automate complex data analysis."
     }
   ],
   "selected_node": null,
-  "expanded_nodes": []
+  "expanded_nodes": [],
+  "last_access": "2024-12-20T02:46:31.933474"
 }

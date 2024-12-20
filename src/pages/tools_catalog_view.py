@@ -71,9 +71,6 @@ async def render_tools_catalog_view():
             await st.session_state.tools_controller.handle_chat(prompt)
             st.rerun()
         
-        # Save session at appropriate points
-        view.save_session()
-        
     except Exception as e:
         print(f"Error in render_tools_catalog_view: {str(e)}")
         st.error("Error initializing view. Check console for details.")

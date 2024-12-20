@@ -70,9 +70,6 @@ async def render_agentic_config_view():
             await st.session_state.agentic_controller.handle_chat(prompt)
             st.rerun()
         
-        # Save session at appropriate points
-        view.save_session()
-        
     except Exception as e:
         print(f"Error in render_agentic_config_view: {str(e)}")
         st.error("Error initializing view. Check console for details.")

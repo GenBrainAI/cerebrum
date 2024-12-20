@@ -15,6 +15,7 @@ from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
 import logging
 from pathlib import Path
+from ...models.message import Message
 
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
@@ -40,16 +41,38 @@ class AgenticViewController:
                 if state_file.exists():
                     with open(state_file) as f:
                         state_data = json.load(f)
+                        print(f"\n📖 Loading agentic state:")
+                        print(f"  Chat history: {len(state_data.get('chat_history', []))} messages")
+                        print(f"  Task status: {state_data.get('task_status', {})}")
+                        
                         self.view_state.chat_history = state_data.get('chat_history', [])
                         if 'task_status' in state_data:
                             self.view_state.task_status = state_data['task_status']
-                        print(f"Loaded chat history: {len(self.view_state.chat_history)} messages")
             except Exception as e:
                 self.logger.error(f"Failed to load existing state: {str(e)}")
             
             # Initialize task context
             task_managers = self.global_persistence.tasksmanagers.list()
             tasks = self.global_persistence.tasks.list()
+            
+            # Create default task manager and task if none exist
+            if not task_managers:
+                print("Creating default task manager and tasks...")
+                task_manager = self.global_persistence.tasksmanagers.create({
+                    "name": "Agentic Framework",
+                    "description": "Default agentic framework system"
+                })
+                
+                main_task = self.global_persistence.tasks.create({
+                    "name": "Agentic Framework",
+                    "description": "Main agentic framework task",
+                    "tasksmanager_id": task_manager.id
+                })
+                
+                task_managers = [task_manager]
+                tasks = [main_task]
+                print(f"Created default task manager: {task_manager.name}")
+                print(f"Created default task: {main_task.name}")
             
             if task_managers and tasks:
                 # Find agentic framework task
@@ -70,7 +93,19 @@ class AgenticViewController:
                         manager_id=agentic_manager.id,
                         manager_name=agentic_manager.name
                     )
-                    print(f"Set active task: {agentic_manager.name}-{agentic_task.name}")
+                    print(f"🟢 Set active task: {agentic_manager.name}-{agentic_task.name}")
+                    
+                    # Set agent state
+                    self.agent_state = {
+                        "active_agents": [],
+                        "total_agents": 0,
+                        "manager_id": agentic_manager.id,
+                        "task_id": agentic_task.id
+                    }
+                else:
+                    print("🔴 No main task found for agentic manager")
+            else:
+                print("🔴 No task managers found")
             
             # Initialize other components
             self.local_persistence = InMemoryPersistenceModel()
@@ -86,7 +121,7 @@ class AgenticViewController:
             # Use global persistence to get crewai configs
             crewai_configs = self.global_persistence.crewai_config.list()
             if not crewai_configs:
-                print("No CrewAI configurations found")
+                # print("No CrewAI configurations found")
                 return None
             
             # Create root node
@@ -176,12 +211,12 @@ class AgenticViewController:
                 "content": response
             })
             
-            # Save state after chat update
+            # Save session state after chat update
             try:
                 state_data = self.view_state.dict()
-                await self.state_manager.save_state("agentic_config", state_data)
+                await self.state_manager.save_session_state("agentic_config", state_data)
             except Exception as e:
-                self.logger.error(f"Failed to save state: {str(e)}")
+                self.logger.error(f"Failed to save session state: {str(e)}")
             
             return response
             
@@ -223,13 +258,49 @@ class AgenticViewController:
                 manager_id = self.view_state.task_status.get("tasksmanager_id")
                 
                 if task_id and manager_id:
+                    # Prepare messages context
+                    current_messages = []
+                    
+                    # Add existing chat history
+                    for msg in self.view_state.chat_history:
+                        if isinstance(msg, Message):
+                            current_messages.append(msg)
+                        elif isinstance(msg, dict):
+                            current_messages.append(Message(**msg))
+                        else:
+                            current_messages.append(Message(
+                                role=getattr(msg, 'role', 'user'),
+                                content=str(msg),
+                                file_ids=getattr(msg, 'file_ids', None),
+                                created_at=getattr(msg, 'created_at', None),
+                                updated_at=getattr(msg, 'updated_at', None)
+                            ))
+                    
+                    # Add current message
+                    user_message = Message(
+                        role="user",
+                        content=message,
+                        file_ids=None,
+                        created_at=None,
+                        updated_at=None
+                    )
+                    current_messages.append(user_message)
+                    
+                    # Run task with message context
                     response = await self.state_manager.task_runner.run_task(
                         tasksmanager_id=manager_id,
                         task_id=task_id,
-                        running_extra_params={'messages': [{'role': 'user', 'content': message}]}
+                        running_extra_params={'messages': current_messages}
                     )
-                    return response.get('response', str(response))
                     
+                    # Process response
+                    if isinstance(response, dict) and 'response' in response:
+                        response_text = response['response']
+                    else:
+                        response_text = str(response)
+                    
+                    return response_text
+            
             return "No active task to process message. Try 'help' for available commands."
             
         except StateError as e:
