@@ -37,11 +37,67 @@ class ToolsCatalog:
         if not ToolsCatalog._initialized:
             self._tools: Dict[str, ToolMetadata] = {}
             self._instances: Dict[str, Any] = {}
+            self._functions: Dict[str, Any] = {}  # Store functions
+            self._classes: Dict[str, Type] = {}   # Store classes
             self._initialize_default_tools()
             ToolsCatalog._initialized = True
 
+    def register_tool(self, tool: Any, name: Optional[str] = None) -> str:
+        """Register a tool (object, function, or class) into the catalog.
+        
+        Args:
+            tool: The tool to register
+            name: Optional custom name for the tool
+            
+        Returns:
+            The registered tool name
+            
+        Raises:
+            ValueError: If tool type is not supported
+        """
+        tool_name = name or getattr(tool, '__name__', str(tool))
+        
+        try:
+            if inspect.isfunction(tool):
+                # Register function
+                self._functions[tool_name] = tool
+                self.register_function(tool, tool_name)
+                
+            elif inspect.isclass(tool):
+                # Register class
+                self._classes[tool_name] = tool
+                self.register_class(tool, tool_name)
+                
+            elif isinstance(tool, (object,)) and not isinstance(tool, type):
+                # Register instance
+                self._instances[tool_name] = tool
+                if hasattr(tool, '__class__'):
+                    self.register_class(tool.__class__, tool_name)
+                
+            else:
+                raise ValueError(f"Unsupported tool type: {type(tool)}")
+                
+            print(f"Registered tool: {tool_name} (type: {type(tool).__name__})")
+            return tool_name
+            
+        except Exception as e:
+            print(f"Error registering tool {tool_name}: {str(e)}")
+            raise
+
+    def list_tools_by_type(self) -> Dict[str, List[str]]:
+        """List all registered tools grouped by type.
+        
+        Returns:
+            Dictionary with tools grouped by type
+        """
+        return {
+            "functions": list(self._functions.keys()),
+            "classes": list(self._classes.keys()),
+            "instances": list(self._instances.keys()),
+        }
+
     def _initialize_default_tools(self):
-        """Initialize the catalog with the default tools from TOOLS dictionary."""
+        """Initialize the catalog with the default tools."""
         self.DEFAULT_TOOLS = {
             "WebsiteSearchTool": WebsiteSearchTool(),
             "SerperDevTool": SerperDevTool(),
@@ -58,21 +114,9 @@ class ToolsCatalog:
             "SMSTool": SMSTool(),
         }
 
-        # Register each default tool and store its instance
+        # Register each default tool
         for name, tool in self.DEFAULT_TOOLS.items():
-            if isinstance(tool, (CrewAITool, LangChainTool)):
-                self.register_ai_tool(tool, name)
-            elif inspect.isclass(type(tool)):
-                # For class instances, store the instance before registration
-                self._instances[name] = tool
-                # Register the class of the instance
-                self.register_class(tool.__class__, name)
-            elif callable(tool):
-                self.register_function(tool, name)
-                
-            # Store the instance in any case
-            self._instances[name] = tool
-
+            self.register_tool(tool, name)
 
     def _extract_docstring_info(self, obj: Any) -> tuple[str, List[ParameterInfo], ReturnInfo]:
         """Extract docstring information from an object.
@@ -80,8 +124,15 @@ class ToolsCatalog:
         Supports both Google-style and Sphinx/reST docstring formats.
         """
         docstring = docstring_parser.parse(obj.__doc__ or "")
-        type_hints = get_type_hints(obj)
-        return_type = type_hints.get('return')
+        
+        # Get type hints safely
+        try:
+            type_hints = get_type_hints(obj)
+            return_type = type_hints.get('return')
+        except (NameError, TypeError):
+            # Handle missing or invalid type hints
+            type_hints = {}
+            return_type = None
         
         # Get description
         description = docstring.short_description or ""
@@ -90,70 +141,89 @@ class ToolsCatalog:
         
         # Get parameters
         parameters = []
-        signature = inspect.signature(obj)
+        try:
+            signature = inspect.signature(obj)
+        except (ValueError, TypeError):
+            # Handle objects without signatures
+            signature = None
         
-        # Function to normalize parameter info from different formats
-        def normalize_param_info(param_name: str, param: inspect.Parameter) -> ParameterInfo:
-            param_type = type_hints.get(param_name)
-            param_doc = ""
-            param_meta = None
-            
-            # Try Google-style params (Args:)
-            google_style = next(
-                (p for p in docstring.params if p.arg_name == param_name),
-                None
-            )
-            if google_style:
-                param_doc = google_style.description
-            else:
-                # Try Sphinx/reST style (:param:)
-                sphinx_style = next(
-                    (p for p in docstring.params 
-                    if p.arg_name == param_name or 
-                    p.arg_name == f"param {param_name}" or
-                    p.arg_name == f"parameter {param_name}"),
+        if signature:
+            # Function to normalize parameter info from different formats
+            def normalize_param_info(param_name: str, param: inspect.Parameter) -> ParameterInfo:
+                try:
+                    param_type = type_hints.get(param_name)
+                except Exception:
+                    param_type = None
+                    
+                param_doc = ""
+                param_meta = None
+                
+                # Try Google-style params (Args:)
+                google_style = next(
+                    (p for p in docstring.params if p.arg_name == param_name),
                     None
                 )
-                if sphinx_style:
-                    param_doc = sphinx_style.description
-            
-            # Convert type to string representation
-            type_str = None
-            if param_type:
-                if hasattr(param_type, '__origin__'):  # Handle generic types
-                    origin = param_type.__origin__.__name__
-                    args = ', '.join(arg.__name__ if hasattr(arg, '__name__') else str(arg) 
-                                for arg in param_type.__args__)
-                    type_str = f"{origin}[{args}]"
+                if google_style:
+                    param_doc = google_style.description
                 else:
-                    type_str = param_type.__name__ if hasattr(param_type, '__name__') else str(param_type)
+                    # Try Sphinx/reST style (:param:)
+                    sphinx_style = next(
+                        (p for p in docstring.params 
+                        if p.arg_name == param_name or 
+                        p.arg_name == f"param {param_name}" or
+                        p.arg_name == f"parameter {param_name}"),
+                        None
+                    )
+                    if sphinx_style:
+                        param_doc = sphinx_style.description
+                
+                # Convert type to string representation safely
+                type_str = None
+                if param_type:
+                    try:
+                        if hasattr(param_type, '__origin__'):  # Handle generic types
+                            origin = param_type.__origin__.__name__
+                            args = ', '.join(arg.__name__ if hasattr(arg, '__name__') else str(arg) 
+                                        for arg in param_type.__args__)
+                            type_str = f"{origin}[{args}]"
+                        else:
+                            type_str = param_type.__name__ if hasattr(param_type, '__name__') else str(param_type)
+                    except Exception:
+                        type_str = str(param_type)
+                
+                return ParameterInfo(
+                    name=param_name,
+                    type_hint=type_str,
+                    description=description,
+                    default=param.default if param.default != inspect.Parameter.empty else None,
+                    required=param.default == inspect.Parameter.empty
+                )
             
-            return ParameterInfo(
-                name=param_name,
-                type_hint=type_str,
-                description=description,
-                default=param.default if param.default != inspect.Parameter.empty else None,
-                required=param.default == inspect.Parameter.empty
-            )
+            # Process parameters
+            for param_name, param in signature.parameters.items():
+                if param_name == 'self':  # Skip self parameter
+                    continue
+                try:
+                    parameters.append(normalize_param_info(param_name, param))
+                except Exception as e:
+                    print(f"Error processing parameter {param_name}: {str(e)}")
+                    continue
         
-        # Process parameters
-        for param_name, param in signature.parameters.items():
-            if param_name == 'self':  # Skip self parameter
-                continue
-            parameters.append(normalize_param_info(param_name, param))
-        
-        # Get return info
+        # Get return info safely
         return_str = None
         return_desc = ""
         
         if return_type:
-            if hasattr(return_type, '__origin__'):
-                origin = return_type.__origin__.__name__
-                args = ', '.join(arg.__name__ if hasattr(arg, '__name__') else str(arg) 
-                            for arg in return_type.__args__)
-                return_str = f"{origin}[{args}]"
-            else:
-                return_str = return_type.__name__ if hasattr(return_type, '__name__') else str(return_type)
+            try:
+                if hasattr(return_type, '__origin__'):
+                    origin = return_type.__origin__.__name__
+                    args = ', '.join(arg.__name__ if hasattr(arg, '__name__') else str(arg) 
+                                for arg in return_type.__args__)
+                    return_str = f"{origin}[{args}]"
+                else:
+                    return_str = return_type.__name__ if hasattr(return_type, '__name__') else str(return_type)
+            except Exception:
+                return_str = str(return_type)
         
         # Try to get return description from docstring
         if docstring.returns:
