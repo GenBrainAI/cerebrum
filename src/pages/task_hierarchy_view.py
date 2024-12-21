@@ -50,6 +50,17 @@ class TaskHierarchyView(BaseView):
         
         if 'task_controller' in st.session_state:
             st.session_state.task_controller.view_state.chat_history = chat_history
+            
+    def clear_session(self):
+        """Clear the task hierarchy session data."""
+        if 'task_controller' in st.session_state:
+            # Clear chat history
+            st.session_state.task_controller.view_state.chat_history = []
+            
+            # Save empty session
+            self.save_session()
+            
+            print("\n🗑️ Cleared task hierarchy session")
 
 async def render_task_hierarchy_view():
     """Render the task hierarchy view."""
@@ -64,6 +75,14 @@ async def render_task_hierarchy_view():
             controller = TaskHierarchyController(persistence_model)
             await controller.initialize()
             st.session_state.task_controller = controller
+            
+        # Add clear session icon in sidebar
+        with st.sidebar:
+            col1, col2 = st.columns([0.1, 0.9])
+            with col1:
+                if st.empty().button("🔄", help="Clear chat history", key="clear_chat_icon"):
+                    view.clear_session()
+                    st.rerun()
     
         # Render sidebar first, outside of columns
         await render_task_hierarchy_sidebar()
