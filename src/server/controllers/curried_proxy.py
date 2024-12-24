@@ -532,7 +532,8 @@ def convert_type_hint(type_hint: Optional[str]) -> Type:
         'Dict': Dict,
         'Any': Any,
         'Optional': Optional,
-        'Union': Union
+        'Union': Union,
+        'number': float  
     }
     
     # Check if it's a basic type
@@ -540,25 +541,30 @@ def convert_type_hint(type_hint: Optional[str]) -> Type:
         return type_map[type_hint.lower()]
     
     # Handle Optional[Type] pattern
-    if type_hint.startswith('Optional['):
+    if type_hint.startswith('Optional[') or type_hint.startswith('optional['):
         inner_type = type_hint[9:-1]  # Remove Optional[ and ]
         return Optional[convert_type_hint(inner_type)]
     
     # Handle List[Type] pattern
-    if type_hint.startswith('List['):
+    if type_hint.lower().startswith('list['):
         inner_type = type_hint[5:-1]  # Remove List[ and ]
         return List[convert_type_hint(inner_type)]
     
-    # Handle Dict[Key, Value] pattern
-    if type_hint.startswith('Dict['):
-        key_value = type_hint[5:-1].split(',')  # Remove Dict[ and ] and split
+    # Handle Dict patterns (both Dict[...] and dict[...])
+    if type_hint.lower().startswith(('dict[', 'Dict[')):
+        # Extract the part between [ and ]
+        dict_part = type_hint[type_hint.index('[')+1:type_hint.rindex(']')]
+        
+        # Split by comma, handling potential spaces
+        key_value = [part.strip() for part in dict_part.split(',')]
+        
         if len(key_value) == 2:
             key_type = convert_type_hint(key_value[0].strip())
             value_type = convert_type_hint(key_value[1].strip())
             return Dict[key_type, value_type]
     
     # Handle Union[Type1, Type2] pattern
-    if type_hint.startswith('Union['):
+    if type_hint.lower().startswith('union['):
         types = type_hint[6:-1].split(',')  # Remove Union[ and ] and split
         converted_types = [convert_type_hint(t.strip()) for t in types]
         return Union[tuple(converted_types)]

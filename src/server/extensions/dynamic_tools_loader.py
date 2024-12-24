@@ -6,7 +6,38 @@ import importlib.util
 from typing import Any, Dict, List, Optional, Type, Union
 from ..tools.tools_catalog import tools_catalog
 from pathlib import Path
+import time
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
+class ToolsDirectoryHandler(FileSystemEventHandler):
+    """Handler for file system events in the tools directory."""
+    
+    def __init__(self, tools_loader: DynamicToolsLoader):
+        self.tools_loader = tools_loader
+        self._last_reload_time = 0
+        self._debounce_seconds = 1  # Debounce time to prevent multiple reloads
+
+    def on_modified(self, event):
+        if not event.is_directory and event.src_path.endswith('.py'):
+            current_time = time.time()
+            if current_time - self._last_reload_time > self._debounce_seconds:
+                self._last_reload_time = current_time
+                self.tools_loader.reload_all_tools()
+
+    def on_created(self, event):
+        if not event.is_directory and event.src_path.endswith('.py'):
+            current_time = time.time()
+            if current_time - self._last_reload_time > self._debounce_seconds:
+                self._last_reload_time = current_time
+                self.tools_loader.reload_all_tools()
+
+    def on_deleted(self, event):
+        if not event.is_directory and event.src_path.endswith('.py'):
+            current_time = time.time()
+            if current_time - self._last_reload_time > self._debounce_seconds:
+                self._last_reload_time = current_time
+                self.tools_loader.reload_all_tools()
 
 class DynamicToolsLoader:
     """Handles dynamic loading of tools from specified directories."""
@@ -23,12 +54,44 @@ class DynamicToolsLoader:
         if not DynamicToolsLoader._initialized:
             self._loaded_modules: Dict[str, Any] = {}
             self.default_tools_dir = Path(__file__).parent.parent.parent.parent / "src" / "server" / "extensions" / "tools"
+            self._observer = None
             DynamicToolsLoader._initialized = True
+
+    def start_file_watching(self):
+        """Start watching the tools directory for changes."""
+        if self._observer is None:
+            self._observer = Observer()
+            event_handler = ToolsDirectoryHandler(self)
+            self._observer.schedule(event_handler, str(self.default_tools_dir), recursive=False)
+            self._observer.start()
+            print(f"Started watching directory: {self.default_tools_dir}")
+
+    def stop_file_watching(self):
+        """Stop watching the tools directory."""
+        if self._observer is not None:
+            self._observer.stop()
+            self._observer.join()
+            self._observer = None
+            print("Stopped watching tools directory")
+
+    def reload_all_tools(self):
+        """Reload all tools by clearing existing ones and loading again."""
+        print("Reloading all tools...")
+        # Clear all existing tool registrations
+        for module_name in list(self._loaded_modules.keys()):
+            self._unregister_module(module_name)
+        self._loaded_modules.clear()
+        
+        # Load all tools again
+        self.initialize()
+        print("Tools reloaded successfully")
 
     def initialize(self):
         """Initialize the tools loader and load tools from the default directory."""
         try:
-            return self.load_tools_from_directory(self.default_tools_dir)
+            tools = self.load_tools_from_directory(self.default_tools_dir)
+            self.start_file_watching()  # Start watching for changes after initial load
+            return tools
         except Exception as e:
             print(f"Error initializing tools loader: {str(e)}")
             return []

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 from pydantic import BaseModel
-from src.server.persistence.in_memory_crud import InMemoryCrud
+from ..persistence.in_memory_crud import InMemoryCrud
 
 from .crud_interface import CrudInterface
 from ..models.tasks_manager import TasksManager
