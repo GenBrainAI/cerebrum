@@ -66,6 +66,9 @@
             "--server.port",
             "8001"
         ],
+        "env": {
+            "PYTHONPATH": "${workspaceFolder}/src"
+        },
         "justMyCode": false
     },
     {

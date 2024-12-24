@@ -21,7 +21,7 @@ async def setup_tasks_state():
     # Create TasksManager for task management
     task_manager = TasksManager(
         name="Task Management System",
-        model="gpt-4-1106-preview",
+        model="gpt-4o",
         description="Manages and organizes tasks within the system",
         messages=[
             Message(

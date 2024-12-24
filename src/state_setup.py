@@ -4,7 +4,6 @@ import sys
 import os
 from pathlib import Path
 import asyncio
-from datetime import datetime
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).parents[1])
@@ -92,7 +91,7 @@ async def setup_application_state():
     # Create TasksManager
     tasksmanager = TasksManager(
         name="Application Response Handler",
-        model="gpt-4-1106-preview",
+        model="gpt-4o",
         description="Handles job application email responses and sends notifications",
         messages=[
             Message(

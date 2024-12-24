@@ -20,7 +20,7 @@ async def setup_tools_state():
     # Create TasksManager for tools management
     tools_manager = TasksManager(
         name="Tools Management System",
-        model="gpt-4-1106-preview",
+        model="gpt-4o",
         description="Manages and catalogs system tools and their capabilities",
         messages=[
             Message(

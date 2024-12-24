@@ -1,4 +1,9 @@
 # src/server/views/controllers/tools_view_controller.py
+from __future__ import annotations
+import os
+import sys
+import inspect
+import importlib.util
 from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -14,6 +19,7 @@ from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
 from ...tools.tools_catalog import tools_catalog
 from ...models.message import Message
+from ..components.tool_dialog import ToolDialog
 import logging
 import json
 from pathlib import Path
@@ -38,7 +44,7 @@ class ToolsCatalogController:
             # Load existing state if available
             try:
                 session_dir = Path("state/sessions")
-                state_file = session_dir / "tools_catalog_view_default.json"
+                state_file = session_dir / "dynamic_tools_state.json" #"tools_catalog_view_default.json"
                 if state_file.exists():
                     with open(state_file) as f:
                         state_data = json.load(f)

@@ -20,7 +20,7 @@ async def setup_agentic_state():
     # Create TasksManager for agentic framework
     agentic_manager = TasksManager(
         name="Agentic Framework Management",
-        model="gpt-4-1106-preview",
+        model="gpt-4o",
         description="Manages agentic framework configuration and behavior",
         messages=[
             Message(
