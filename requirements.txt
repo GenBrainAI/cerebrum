@@ -53,3 +53,4 @@ chardet
 streamlit-tree-select
 coverage
 watchdog
+graphviz

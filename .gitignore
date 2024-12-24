@@ -152,7 +152,7 @@ persistent_state/context/*/
 
 sms_*
 
-docs/*
+docs/non_git_files/*
 
 temp_repos/
 

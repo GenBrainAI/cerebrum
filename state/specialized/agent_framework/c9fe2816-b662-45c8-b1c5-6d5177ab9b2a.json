@@ -1,0 +1,24 @@
+{
+  "id": "c9fe2816-b662-45c8-b1c5-6d5177ab9b2a",
+  "state_type": "agent_framework",
+  "name": "Test Agent State",
+  "data": {
+    "active_view": "agentic_config",
+    "selected_agent": null,
+    "agent_configs": {},
+    "active_agents": [],
+    "total_agents": 0
+  },
+  "metadata": {
+    "created_at": "2024-12-24 23:01:50.850177",
+    "updated_at": "2024-12-24 23:01:50.850178",
+    "version": "1.0.0",
+    "tags": [],
+    "description": null
+  },
+  "parent_id": null,
+  "active_view": "agentic_config",
+  "selected_agentic": null,
+  "frameworks": [],
+  "task_context": {}
+}
