@@ -344,3 +344,62 @@ class TestExecutionStrategies:
             f"Dependency violation: Node 3 executed before its dependency Node 2. "
             f"Execution order: {execution_order}"
         ) 
+
+    @pytest.mark.asyncio
+    async def test_execution_config_behavior(self, sample_tree):
+        """Test that execute_children and propagate_context are respected"""
+        execution_order = []
+        contexts = {}
+        
+        async def mock_run(self, context):  # Add self parameter
+            node_id = self.id  # Use the task's ID directly
+            print(f"Executing node {node_id} with context: {context}")  # Debug print
+            execution_order.append(node_id)
+            contexts[node_id] = context.copy()  # Store context for verification
+            return f"Result from {node_id}"
+            
+        # Set up mock tasks
+        for node in sample_tree.nodes.values():
+            node.task.run = mock_run.__get__(node.task)  # Bind the method to the task
+        
+        # Test with execute_children=False
+        root_node = sample_tree.nodes["1"]
+        root_node.execution_config = ExecutionConfig(
+            strategy=ExecutionStrategy.SEQUENTIAL,
+            execute_children=False,
+            propagate_context=True
+        )
+        
+        result = await root_node.run({"test_value": "parent"})
+        print(f"First test execution order: {execution_order}")  # Debug print
+        
+        # Only root should have executed
+        assert len(execution_order) == 1
+        assert execution_order[0] == "1"
+        
+        # Reset for next test
+        execution_order.clear()
+        contexts.clear()
+        
+        # Test with execute_children=True but propagate_context=False
+        root_node.execution_config = ExecutionConfig(
+            strategy=ExecutionStrategy.SEQUENTIAL,
+            execute_children=True,
+            propagate_context=False
+        )
+        
+        result = await root_node.run({"test_value": "parent"})
+        print(f"Second test execution order: {execution_order}")  # Debug print
+        
+        # All nodes should have executed
+        assert len(execution_order) > 1
+        assert "1" in execution_order
+        assert "2" in execution_order
+        assert "3" in execution_order
+        
+        # Child contexts should not have parent's test_value
+        for node_id in ["2", "3"]:
+            assert "test_value" not in contexts[node_id]
+        
+        # Parent context should have test_value
+        assert contexts["1"]["test_value"] == "parent" 

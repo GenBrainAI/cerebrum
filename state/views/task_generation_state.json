@@ -1,5 +1,5 @@
 {
-  "id": "b3f1e17f-0e1a-4f09-a636-53a98d31f5bf",
+  "id": "fbc8740c-a1ea-4a77-bd4a-a40197651573",
   "state_type": "task_generation",
   "name": "Test State",
   "data": {
@@ -7,8 +7,8 @@
     "new_key": "value"
   },
   "metadata": {
-    "created_at": "2024-12-24 23:01:50.870022",
-    "updated_at": "2024-12-24 23:01:50.870209",
+    "created_at": "2024-12-24 23:30:54.113975",
+    "updated_at": "2024-12-24 23:30:54.114139",
     "version": "1.0.0",
     "tags": [],
     "description": null

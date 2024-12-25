@@ -196,6 +196,8 @@ class ExecutionConfig(BaseModel):
     retry_delay: float = Field(default=1.0)  # seconds
     timeout: Optional[float] = Field(default=None)  # seconds
     fail_fast: bool = Field(default=False)  # Stop on first error
+    execute_children: bool = Field(default=True)  # Whether to execute child tasks
+    propagate_context: bool = Field(default=True)  # Whether to propagate context to children
 
 class TaskNode:
     def __init__(
@@ -246,13 +248,22 @@ class TaskNode:
             self.state.start_execution()
             context = additional_info or {}
 
-            # Execute children based on strategy
-            if self.execution_config.strategy == ExecutionStrategy.PARALLEL:
-                responses = await self._run_parallel(context)
-            elif self.execution_config.strategy == ExecutionStrategy.PARALLEL_WITH_LIMIT:
-                responses = await self._run_parallel_limited(context)
-            else:
-                responses = await self._run_sequential(context)
+            # Only execute children if configured to do so
+            responses = []
+            if self.execution_config.execute_children and self.children:
+                # Execute children based on strategy
+                if self.execution_config.strategy == ExecutionStrategy.PARALLEL:
+                    responses = await self._run_parallel(
+                        context.copy() if self.execution_config.propagate_context else {}
+                    )
+                elif self.execution_config.strategy == ExecutionStrategy.PARALLEL_WITH_LIMIT:
+                    responses = await self._run_parallel_limited(
+                        context.copy() if self.execution_config.propagate_context else {}
+                    )
+                else:
+                    responses = await self._run_sequential(
+                        context.copy() if self.execution_config.propagate_context else {}
+                    )
 
             # Aggregate child responses
             if responses:
