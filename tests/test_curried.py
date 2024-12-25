@@ -185,45 +185,6 @@ async def test_persistence_integration():
     assert fib_result == [0, 1, 1, 2, 3]
     persistence_model.curried_proxies.delete(str(created_proxy.id))
 
-## Todo fix this test - or rewrite it from beginning.
-# async def test_export_to_crewai(curried_proxy, mock_tool):
-#     curried_proxy.add_tool("mock_api", mock_tool)
-#     curried_proxy.add_tool("fibonacci", fibonacci)
-
-#     print(f"Mock tool description: {mock_tool.function.description}")  # Debug print
-
-#     crewai_tools = curried_proxy.export_to_crewai()
-#     assert len(crewai_tools) == 2
-#     assert all(hasattr(tool, 'name') for tool in crewai_tools)
-#     assert all(hasattr(tool, 'proxy') for tool in crewai_tools)
-#     assert all(hasattr(tool, '_run') for tool in crewai_tools)
-
-#     # Check if the names are set correctly
-#     assert set(tool.name for tool in crewai_tools) == {"mock_api", "fibonacci"}
-
-#     # Check if the proxy is set correctly
-#     assert all(tool.proxy == curried_proxy for tool in crewai_tools)
-
-#     # Test running a CrewAI tool
-#     fibonacci_tool = next(tool for tool in crewai_tools if tool.name == "fibonacci")
-#     result = await fibonacci_tool._run(n=5)
-#     assert result == [0, 1, 1, 2, 3]
-
-#     # Check if the mock_api tool was correctly exported
-#     mock_api_tool = next(tool for tool in crewai_tools if tool.name == "mock_api")
-#     print(f"Mock API tool description: {mock_api_tool.description}")  # Debug print
-
-#     # Assert that the description contains our original text
-#     assert "Mock API Tool" in mock_api_tool.description
-
-#     # Print out all tool descriptions for debugging
-#     for tool in crewai_tools:
-#         print(f"Tool: {tool.name}, Description: {tool.description}")
-
-#     # Optionally, check the format of the description
-#     assert mock_api_tool.description.startswith(f"{mock_api_tool.name}() - ")
-
-
 # Keep the synchronous tests as they are
 def test_list_tools(curried_proxy, mock_tool):
     curried_proxy.add_tool("mock_api", mock_tool)

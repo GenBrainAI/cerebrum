@@ -1,4 +1,4 @@
-from ...models.view_state import ViewState
+from ..models.view_state import ViewState
 from typing import Optional, Dict, Any
 
 class ToolDialog:

@@ -16,9 +16,9 @@ class TaskHierarchySidebar:
             
             # Get state status from controller
             if self.controller and self.controller.view_state:
-                task_status = self.controller.view_state.task_status
-                if task_status.get("loaded"):
-                    st.markdown(f"🟢 **Active Task:** {task_status['tasksmanager_name']}-{task_status['task_name']}")
+                status = self.controller.view_state.task_status
+                if status["loaded"]:
+                    st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
                     st.markdown("**State:** Task Management loaded")
                 else:
                     st.markdown("🔴 State loaded but no task context found")
@@ -27,7 +27,14 @@ class TaskHierarchySidebar:
             
             st.markdown("---")
             
-            # Render tree in sidebar
+            # Add quick actions at the top
+            # if st.button("➕ Add New Task"):
+            #     st.info("Task creation coming soon")
+                
+            # if st.button("🔄 Refresh Tasks"):
+            #     st.rerun()
+            
+            # Render task hierarchy as main sidebar content
             st.subheader("Task Structure")
             if self.controller:
                 print("\n🌳 Getting task tree for sidebar...")
