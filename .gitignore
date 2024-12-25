@@ -152,7 +152,7 @@ persistent_state/context/*/
 
 sms_*
 
-docs/*
+docs/non_git_files/*
 
 temp_repos/
 
@@ -169,4 +169,8 @@ state/views/specialized/tool_management
 state/views/specialized/agent_framework/**
 state/views/specialized/task_generation/**
 state/views/specialized/tool_management/**
+state/specialized/agent_framework/**
+state/specialized/task_generation/**
+state/specialized/tool_management/**
+
 

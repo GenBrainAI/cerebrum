@@ -13,6 +13,48 @@ from ..context.context_analytics import ContextAnalytics
 from ..controllers.task_tree_controller import TaskNode
 from ..persistence.persistence_model import PersistenceModelBase
 
+class TaskExecutionError(Exception):
+    """Exception raised when task execution fails."""
+    pass
+
+class TaskExecutor:
+    """Wrapper class for Task that provides execution functionality."""
+    
+    def __init__(self, task: Task, task_runner: 'TaskRunner'):
+        self.task = task
+        self.task_runner = task_runner
+
+    async def run(self, context: Dict[str, Any]) -> str:
+        """Execute the task with the given context."""
+        try:
+            result = await self.task_runner._run_standard_task(
+                task=self.task,
+                tasksmanager=self.task_runner.persistence_model.tasksmanagers.read(self.task.tasksmanager_id),
+                running_extra_params=context
+            )
+            return result.get("response", "")
+        except Exception as e:
+            raise TaskExecutionError(f"Task execution failed: {str(e)}")
+
+    def __getattr__(self, name: str) -> Any:
+        """Forward attribute access to the wrapped task."""
+        return getattr(self.task, name)
+
+    @property
+    def id(self) -> str:
+        """Explicitly forward id property to task."""
+        return self.task.id
+
+    @property
+    def name(self) -> str:
+        """Explicitly forward name property to task."""
+        return self.task.name
+
+    @property
+    def tasksmanager_id(self) -> str:
+        """Explicitly forward tasksmanager_id property to task."""
+        return self.task.tasksmanager_id
+
 class TaskRunner:
     """Task runner with added context awareness through ContextProvider."""
 
@@ -215,3 +257,7 @@ class TaskRunner:
             current_context["previous_response"] = response
             
         return responses
+
+    def wrap_task(self, task: Task) -> TaskExecutor:
+        """Wrap a Task model in a TaskExecutor."""
+        return TaskExecutor(task, self)

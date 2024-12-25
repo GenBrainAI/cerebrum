@@ -116,7 +116,10 @@ class ToolsCatalog:
 
         # Register each default tool
         for name, tool in self.DEFAULT_TOOLS.items():
-            self.register_tool(tool, name)
+            if isinstance(tool, (CrewAITool, LangChainTool)):
+                self.register_ai_tool(tool, name)
+            else:
+                self.register_tool(tool, name)
 
     def _extract_docstring_info(self, obj: Any) -> tuple[str, List[ParameterInfo], ReturnInfo]:
         """Extract docstring information from an object.

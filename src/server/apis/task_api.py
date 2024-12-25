@@ -8,7 +8,7 @@ from fastapi import (
     Query,
     Depends,
 )
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import logging
 
 from ..models.task import Task
@@ -21,11 +21,53 @@ from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..controllers.task_runner import TaskRunner
 from ..models.error import Error
 from ..controllers.tasks_controller import create_tasksmanager
+from ..controllers.tasks_tree_controller import (
+    TaskTreeManager, TaskStatus, ExecutionConfig,
+    ExecutionStrategy
+)
+from pydantic import BaseModel
 
 router = APIRouter()
 
 # Keep global persistence model for backward compatibility
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+
+# Dictionary to store task trees per tasksmanager
+tasksmanager_trees: Dict[str, TaskTreeManager] = {}
+
+# Additional request models for tree operations
+class TaskTreeRelation(BaseModel):
+    parent_id: str
+    child_id: str
+    execution_strategy: str = ExecutionStrategy.SEQUENTIAL.value
+
+    def get_strategy(self) -> ExecutionStrategy:
+        """Get the execution strategy enum"""
+        return ExecutionStrategy(self.execution_strategy)
+
+class TreeExecutionConfig(BaseModel):
+    strategy: str = ExecutionStrategy.SEQUENTIAL.value
+    execute_children: bool = True
+    propagate_context: bool = True
+    max_retries: int = 3
+    timeout: float = 60.0
+
+    def to_execution_config(self) -> ExecutionConfig:
+        """Convert to ExecutionConfig with proper enum handling"""
+        return ExecutionConfig(
+            strategy=ExecutionStrategy(self.strategy),
+            execute_children=self.execute_children,
+            propagate_context=self.propagate_context,
+            max_retries=self.max_retries,
+            timeout=self.timeout
+        )
+
+class TreeOperationError(Exception):
+    """Custom exception for tree operations"""
+    def __init__(self, message: str, details: Optional[Dict] = None):
+        self.message = message
+        self.details = details or {}
+        super().__init__(self.message)
 
 async def get_task_runner():
     """Dependency to get initialized task runner."""
@@ -121,19 +163,47 @@ async def run_task(
 ) -> Dict[str, Any]:
     """
     Run a task with the specified parameters.
-    The task can be either a CrewAI task or a standard task with tools.
+    If the task is part of a tree, it will execute according to the tree configuration
+    while maintaining the tasksmanager's context and configuration.
     """
     try:
         # Initialize task runner with context
         task_runner = TaskRunner(persistence_model)
         await task_runner.initialize()
         
-        # Prepare running parameters
+        # Check if task is part of a tree for this tasksmanager
+        tree_manager = tasksmanager_trees.get(tasksmanager_id)
+        if tree_manager and task_id in tree_manager.nodes:
+            node = tree_manager.nodes[task_id]
+            
+            # Merge tasksmanager context with run context
+            context = run_task_body.running_extra_params or {}
+            context.update({
+                "tasksmanager_id": tasksmanager_id,
+                "messages": run_task_body.messages if run_task_body.messages else []
+            })
+            
+            # Get task and wrap it in executor
+            task = persistence_model.tasks.read(task_id)
+            if not task:
+                raise HTTPException(status_code=404, detail="Task not found")
+            
+            # Update node's task with executor
+            node.task = task_runner.wrap_task(task)
+            
+            # Execute as part of tree
+            result = await node.run(context)
+            return {
+                "result": result,
+                "tree_execution": True,
+                "execution_stats": node.get_execution_stats()
+            }
+        
+        # Regular task execution
         running_extra_params = run_task_body.running_extra_params or {}
         if run_task_body.messages:
             running_extra_params['messages'] = run_task_body.messages
         
-        # Run the task using the TaskRunner
         response = await task_runner.run_task(
             tasksmanager_id=tasksmanager_id,
             task_id=task_id,
@@ -244,3 +314,311 @@ async def delete_tasksmanager(
     except Exception as e:
         logging.error(f"Error deleting task manager: {str(e)}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+# Modified tree operation endpoints
+@router.post("/tasksmanager/{tasksmanager_id}/task/{task_id}/tree/root")
+async def set_task_as_root(
+    tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
+    task_id: str = Path(..., description="ID of the task to set as root"),
+) -> Dict[str, str]:
+    """Set an existing task as the root of a task tree within a tasksmanager."""
+    try:
+        # Initialize task runner
+        task_runner = TaskRunner(persistence_model)
+        await task_runner.initialize()
+
+        # Verify tasksmanager exists
+        tasksmanager = persistence_model.tasksmanagers.read(tasksmanager_id)
+        if not tasksmanager:
+            raise TreeOperationError(
+                message="TasksManager not found",
+                details={"tasksmanager_id": tasksmanager_id}
+            )
+
+        # Get task from persistence and verify it belongs to this manager
+        task = persistence_model.tasks.read(task_id)
+        if not task:
+            raise TreeOperationError(
+                message="Task not found",
+                details={"task_id": task_id}
+            )
+        if task.tasksmanager_id != tasksmanager_id:
+            raise TreeOperationError(
+                message="Task doesn't belong to this manager",
+                details={
+                    "task_id": task_id,
+                    "task_manager_id": task.tasksmanager_id,
+                    "requested_manager_id": tasksmanager_id
+                }
+            )
+        
+        # Get or create tree manager for this tasksmanager
+        if tasksmanager_id not in tasksmanager_trees:
+            tasksmanager_trees[tasksmanager_id] = TaskTreeManager()
+        tree_manager = tasksmanager_trees[tasksmanager_id]
+        
+        # Check if task is already in another tree
+        if task_id in tree_manager.nodes:
+            raise TreeOperationError(
+                message="Task is already part of a tree",
+                details={"task_id": task_id}
+            )
+        
+        # Create node with wrapped task and set as root
+        task_executor = task_runner.wrap_task(task)
+        node = tree_manager.create_node(task_executor)
+        try:
+            tree_manager.set_as_root(task_id)
+        except Exception as e:
+            raise TreeOperationError(
+                message="Failed to set task as root",
+                details={"error": str(e)}
+            )
+        
+        return {
+            "status": "success",
+            "tasksmanager_id": tasksmanager_id,
+            "root_id": task_id
+        }
+    except TreeOperationError as e:
+        logging.error(f"Tree operation error: {e.message}", extra=e.details)
+        raise HTTPException(
+            status_code=400,
+            detail={"message": e.message, "details": e.details}
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error setting task as root: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "Internal server error", "error": str(e)}
+        )
+
+@router.post("/tasksmanager/{tasksmanager_id}/task/tree/relation")
+async def add_task_relation(
+    tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
+    relation: TaskTreeRelation = Body(..., description="Task relationship details"),
+) -> Dict[str, str]:
+    """Add a parent-child relationship between tasks within a tasksmanager."""
+    try:
+        # Initialize task runner
+        task_runner = TaskRunner(persistence_model)
+        await task_runner.initialize()
+
+        # Verify tasksmanager exists
+        tasksmanager = persistence_model.tasksmanagers.read(tasksmanager_id)
+        if not tasksmanager:
+            raise TreeOperationError(
+                message="TasksManager not found",
+                details={"tasksmanager_id": tasksmanager_id}
+            )
+
+        # Get tree manager for this tasksmanager
+        tree_manager = tasksmanager_trees.get(tasksmanager_id)
+        if not tree_manager:
+            raise TreeOperationError(
+                message="No task tree exists for this manager",
+                details={"tasksmanager_id": tasksmanager_id}
+            )
+
+        # Verify both tasks exist and belong to this manager
+        parent_task = persistence_model.tasks.read(relation.parent_id)
+        child_task = persistence_model.tasks.read(relation.child_id)
+        
+        if not parent_task or not child_task:
+            raise TreeOperationError(
+                message="One or both tasks not found",
+                details={
+                    "parent_id": relation.parent_id,
+                    "child_id": relation.child_id,
+                    "parent_exists": bool(parent_task),
+                    "child_exists": bool(child_task)
+                }
+            )
+        
+        if parent_task.tasksmanager_id != tasksmanager_id:
+            raise TreeOperationError(
+                message="Parent task doesn't belong to this manager",
+                details={
+                    "parent_id": relation.parent_id,
+                    "parent_manager_id": parent_task.tasksmanager_id,
+                    "requested_manager_id": tasksmanager_id
+                }
+            )
+            
+        if child_task.tasksmanager_id != tasksmanager_id:
+            raise TreeOperationError(
+                message="Child task doesn't belong to this manager",
+                details={
+                    "child_id": relation.child_id,
+                    "child_manager_id": child_task.tasksmanager_id,
+                    "requested_manager_id": tasksmanager_id
+                }
+            )
+        
+        # Create nodes if they don't exist in tree
+        if relation.parent_id not in tree_manager.nodes:
+            parent_executor = task_runner.wrap_task(parent_task)
+            tree_manager.create_node(parent_executor)
+        if relation.child_id not in tree_manager.nodes:
+            child_executor = task_runner.wrap_task(child_task)
+            tree_manager.create_node(child_executor)
+        
+        # Add relationship
+        try:
+            tree_manager.add_child(relation.parent_id, relation.child_id)
+        except Exception as e:
+            raise TreeOperationError(
+                message="Failed to add child to parent",
+                details={
+                    "parent_id": relation.parent_id,
+                    "child_id": relation.child_id,
+                    "error": str(e)
+                }
+            )
+        
+        # Configure execution strategy
+        try:
+            parent_node = tree_manager.nodes[relation.parent_id]
+            parent_node.execution_config.strategy = relation.get_strategy()
+        except Exception as e:
+            raise TreeOperationError(
+                message="Failed to configure execution strategy",
+                details={
+                    "parent_id": relation.parent_id,
+                    "strategy": relation.get_strategy().value,
+                    "error": str(e)
+                }
+            )
+        
+        return {
+            "status": "success",
+            "tasksmanager_id": tasksmanager_id,
+            "parent_id": relation.parent_id,
+            "child_id": relation.child_id
+        }
+    except TreeOperationError as e:
+        logging.error(f"Tree operation error: {e.message}", extra=e.details)
+        raise HTTPException(
+            status_code=400,
+            detail={"message": e.message, "details": e.details}
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error adding task relation: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "Internal server error", "error": str(e)}
+        )
+
+@router.post("/tasksmanager/{tasksmanager_id}/task/{task_id}/tree/config")
+async def configure_task_execution(
+    tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
+    task_id: str = Path(..., description="ID of the task to configure"),
+    config: TreeExecutionConfig = Body(..., description="Execution configuration"),
+) -> Dict[str, Any]:
+    """Configure execution parameters for a task in the tree."""
+    try:
+        # Verify tasksmanager exists
+        tasksmanager = persistence_model.tasksmanagers.read(tasksmanager_id)
+        if not tasksmanager:
+            raise TreeOperationError(
+                message="TasksManager not found",
+                details={"tasksmanager_id": tasksmanager_id}
+            )
+
+        # Get tree manager for this tasksmanager
+        tree_manager = tasksmanager_trees.get(tasksmanager_id)
+        if not tree_manager:
+            raise TreeOperationError(
+                message="No task tree exists for this manager",
+                details={"tasksmanager_id": tasksmanager_id}
+            )
+
+        node = tree_manager.nodes.get(task_id)
+        if not node:
+            raise TreeOperationError(
+                message="Task not found in tree",
+                details={
+                    "task_id": task_id,
+                    "available_nodes": list(tree_manager.nodes.keys())
+                }
+            )
+        
+        # Update execution configuration using the conversion method
+        try:
+            node.execution_config = config.to_execution_config()
+        except Exception as e:
+            raise TreeOperationError(
+                message="Failed to update execution configuration",
+                details={
+                    "task_id": task_id,
+                    "config": config.dict(),
+                    "error": str(e)
+                }
+            )
+        
+        return {
+            "status": "success",
+            "tasksmanager_id": tasksmanager_id,
+            "task_id": task_id,
+            "config": {
+                "strategy": node.execution_config.strategy.value,
+                "execute_children": node.execution_config.execute_children,
+                "propagate_context": node.execution_config.propagate_context,
+                "max_retries": node.execution_config.max_retries,
+                "timeout": node.execution_config.timeout
+            }
+        }
+    except TreeOperationError as e:
+        logging.error(f"Tree operation error: {e.message}", extra=e.details)
+        raise HTTPException(
+            status_code=400,
+            detail={"message": e.message, "details": e.details}
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error configuring task execution: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"message": "Internal server error", "error": str(e)}
+        )
+
+@router.get("/tasksmanager/{tasksmanager_id}/task/{task_id}/tree/status")
+async def get_task_tree_status(
+    tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
+    task_id: str = Path(..., description="ID of the task"),
+) -> Dict[str, Any]:
+    """Get the execution status and structure of a task tree."""
+    try:
+        # Verify tasksmanager exists
+        tasksmanager = persistence_model.tasksmanagers.read(tasksmanager_id)
+        if not tasksmanager:
+            raise HTTPException(status_code=400, detail={"message": "TasksManager not found"})
+
+        # Get tree manager for this tasksmanager
+        tree_manager = tasksmanager_trees.get(tasksmanager_id)
+        if not tree_manager:
+            raise HTTPException(status_code=400, detail={"message": "No task tree exists for this manager"})
+
+        node = tree_manager.nodes.get(task_id)
+        if not node:
+            raise HTTPException(status_code=400, detail={"message": "Task not found in tree"})
+        
+        def get_node_info(node):
+            return {
+                "id": node.task.id,
+                "name": node.task.name,
+                "status": node.state.status.value,
+                "children": [get_node_info(child) for child in node.children],
+                "execution_stats": node.get_execution_stats(),
+                "tasksmanager_config": {
+                    "model": tasksmanager.model,
+                    "toolsets": [ts for ts in tasksmanager.toolsets] if tasksmanager.toolsets else []
+                }
+            }
+        
+        return get_node_info(node)
+    except HTTPException as he:
+        logging.error(f"HTTP error in get_task_tree_status: {he.detail}")
+        raise he
+    except Exception as e:
+        logging.error(f"Error getting task tree status: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail={"message": "Internal server error", "error": str(e)})
