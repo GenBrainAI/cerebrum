@@ -39,92 +39,62 @@ class ToolsCatalogController:
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            await self.state_manager.initialize()
-            
-            # Load existing state if available
-            try:
-                session_dir = Path("state/sessions")
-                state_file = session_dir / "dynamic_tools_state.json" #"tools_catalog_view_default.json"
-                if state_file.exists():
-                    with open(state_file) as f:
-                        state_data = json.load(f)
-                        self.view_state.chat_history = state_data.get('chat_history', [])
-                        if 'task_status' in state_data:
-                            self.view_state.task_status = state_data['task_status']
-                        print(f"Loaded chat history: {len(self.view_state.chat_history)} messages")
-            except Exception as e:
-                self.logger.error(f"Failed to load existing state: {str(e)}")
-            
-            # Initialize task context
-            task_managers = self.global_persistence.tasksmanagers.list()
-            tasks = self.global_persistence.tasks.list()
-            
-            # Create default task manager and task if none exist
-            if not task_managers:
-                print("Creating default task manager and tasks...")
-                task_manager = self.global_persistence.tasksmanagers.create({
-                    "name": "Tools Management",
-                    "description": "Default tools management system"
-                })
-                
-                main_task = self.global_persistence.tasks.create({
-                    "name": "Tools Management",
-                    "description": "Main tools management task",
-                    "tasksmanager_id": task_manager.id
-                })
-                
-                task_managers = [task_manager]
-                tasks = [main_task]
-                print(f"Created default task manager: {task_manager.name}")
-                print(f"Created default task: {main_task.name}")
-            
-            if task_managers and tasks:
-                # Find tools management task
-                tools_manager = next(
-                    (m for m in task_managers if "Tools Management" in m.name),
-                    task_managers[0]
-                )
-                tools_task = next(
-                    (t for t in tasks if t.tasksmanager_id == tools_manager.id),
-                    None
-                )
-                
-                if tools_task:
-                    # Set active task context
-                    self.view_state.set_active_task(
-                        task_id=tools_task.id,
-                        task_name=tools_task.name,
-                        manager_id=tools_manager.id,
-                        manager_name=tools_manager.name
-                    )
-                    print(f"🟢 Set active task: {tools_manager.name}-{tools_task.name}")
-                    
-                    # Set tool state
-                    self.tool_state = {
-                        "active_tools": [],
-                        "total_tools": 0,
-                        "manager_id": tools_manager.id,
-                        "task_id": tools_task.id
-                    }
-                else:
-                    print("🔴 No main task found for tools manager")
-            else:
-                print("🔴 No task managers found")
-            
-            # Initialize other components
-            self.local_persistence = InMemoryPersistenceModel()
-            print("Local persistence model initialized")
-            
-            # Initialize tools state
+            print("Starting controller initialization...")
             state_file = StateLoader.get_state_file("tools_management_state.json")
-            if state_file and state_file.exists():
-                with open(state_file, 'r', encoding='utf-8') as f:
-                    json_str = f.read()
-                    self.local_persistence.from_json(json_str=json_str)
-                    print("Tools state loaded from file")
+            print(f"Checking state file path: {state_file}")
             
+            if not state_file or not state_file.exists():
+                print(f"🔴 Specialized state file not found at {state_file}")
+                return
+
+            print(f"Loading state from: {state_file}")
+            
+            # Read state file content as string
+            with open(state_file, 'r', encoding='utf-8') as f:
+                json_str = f.read()
+            
+            # Create local persistence model and load state from string
+            self.local_persistence = InMemoryPersistenceModel()
+            self.local_persistence.from_json(json_str=json_str)
+            
+            if self.local_persistence:
+                print("Local persistence model created")
+                # Get task context from local persistence
+                task_managers = self.local_persistence.tasksmanagers.list()
+                tasks = self.local_persistence.tasks.list()
+                
+                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find the tools management manager and task
+                    tools_manager = next(
+                        (m for m in task_managers if "Tools Management" in m.name),
+                        task_managers[0]
+                    )
+                    tools_task = next(
+                        (t for t in tasks if t.tasksmanager_id == tools_manager.id),
+                        None
+                    )
+                    
+                    if tools_task:
+                        # Update view state with task context
+                        self.view_state.set_active_task(
+                            task_id=tools_task.id,
+                            task_name=tools_task.name,
+                            manager_id=tools_manager.id,
+                            manager_name=tools_manager.name
+                        )
+                        
+                        print(f"🟢 Loaded state for {tools_manager.name}-{tools_task.name}")
+                    else:
+                        print("🔴 No tools management task found")
+                else:
+                    print("🔴 No task context found in state file")
+            else:
+                print("🔴 Failed to create local persistence model")
+                
         except Exception as e:
-            self.logger.error(f"Error in controller initialization: {str(e)}")
+            print(f"Error initializing tools controller: {str(e)}")
             raise
         
     async def get_tools_tree(self) -> Optional[TreeNode]:

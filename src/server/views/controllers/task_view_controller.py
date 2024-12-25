@@ -10,6 +10,8 @@ from ..state.state_manager import ViewStateManager
 from ...models.message import Message
 from ..components.tree_select_component import TreeSelectComponent
 from ..components.tree_component import TreeNode
+from ...utils.state_loader import StateLoader
+from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 
 class TaskHierarchyController:
     """Controller for task hierarchy view."""
@@ -80,74 +82,64 @@ class TaskHierarchyController:
             return None
 
     async def initialize(self):
-        """Initialize controller with state."""
+        """Initialize controller with specialized state."""
         try:
-            await self.state_manager.initialize()
+            print("Starting task controller initialization...")
+            state_file = StateLoader.get_state_file("task_management_state.json")
+            print(f"Checking state file path: {state_file}")
             
-            # Load existing state if available
-            try:
-                session_dir = Path("state/sessions")
-                state_file = session_dir / "task_hierarchy_view_default.json"
-                if state_file.exists():
-                    with open(state_file) as f:
-                        state_data = json.load(f)
-                        self.view_state.chat_history = state_data.get('chat_history', [])
-                        if 'task_status' in state_data:
-                            self.view_state.task_status = state_data['task_status']
-                        print(f"Loaded chat history: {len(self.view_state.chat_history)} messages")
-            except Exception as e:
-                self.logger.error(f"Failed to load existing state: {str(e)}")
-            
-            # Initialize task context
-            task_managers = self.global_persistence.tasksmanagers.list()
-            tasks = self.global_persistence.tasks.list()
-            
-            # Create default task manager and task if none exist
-            if not task_managers:
-                print("Creating default task manager and tasks...")
-                task_manager = self.global_persistence.tasksmanagers.create({
-                    "name": "Task Management",
-                    "description": "Default task management system"
-                })
-                
-                main_task = self.global_persistence.tasks.create({
-                    "name": "Task Management",
-                    "description": "Main task management task",
-                    "tasksmanager_id": task_manager.id
-                })
-                
-                task_managers = [task_manager]
-                tasks = [main_task]
-                print(f"Created default task manager: {task_manager.name}")
-                print(f"Created default task: {main_task.name}")
-            
-            if task_managers and tasks:
-                # Find task management task
-                task_manager = next(
-                    (m for m in task_managers if "Task Management" in m.name),
-                    task_managers[0]
-                )
-                main_task = next(
-                    (t for t in tasks if t.tasksmanager_id == task_manager.id),
-                    None
-                )
-                
-                if main_task:
-                    # Set active task context
-                    self.view_state.set_active_task(
-                        task_id=main_task.id,
-                        task_name=main_task.name,
-                        manager_id=task_manager.id,
-                        manager_name=task_manager.name
-                    )
-                    print(f"🟢 Set active task: {task_manager.name}-{main_task.name}")
-                else:
-                    print("🔴 No main task found for task manager")
-            else:
-                print("🔴 No task managers found")
+            if not state_file or not state_file.exists():
+                print(f"🔴 Specialized state file not found at {state_file}")
+                return
 
+            print(f"Loading state from: {state_file}")
+            
+            # Read state file content as string
+            with open(state_file, 'r', encoding='utf-8') as f:
+                json_str = f.read()
+            
+            # Create local persistence model and load state from string
+            self.local_persistence = InMemoryPersistenceModel()
+            self.local_persistence.from_json(json_str=json_str)
+            
+            if self.local_persistence:
+                print("Local persistence model created")
+                # Get task context from local persistence
+                task_managers = self.local_persistence.tasksmanagers.list()
+                tasks = self.local_persistence.tasks.list()
+                
+                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find the task management manager and task
+                    task_manager = next(
+                        (m for m in task_managers if "Task Management" in m.name),
+                        task_managers[0]
+                    )
+                    main_task = next(
+                        (t for t in tasks if t.tasksmanager_id == task_manager.id),
+                        None
+                    )
+                    
+                    if main_task:
+                        # Update view state with task context
+                        self.view_state.set_active_task(
+                            task_id=main_task.id,
+                            task_name=main_task.name,
+                            manager_id=task_manager.id,
+                            manager_name=task_manager.name
+                        )
+                        
+                        print(f"🟢 Loaded state for {task_manager.name}-{main_task.name}")
+                    else:
+                        print("🔴 No task management task found")
+                else:
+                    print("🔴 No task context found in state file")
+            else:
+                print("🔴 Failed to create local persistence model")
+                
         except Exception as e:
-            self.logger.error(f"Error initializing task hierarchy: {str(e)}")
+            print(f"Error initializing task controller: {str(e)}")
             raise
 
     async def handle_chat(self, prompt: str):
