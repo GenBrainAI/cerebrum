@@ -6,7 +6,6 @@ from fastapi import (
     Response,
     status,
     Query,
-    Depends,
 )
 from typing import Dict, Any, List, Optional
 import logging
@@ -15,14 +14,12 @@ from ..models.task import Task
 from ..models.list_tasks_managers import ListTasksManagers
 from ..models.custom_exceptions import *
 from ..models.run_task import RunTask
-from ..models.toolset import Toolset
 from ..models.tasks_manager import TasksManager
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..controllers.task_runner import TaskRunner
 from ..models.error import Error
-from ..controllers.tasks_controller import create_tasksmanager
 from ..controllers.tasks_tree_controller import (
-    TaskTreeManager, TaskStatus, ExecutionConfig,
+    TaskTreeManager, ExecutionConfig,
     ExecutionStrategy
 )
 from pydantic import BaseModel
@@ -32,7 +29,7 @@ router = APIRouter()
 # Keep global persistence model for backward compatibility
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
-# Dictionary to store task trees per tasksmanager
+#TODO: should be part of the persistence model
 tasksmanager_trees: Dict[str, TaskTreeManager] = {}
 
 # Additional request models for tree operations

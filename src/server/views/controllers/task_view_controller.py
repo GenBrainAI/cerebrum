@@ -2,175 +2,215 @@ from typing import Dict, Any, Optional
 import streamlit as st
 import logging
 from datetime import datetime
-from ...controllers.tasks_tree_controller import TaskTreeManager, ExecutionStrategy
-from ...controllers.task_tree_state_manager import TaskTreeStateManager
-from ..components.task_tree_visualizer import TaskTreeVisualizer
+from pathlib import Path
+import json
+from uuid import UUID, uuid4
+from ..models.view_state import ViewState
+from ..state.state_manager import ViewStateManager
+from ...models.message import Message
+from ..components.tree_select_component import TreeSelectComponent
+from ..components.tree_component import TreeNode
+from ...utils.state_loader import StateLoader
+from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 
 class TaskHierarchyController:
-    """Enhanced controller with visualization and state management."""
+    """Controller for task hierarchy view."""
     
     def __init__(self, persistence_model):
         self.global_persistence = persistence_model
         self.logger = logging.getLogger(__name__)
-        self.tree_visualizer = TaskTreeVisualizer()
-        self.tree_state_manager = TaskTreeStateManager()
-        self.task_tree_manager = TaskTreeManager()
-        self._task_tree_loaded = False
+        self.view_state = ViewState(view_name="task_hierarchy")
+        self.state_manager = ViewStateManager(persistence_model)
+        self.tree_component = TreeSelectComponent(self.handle_node_click)
+        self.view_state.task_status = {
+            "loaded": False,
+            "tasksmanager_name": "",
+            "task_name": ""
+        }
+        self.view_state.chat_history = []
 
-    async def initialize(self):
-        """Initialize the controller and load task tree."""
+    def handle_node_click(self, node_id: UUID):
+        """Handle tree node selection."""
+        self.view_state.selected_node = node_id
+        # TODO: Implement task selection logic
+
+    async def get_task_tree(self):
+        """Get the task hierarchy as a tree structure."""
         try:
-            # Initialize task tree from existing tasks
-            tasks = self.global_persistence.tasks.list()
-            for task in tasks:
-                node = self.task_tree_manager.create_node(task)
-                if not task.parent_id:
-                    self.task_tree_manager.set_as_root(task.id)
-
-            # Try to load saved state
-            if not self._task_tree_loaded:
-                saved_state = await self.tree_state_manager.load_tree_state(
-                    self.task_tree_manager.root_nodes[0].task.id if self.task_tree_manager.root_nodes else None
-                )
-                if saved_state:
-                    self.task_tree_manager.restore_state(saved_state)
-                self._task_tree_loaded = True
-
-        except Exception as e:
-            self.logger.error(f"Error initializing task hierarchy: {str(e)}")
-            raise
-
-    async def render_task_tree(self):
-        """Render the task tree visualization and controls."""
-        try:
-            # Ensure initialization
-            if not self._task_tree_loaded:
-                await self.initialize()
-
-            # Main content area
-            st.title("Task Tree Management")
+            # Create root node
+            root = TreeNode(
+                id=UUID('00000000-0000-0000-0000-000000000000'),
+                name="Task Hierarchy",
+                node_type="root"
+            )
             
-            # Render tree visualization
-            self.tree_visualizer.render_tree(self.task_tree_manager)
+            # Get all task managers
+            task_managers = self.global_persistence.tasksmanagers.list()
             
-            # Sidebar controls
-            st.sidebar.title("Task Tree Controls")
-            
-            # State management section
-            st.sidebar.subheader("State Management")
-            
-            if st.sidebar.button("Save Current State"):
-                tree_id = self.task_tree_manager.root_nodes[0].task.id if self.task_tree_manager.root_nodes else "default"
-                if await self.tree_state_manager.save_tree_state(tree_id, self.task_tree_manager):
-                    st.sidebar.success("Tree state saved successfully")
-                else:
-                    st.sidebar.error("Failed to save tree state")
-            
-            # List and load saved states
-            saved_trees = await self.tree_state_manager.list_saved_trees()
-            if saved_trees:
-                selected_tree = st.sidebar.selectbox(
-                    "Load Saved State",
-                    options=[tree['tree_id'] for tree in saved_trees],
-                    format_func=lambda x: f"{x} (Saved: {next(t['saved_at'] for t in saved_trees if t['tree_id'] == x)})"
+            for tm in task_managers:
+                # Create task manager node
+                tm_node = TreeNode(
+                    id=UUID(tm.id) if isinstance(tm.id, str) else tm.id,
+                    name=tm.name,
+                    node_type="manager"
                 )
                 
-                if st.sidebar.button("Load Selected State"):
-                    state_data = await self.tree_state_manager.load_tree_state(selected_tree)
-                    if state_data:
-                        self.task_tree_manager.restore_state(state_data)
-                        st.sidebar.success("Tree state loaded successfully")
-                        st.rerun()
-                    else:
-                        st.sidebar.error("Failed to load tree state")
-
-                if st.sidebar.button("Delete Selected State"):
-                    if await self.tree_state_manager.delete_tree_state(selected_tree):
-                        st.sidebar.success("State deleted successfully")
-                        st.rerun()
-                    else:
-                        st.sidebar.error("Failed to delete state")
-
-            # Execution controls
-            st.sidebar.subheader("Execution Controls")
-            self.tree_visualizer.render_tree_controls(self.task_tree_manager)
-
-            # Task details section
-            st.subheader("Task Details")
-            selected_task = st.selectbox(
-                "Select Task",
-                options=[node.task.id for node in self.task_tree_manager.nodes.values()],
-                format_func=lambda x: self.task_tree_manager.nodes[x].task.name
-            )
+                # Get tasks for this manager
+                tasks = [t for t in self.global_persistence.tasks.list() 
+                        if t.tasksmanager_id == tm.id]
+                
+                # Add tasks as children
+                for task in tasks:
+                    task_node = TreeNode(
+                        id=UUID(task.id) if isinstance(task.id, str) else task.id,
+                        name=task.name,
+                        node_type="task",
+                        metadata={
+                            "description": task.description,
+                            "tasksmanager_id": task.tasksmanager_id
+                        }
+                    )
+                    tm_node.children.append(task_node)
+                
+                # Add task manager node to root
+                root.children.append(tm_node)
             
-            if selected_task:
-                self.tree_visualizer.render_task_details(self.task_tree_manager.nodes[selected_task])
-
+            return root
+            
         except Exception as e:
-            self.logger.error(f"Error rendering task tree: {str(e)}")
-            st.error(f"Error rendering task tree: {str(e)}")
-
-    async def handle_task_execution(self, task_id: str):
-        """Handle task execution with progress tracking."""
-        try:
-            node = self.task_tree_manager.nodes.get(task_id)
-            if not node:
-                st.error(f"Task {task_id} not found")
-                return
-
-            # Create progress bar
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            # Execute task with progress updates
-            async def progress_callback(current: int, total: int, message: str):
-                progress = float(current) / total if total > 0 else 0
-                progress_bar.progress(progress)
-                status_text.text(message)
-
-            result = await self.task_tree_manager.execute_group(
-                "execution",
-                [task_id],
-                context={"progress_callback": progress_callback}
-            )
-
-            # Update progress bar and status
-            progress_bar.progress(1.0)
-            if result["errors"]:
-                status_text.error("Execution completed with errors")
-            else:
-                status_text.success("Execution completed successfully")
-
-            # Save state after execution
-            await self.tree_state_manager.save_tree_state(
-                self.task_tree_manager.root_nodes[0].task.id,
-                self.task_tree_manager
-            )
-
-            return result
-
-        except Exception as e:
-            self.logger.error(f"Error executing task: {str(e)}")
-            st.error(f"Error executing task: {str(e)}")
+            self.logger.error(f"Error building task tree: {str(e)}")
             return None
 
-    async def cleanup_old_states(self):
-        """Clean up old state files."""
+    async def initialize(self):
+        """Initialize controller with specialized state."""
         try:
-            days = st.sidebar.number_input(
-                "Delete states older than (days)",
-                min_value=1,
-                max_value=365,
-                value=30
-            )
+            print("Starting task controller initialization...")
+            state_file = StateLoader.get_state_file("task_management_state.json")
+            print(f"Checking state file path: {state_file}")
             
-            if st.sidebar.button("Clean Up Old States"):
-                deleted_count = await self.tree_state_manager.cleanup_old_states(days)
-                if deleted_count > 0:
-                    st.sidebar.success(f"Deleted {deleted_count} old state files")
-                else:
-                    st.sidebar.info("No old states to clean up")
+            if not state_file or not state_file.exists():
+                print(f"🔴 Specialized state file not found at {state_file}")
+                return
 
+            print(f"Loading state from: {state_file}")
+            
+            # Read state file content as string
+            with open(state_file, 'r', encoding='utf-8') as f:
+                json_str = f.read()
+            
+            # Create local persistence model and load state from string
+            self.local_persistence = InMemoryPersistenceModel()
+            self.local_persistence.from_json(json_str=json_str)
+            
+            if self.local_persistence:
+                print("Local persistence model created")
+                # Get task context from local persistence
+                task_managers = self.local_persistence.tasksmanagers.list()
+                tasks = self.local_persistence.tasks.list()
+                
+                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find the task management manager and task
+                    task_manager = next(
+                        (m for m in task_managers if "Task Management" in m.name),
+                        task_managers[0]
+                    )
+                    main_task = next(
+                        (t for t in tasks if t.tasksmanager_id == task_manager.id),
+                        None
+                    )
+                    
+                    if main_task:
+                        # Update view state with task context
+                        self.view_state.set_active_task(
+                            task_id=main_task.id,
+                            task_name=main_task.name,
+                            manager_id=task_manager.id,
+                            manager_name=task_manager.name
+                        )
+                        
+                        print(f"🟢 Loaded state for {task_manager.name}-{main_task.name}")
+                    else:
+                        print("🔴 No task management task found")
+                else:
+                    print("🔴 No task context found in state file")
+            else:
+                print("🔴 Failed to create local persistence model")
+                
         except Exception as e:
-            self.logger.error(f"Error cleaning up states: {str(e)}")
-            st.sidebar.error(f"Error cleaning up states: {str(e)}")
+            print(f"Error initializing task controller: {str(e)}")
+            raise
+
+    async def handle_chat(self, prompt: str):
+        """Handle chat messages."""
+        try:
+            # Add user message to chat history
+            self.view_state.chat_history.append({
+                "role": "user",
+                "content": prompt
+            })
+            
+            # Process the message if we have an active task
+            if self.view_state.task_status and self.view_state.task_status.get("loaded"):
+                task_id = self.view_state.task_status.get("task_id")
+                manager_id = self.view_state.task_status.get("tasksmanager_id")
+                
+                if task_id and manager_id:
+                    # Prepare messages context
+                    current_messages = []
+                    
+                    # Add existing chat history
+                    for msg in self.view_state.chat_history:
+                        if isinstance(msg, Message):
+                            current_messages.append(msg)
+                        elif isinstance(msg, dict):
+                            current_messages.append(Message(**msg))
+                        else:
+                            current_messages.append(Message(
+                                role=getattr(msg, 'role', 'user'),
+                                content=str(msg),
+                                file_ids=getattr(msg, 'file_ids', None),
+                                created_at=getattr(msg, 'created_at', None),
+                                updated_at=getattr(msg, 'updated_at', None)
+                            ))
+                    
+                    # Run task with message context
+                    response = await self.state_manager.task_runner.run_task(
+                        tasksmanager_id=manager_id,
+                        task_id=task_id,
+                        running_extra_params={'messages': current_messages}
+                    )
+                    
+                    # Process response
+                    if isinstance(response, dict) and 'response' in response:
+                        response_text = response['response']
+                    else:
+                        response_text = str(response)
+                    
+                    # Add assistant response to chat history
+                    self.view_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response_text
+                    })
+                else:
+                    # Add simple response if no active task
+                    self.view_state.chat_history.append({
+                        "role": "assistant",
+                        "content": "No active task to process message."
+                    })
+            else:
+                # Add simple response if no task loaded
+                self.view_state.chat_history.append({
+                    "role": "assistant",
+                    "content": "Task management not loaded. Please initialize first."
+                })
+                
+        except Exception as e:
+            self.logger.error(f"Error handling chat: {str(e)}")
+            st.error(f"Error handling chat: {str(e)}")
+            # Add error message to chat history
+            self.view_state.chat_history.append({
+                "role": "assistant",
+                "content": f"Error processing message: {str(e)}"
+            })

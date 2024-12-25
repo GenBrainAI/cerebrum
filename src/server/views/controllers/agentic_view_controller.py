@@ -32,87 +32,62 @@ class AgenticViewController:
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            await self.state_manager.initialize()
+            print("Starting agentic controller initialization...")
+            state_file = StateLoader.get_state_file("agentic_framework_state.json")
+            print(f"Checking state file path: {state_file}")
             
-            # Load existing state if available
-            try:
-                session_dir = Path("state/sessions")
-                state_file = session_dir / "agentic_config_view_default.json"
-                if state_file.exists():
-                    with open(state_file) as f:
-                        state_data = json.load(f)
-                        print(f"\n📖 Loading agentic state:")
-                        print(f"  Chat history: {len(state_data.get('chat_history', []))} messages")
-                        print(f"  Task status: {state_data.get('task_status', {})}")
-                        
-                        self.view_state.chat_history = state_data.get('chat_history', [])
-                        if 'task_status' in state_data:
-                            self.view_state.task_status = state_data['task_status']
-            except Exception as e:
-                self.logger.error(f"Failed to load existing state: {str(e)}")
+            if not state_file or not state_file.exists():
+                print(f"🔴 Specialized state file not found at {state_file}")
+                return
+
+            print(f"Loading state from: {state_file}")
             
-            # Initialize task context
-            task_managers = self.global_persistence.tasksmanagers.list()
-            tasks = self.global_persistence.tasks.list()
+            # Read state file content as string
+            with open(state_file, 'r', encoding='utf-8') as f:
+                json_str = f.read()
             
-            # Create default task manager and task if none exist
-            if not task_managers:
-                print("Creating default task manager and tasks...")
-                task_manager = self.global_persistence.tasksmanagers.create({
-                    "name": "Agentic Framework",
-                    "description": "Default agentic framework system"
-                })
-                
-                main_task = self.global_persistence.tasks.create({
-                    "name": "Agentic Framework",
-                    "description": "Main agentic framework task",
-                    "tasksmanager_id": task_manager.id
-                })
-                
-                task_managers = [task_manager]
-                tasks = [main_task]
-                print(f"Created default task manager: {task_manager.name}")
-                print(f"Created default task: {main_task.name}")
-            
-            if task_managers and tasks:
-                # Find agentic framework task
-                agentic_manager = next(
-                    (m for m in task_managers if "Agentic Framework" in m.name),
-                    task_managers[0]
-                )
-                agentic_task = next(
-                    (t for t in tasks if t.tasksmanager_id == agentic_manager.id),
-                    None
-                )
-                
-                if agentic_task:
-                    # Set active task context
-                    self.view_state.set_active_task(
-                        task_id=agentic_task.id,
-                        task_name=agentic_task.name,
-                        manager_id=agentic_manager.id,
-                        manager_name=agentic_manager.name
-                    )
-                    print(f"🟢 Set active task: {agentic_manager.name}-{agentic_task.name}")
-                    
-                    # Set agent state
-                    self.agent_state = {
-                        "active_agents": [],
-                        "total_agents": 0,
-                        "manager_id": agentic_manager.id,
-                        "task_id": agentic_task.id
-                    }
-                else:
-                    print("🔴 No main task found for agentic manager")
-            else:
-                print("🔴 No task managers found")
-            
-            # Initialize other components
+            # Create local persistence model and load state from string
             self.local_persistence = InMemoryPersistenceModel()
-            print("Local persistence model initialized")
+            self.local_persistence.from_json(json_str=json_str)
             
+            if self.local_persistence:
+                print("Local persistence model created")
+                # Get task context from local persistence
+                task_managers = self.local_persistence.tasksmanagers.list()
+                tasks = self.local_persistence.tasks.list()
+                
+                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                if task_managers and tasks:
+                    # Find the agentic framework manager and task
+                    agentic_manager = next(
+                        (m for m in task_managers if "Agentic Framework" in m.name),
+                        task_managers[0]
+                    )
+                    agentic_task = next(
+                        (t for t in tasks if t.tasksmanager_id == agentic_manager.id),
+                        None
+                    )
+                    
+                    if agentic_task:
+                        # Update view state with task context
+                        self.view_state.set_active_task(
+                            task_id=agentic_task.id,
+                            task_name=agentic_task.name,
+                            manager_id=agentic_manager.id,
+                            manager_name=agentic_manager.name
+                        )
+                        
+                        print(f"🟢 Loaded state for {agentic_manager.name}-{agentic_task.name}")
+                    else:
+                        print("🔴 No agentic framework task found")
+                else:
+                    print("🔴 No task context found in state file")
+            else:
+                print("🔴 Failed to create local persistence model")
+                
         except Exception as e:
-            self.logger.error(f"Error in controller initialization: {str(e)}")
+            print(f"Error initializing agentic controller: {str(e)}")
             raise
 
     async def get_agent_tree(self) -> Optional[TreeNode]:
