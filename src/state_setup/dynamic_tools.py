@@ -6,6 +6,10 @@ import json
 import dotenv
 from typing import Any, Dict
 import logging
+from langchain_community.agent_toolkits import PlayWrightBrowserToolkit
+from langchain_community.tools.playwright.utils import create_async_playwright_browser
+import nest_asyncio
+from server.tools.tools_catalog import tools_catalog
 
 project_root = str(Path(__file__).parents[1])
 sys.path.append(project_root)
@@ -220,6 +224,17 @@ async def setup_dynamic_tools_state():
         os.environ['STREAMLIT_RUN_MODE'] = 'script'
         persistence_model = PersistenceModelFactory.persistence_model("inmemory")
         
+        # Initialize PlayWright Browser toolkit
+        nest_asyncio.apply()
+        async_browser = await create_async_playwright_browser()
+        browser_toolkit = PlayWrightBrowserToolkit.from_browser(async_browser=async_browser)
+        browser_tools = browser_toolkit.get_tools()
+        
+        # Add browser tools to catalog
+        for tool in browser_tools:
+            tools_catalog.register_ai_tool(tool)
+            
+        print("🌐 Added PlayWright Browser tools to catalog")
         
         # Initialize context database with proper configuration
         context_db = ContextDatabase(
@@ -232,6 +247,30 @@ async def setup_dynamic_tools_state():
         context_provider.context_db = context_db
         knowledge_base = KnowledgeBase()
         
+        # Create documentation links for navigation
+        langchain_docs = {
+            "Tool Creation Guide": "https://python.langchain.com/docs/modules/agents/tools/custom_tools",
+            "Tool Concepts": "https://python.langchain.com/docs/modules/agents/tools/",
+            "Tool Examples": "https://python.langchain.com/docs/integrations/tools",
+            "Agent Tools": "https://python.langchain.com/docs/modules/agents/tools/",
+            "Structured Tools": "https://python.langchain.com/docs/modules/agents/tools/structured"
+        }
+        
+        # Add documentation links to knowledge base
+        docs_content = "# Langchain Tools Documentation Links\n\n"
+        for title, url in langchain_docs.items():
+            docs_content += f"- [{title}]({url})\n"
+            
+        knowledge_id = await knowledge_base.add_knowledge(
+            content=docs_content,
+            domain="langchain",
+            metadata={
+                "type": "documentation_links",
+                "category": "tools",
+                "tags": ["tools", "documentation", "navigation"]
+            }
+        )
+        print(f"📚 Added Langchain documentation links to knowledge base: {knowledge_id}")
         
         file_tools = FileTools()
         credentials_tools = CredentialsTools()
@@ -243,6 +282,17 @@ async def setup_dynamic_tools_state():
         
         # Add tools with proper module information for serialization
         tool_infos = [
+            ToolInfo(
+                name="NavigateTool",
+                type="function",
+                tool_data={
+                    "name": "navigate_browser",
+                    "description": "Navigate to a specific URL in the browser",
+                    "function_module": "langchain_community.tools.playwright",
+                    "class_name": "NavigateTool",
+                    "is_method": True
+                }
+            ),
             ToolInfo(
                 name="FileTools",
                 type="function",
@@ -319,8 +369,12 @@ async def setup_dynamic_tools_state():
                 AgentModel(
                     role="LangChain Tool Architect",
                     goal="Design and specify new Langchain tools based on documentation analysis",
-                    backstory="Expert system architect specializing in Langchain integration and tool design.",
+                    backstory="Expert system architect specializing in Langchain integration and tool design. Starts by navigating to and analyzing relevant documentation before creating specifications.",
                     tools=[
+                        ToolModel(
+                            name="navigate_browser",
+                            description="Navigate to specific Langchain documentation URLs"
+                        ),
                         ToolModel(
                             name="FileTools.read_documentation",
                             description="Read tool documentation from file"
@@ -377,7 +431,11 @@ async def setup_dynamic_tools_state():
                 ),
                 TaskModel(
                     description="Analyze Langchain documentation and create tool specification",
-                    expected_output="Tool specification document created",
+                    expected_output="""
+                    1. List of relevant documentation pages visited
+                    2. Key patterns and requirements identified
+                    3. Tool specification document created
+                    """,
                     agent_role="LangChain Tool Architect",
                     depends_on=["Load and validate project credentials"]
                 ),
