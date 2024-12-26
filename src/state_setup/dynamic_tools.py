@@ -32,6 +32,11 @@ from server.models.persistence_models import StorageLocation, StorageType
 from server.controllers.curried_proxy import CurriedProxy
 from server.controllers.agents_controller import create_crew
 from server.controllers.persistence_controller import save_to_storage
+from server.models.curried_proxy_info import CurriedProxyInfo, ToolInfo
+from server.models.curried_proxy_info import CurriedProxyInfo, ToolInfo
+from server.context.context_provider import ContextProvider
+from server.context.knowledge_base import KnowledgeBase
+from server.context.context_database import ContextDatabase
 
 class FileTools:
     """Tool for handling file operations related to documentation and code."""
@@ -215,102 +220,82 @@ async def setup_dynamic_tools_state():
         os.environ['STREAMLIT_RUN_MODE'] = 'script'
         persistence_model = PersistenceModelFactory.persistence_model("inmemory")
         
-        # Initialize context provider and knowledge base
-        from server.context.context_provider import ContextProvider
-        from server.context.knowledge_base import KnowledgeBase
+        
+        # Initialize context database with proper configuration
+        context_db = ContextDatabase(
+            persist_directory="persistent_state/context/context_db",
+            batch_size=100
+        )
+        
+        # Initialize context provider with context database
         context_provider = ContextProvider()
+        context_provider.context_db = context_db
         knowledge_base = KnowledgeBase()
         
-        # Read existing Langchain tools documentation
-        docs_path = Path("docs/langchain_tools/langchain_tools.md")
-        if not docs_path.exists():
-            print(f"🔴 Langchain tools documentation not found at {docs_path}")
-            return
-            
-        with open(docs_path, 'r', encoding='utf-8') as f:
-            langchain_docs = f.read()
-            
-        print(f"📚 Loaded Langchain tools documentation from {docs_path}")
         
-        # Check if documentation already exists in knowledge base
-        existing_entries = await knowledge_base.search_knowledge(
-            query="langchain tools documentation",
-            metadata_filter={
-                "source": "docs/langchain_tools/langchain_tools.md",
-                "type": "documentation",
-                "domain": "langchain"
-            }
-        )
-        
-        if existing_entries:
-            print("📘 Found existing Langchain tools documentation in knowledge base")
-            knowledge_id = existing_entries[0].get('id')  # Use existing entry
-        else:
-            # Create new knowledge base entry for Langchain tools documentation
-            knowledge_id = await knowledge_base.add_knowledge(
-                content=langchain_docs,
-                metadata={
-                    "source": "docs/langchain_tools/langchain_tools.md",
-                    "type": "documentation",
-                    "domain": "langchain",
-                    "category": "tools"
-                }
-            )
-            print(f"📝 Created new knowledge base entry: {knowledge_id}")
-        
-        # Check if task already has this context
-        existing_contexts = await context_provider.get_task_contexts(task.id)
-        has_langchain_docs = any(
-            ctx.get('type') == 'knowledge' and 
-            ctx.get('source_id') == str(knowledge_id)
-            for ctx in existing_contexts
-        )
-        
-        if not has_langchain_docs:
-            # Add knowledge base context to task
-            await context_provider.add_context_to_task(
-                task_id=task.id,
-                type="knowledge",
-                source_id=str(knowledge_id),
-                priority=100,  # High priority as this is essential documentation
-                metadata={
-                    "name": "langchain_tools_docs",
-                    "description": "Official Langchain tools documentation",
-                    "tags": ["langchain", "tools", "documentation"],
-                    "source": "docs/langchain_tools/langchain_tools.md"
-                }
-            )
-            print(f"🔗 Added knowledge base context to task")
-        else:
-            print("✅ Task already has Langchain tools documentation context")
-        
-        # Initialize tools
         file_tools = FileTools()
         credentials_tools = CredentialsTools()
         testing_tools = TestingTools()
         proxy_tools = ProxyTools()
         
-        # Create curried proxy and add tools directly
+        # Create curried proxy and add tools with proper module info
         curried_proxy = CurriedProxy()
         
-        # Add all tools directly
-        curried_proxy.add_tool("read_documentation", file_tools.read_documentation)
-        curried_proxy.add_tool("save_implementation", file_tools.save_implementation)
-        curried_proxy.add_tool("save_tests", file_tools.save_tests)
-        curried_proxy.add_tool("load_credentials", credentials_tools.load_credentials)
-        curried_proxy.add_tool("validate_credentials", credentials_tools.validate_credentials)
-        curried_proxy.add_tool("run_unit_tests", testing_tools.run_unit_tests)
-        curried_proxy.add_tool("validate_test_coverage", testing_tools.validate_test_coverage)
-        curried_proxy.add_tool("register_tool", proxy_tools.register_tool)
+        # Add tools with proper module information for serialization
+        tool_infos = [
+            ToolInfo(
+                name="FileTools",
+                type="function",
+                tool_data={
+                    "name": "FileTools",
+                    "description": "File operations for tool management",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "FileTools",
+                    "is_method": True
+                }
+            ),
+            ToolInfo(
+                name="CredentialsTools",
+                type="function",
+                tool_data={
+                    "name": "CredentialsTools",
+                    "description": "Credentials management tools",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "CredentialsTools",
+                    "is_method": True
+                }
+            ),
+            ToolInfo(
+                name="TestingTools",
+                type="function",
+                tool_data={
+                    "name": "TestingTools",
+                    "description": "Testing and validation tools",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "TestingTools",
+                    "is_method": True
+                }
+            ),
+            ToolInfo(
+                name="ProxyTools",
+                type="function",
+                tool_data={
+                    "name": "ProxyTools",
+                    "description": "Dynamic tool registration",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "ProxyTools",
+                    "is_method": True
+                }
+            )
+        ]
         
-        # Add tool objects
-        curried_proxy.add_tool("FileTools", file_tools)
-        curried_proxy.add_tool("CredentialsTools", credentials_tools)
-        curried_proxy.add_tool("TestingTools", testing_tools)
-        curried_proxy.add_tool("ProxyTools", proxy_tools)
+        # Create proxy info and reconstruct proxy
+        proxy_info = CurriedProxyInfo(tools=tool_infos)
+        curried_proxy = CurriedProxy.from_info(proxy_info)
         
         # Store curried proxy in persistence model
         curried_proxy_id = persistence_model.curried_proxies.create(curried_proxy).id
+        print(f"🔧 Created curried proxy with ID: {curried_proxy_id}")
         
         # Create CrewAI configuration
         crew_request = CreateCrewRequest(
@@ -458,6 +443,7 @@ async def setup_dynamic_tools_state():
         # Create crew and store configuration
         crew = await create_crew(crew_request, curried_proxy)
         crewai_config = persistence_model.crewai_config.create(CrewAIConfig(create_crew=crew_request))
+        print(f"👥 Created CrewAI configuration with ID: {crewai_config.id}")
         
         # Create TasksManager for dynamic tools
         tasksmanager = TasksManager(
@@ -519,6 +505,7 @@ async def setup_dynamic_tools_state():
             ]
         )
         tasksmanager = persistence_model.tasksmanagers.create(tasksmanager)
+        print(f"📋 Created tasks manager with ID: {tasksmanager.id}")
         
         # Create Task
         task = Task(
@@ -531,6 +518,67 @@ async def setup_dynamic_tools_state():
             inherit_manager_context=True
         )
         task = persistence_model.tasks.create(task)
+        print(f"✨ Created task with ID: {task.id}")
+        
+        # Now handle the Langchain tools documentation
+        docs_path = Path("docs/langchain_tools/langchain_tools.md")
+        if not docs_path.exists():
+            print(f"🔴 Langchain tools documentation not found at {docs_path}")
+            return
+            
+        with open(docs_path, 'r', encoding='utf-8') as f:
+            langchain_docs = f.read()
+            
+        print(f"📚 Loaded Langchain tools documentation from {docs_path}")
+        
+        # Check if documentation already exists in knowledge base
+        existing_entries = knowledge_base.get_knowledge(
+            domain="langchain",
+            tags=["tools", "documentation"]
+        )
+        
+        if existing_entries:
+            print("📘 Found existing Langchain tools documentation in knowledge base")
+            knowledge_id = existing_entries[0]["id"]  # Use existing entry
+        else:
+            # Create new knowledge base entry for Langchain tools documentation
+            knowledge_id = await knowledge_base.add_knowledge(
+                content=langchain_docs,
+                domain="langchain",
+                metadata={
+                    "source": "docs/langchain_tools/langchain_tools.md",
+                    "type": "documentation",
+                    "category": "tools",
+                    "tags": ["tools", "documentation"]
+                }
+            )
+            print(f"📝 Created new knowledge base entry: {knowledge_id}")
+        
+        # Now that we have the task and knowledge base entry, add contexts
+        existing_contexts = await context_provider.get_task_contexts(task.id)
+        has_langchain_docs = any(
+            ctx.get('type') == 'knowledge' and 
+            ctx.get('source_id') == str(knowledge_id)
+            for ctx in existing_contexts
+        )
+        
+        if not has_langchain_docs:
+            # Add knowledge base context to task
+            await context_provider.add_context_to_task(
+                task_id=task.id,
+                type="knowledge",
+                source_id=str(knowledge_id),
+                priority=100,  # High priority as this is essential documentation
+                metadata={
+                    "name": "langchain_tools_docs",
+                    "description": "Official Langchain tools documentation",
+                    "tags_str": ",".join(["langchain", "tools", "documentation"]),
+                    "source": "docs/langchain_tools/langchain_tools.md"
+                }
+            )
+            print(f"🔗 Added knowledge base context to task")
+        else:
+            print("✅ Task already has Langchain tools documentation context")
         
         # Add system context with tool creation guide
         await context_provider.add_system_context(
@@ -543,6 +591,7 @@ async def setup_dynamic_tools_state():
             tags=["langchain", "tools", "guide"],
             priority=90  # Slightly lower priority than the official docs
         )
+        print("📖 Added tool creation guide context")
         
         # Save state
         state_location = StorageLocation(
@@ -556,7 +605,7 @@ async def setup_dynamic_tools_state():
         
         # Save persistence state
         result = save_to_storage(state_location)
-        print(f"Dynamic tools state saved: {result}")
+        print(f"💾 Dynamic tools state saved: {result}")
         
         # Return state info
         return {
