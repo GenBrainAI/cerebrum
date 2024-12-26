@@ -215,6 +215,75 @@ async def setup_dynamic_tools_state():
         os.environ['STREAMLIT_RUN_MODE'] = 'script'
         persistence_model = PersistenceModelFactory.persistence_model("inmemory")
         
+        # Initialize context provider and knowledge base
+        from server.context.context_provider import ContextProvider
+        from server.context.knowledge_base import KnowledgeBase
+        context_provider = ContextProvider()
+        knowledge_base = KnowledgeBase()
+        
+        # Read existing Langchain tools documentation
+        docs_path = Path("docs/langchain_tools/langchain_tools.md")
+        if not docs_path.exists():
+            print(f"🔴 Langchain tools documentation not found at {docs_path}")
+            return
+            
+        with open(docs_path, 'r', encoding='utf-8') as f:
+            langchain_docs = f.read()
+            
+        print(f"📚 Loaded Langchain tools documentation from {docs_path}")
+        
+        # Check if documentation already exists in knowledge base
+        existing_entries = await knowledge_base.search_knowledge(
+            query="langchain tools documentation",
+            metadata_filter={
+                "source": "docs/langchain_tools/langchain_tools.md",
+                "type": "documentation",
+                "domain": "langchain"
+            }
+        )
+        
+        if existing_entries:
+            print("📘 Found existing Langchain tools documentation in knowledge base")
+            knowledge_id = existing_entries[0].get('id')  # Use existing entry
+        else:
+            # Create new knowledge base entry for Langchain tools documentation
+            knowledge_id = await knowledge_base.add_knowledge(
+                content=langchain_docs,
+                metadata={
+                    "source": "docs/langchain_tools/langchain_tools.md",
+                    "type": "documentation",
+                    "domain": "langchain",
+                    "category": "tools"
+                }
+            )
+            print(f"📝 Created new knowledge base entry: {knowledge_id}")
+        
+        # Check if task already has this context
+        existing_contexts = await context_provider.get_task_contexts(task.id)
+        has_langchain_docs = any(
+            ctx.get('type') == 'knowledge' and 
+            ctx.get('source_id') == str(knowledge_id)
+            for ctx in existing_contexts
+        )
+        
+        if not has_langchain_docs:
+            # Add knowledge base context to task
+            await context_provider.add_context_to_task(
+                task_id=task.id,
+                type="knowledge",
+                source_id=str(knowledge_id),
+                priority=100,  # High priority as this is essential documentation
+                metadata={
+                    "name": "langchain_tools_docs",
+                    "description": "Official Langchain tools documentation",
+                    "tags": ["langchain", "tools", "documentation"],
+                    "source": "docs/langchain_tools/langchain_tools.md"
+                }
+            )
+            print(f"🔗 Added knowledge base context to task")
+        else:
+            print("✅ Task already has Langchain tools documentation context")
+        
         # Initialize tools
         file_tools = FileTools()
         credentials_tools = CredentialsTools()
@@ -462,6 +531,18 @@ async def setup_dynamic_tools_state():
             inherit_manager_context=True
         )
         task = persistence_model.tasks.create(task)
+        
+        # Add system context with tool creation guide
+        await context_provider.add_system_context(
+            task_id=task.id,
+            name="langchain_tools_guide",
+            content="""# Langchain Tool Creation Guide
+            # ... (keep existing guide content)
+            """,
+            description="Guide for creating Langchain tools",
+            tags=["langchain", "tools", "guide"],
+            priority=90  # Slightly lower priority than the official docs
+        )
         
         # Save state
         state_location = StorageLocation(

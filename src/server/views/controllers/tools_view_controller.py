@@ -40,11 +40,19 @@ class ToolsCatalogController:
         """Initialize controller with specialized state."""
         try:
             print("Starting controller initialization...")
-            state_file = StateLoader.get_state_file("tools_management_state.json")
+            # Note: We keep the old state file path in remarks for future reference
+            # old_state_file = StateLoader.get_state_file("tools_management_state.json")
+            
+            state_file = StateLoader.get_state_file("dynamic_tools_state.json")
             print(f"Checking state file path: {state_file}")
             
             if not state_file or not state_file.exists():
                 print(f"🔴 Specialized state file not found at {state_file}")
+                # Future enhancement: Add fallback to tools_management_state.json
+                # if old_state_file and old_state_file.exists():
+                #     print("Falling back to tools management state...")
+                #     state_file = old_state_file
+                # else:
                 return
 
             print(f"Loading state from: {state_file}")
@@ -66,9 +74,10 @@ class ToolsCatalogController:
                 print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
                 
                 if task_managers and tasks:
-                    # Find the tools management manager and task
+                    # Find the dynamic tools manager and task
+                    # Note: Old lookup was for "Tools Management"
                     tools_manager = next(
-                        (m for m in task_managers if "Tools Management" in m.name),
+                        (m for m in task_managers if "Dynamic Langchain Tools Generator" in m.name),
                         task_managers[0]
                     )
                     tools_task = next(
@@ -85,9 +94,28 @@ class ToolsCatalogController:
                             manager_name=tools_manager.name
                         )
                         
+                        # Set tool state with CrewAI context
+                        # Note: This is new for dynamic tools, old version only had:
+                        # self.tool_state = {
+                        #     "active_tools": [],
+                        #     "total_tools": 0,
+                        #     "manager_id": tools_manager.id,
+                        #     "task_id": tools_task.id
+                        # }
+                        self.tool_state = {
+                            "active_tools": [],
+                            "total_tools": 0,
+                            "manager_id": tools_manager.id,
+                            "task_id": tools_task.id,
+                            "crewai_config_id": tools_task.crewai_config_id,
+                            "curried_proxy_id": tools_task.curried_proxy_id
+                        }
+                        
                         print(f"🟢 Loaded state for {tools_manager.name}-{tools_task.name}")
+                        print(f"CrewAI Config ID: {tools_task.crewai_config_id}")
+                        print(f"Curried Proxy ID: {tools_task.curried_proxy_id}")
                     else:
-                        print("🔴 No tools management task found")
+                        print("🔴 No dynamic tools task found")
                 else:
                     print("🔴 No task context found in state file")
             else:
@@ -255,28 +283,85 @@ class ToolsCatalogController:
     async def handle_chat(self, message: str) -> str:
         """Process chat messages."""
         try:
-            # Process message and get response
-            response = await self._process_tool_command(message)
-            
-            # Add messages to chat history
+            # Add user message to chat history
             self.view_state.chat_history.append({
                 "role": "user",
                 "content": message
             })
-            self.view_state.chat_history.append({
-                "role": "assistant",
-                "content": response
-            })
             
-            # Save session state after chat update
-            try:
-                state_data = self.view_state.dict()
-                await self.state_manager.save_session_state("tools_catalog", state_data)
-            except Exception as e:
-                self.logger.error(f"Failed to save session state: {str(e)}")
-            
-            return response
-            
+            # Process the message if we have an active task
+            if self.view_state.task_status and self.view_state.task_status.get("loaded"):
+                task_id = self.view_state.task_status.get("task_id")
+                manager_id = self.view_state.task_status.get("tasksmanager_id")
+                
+                if task_id and manager_id:
+                    # Prepare messages context
+                    current_messages = []
+                    
+                    # Add existing chat history
+                    for msg in self.view_state.chat_history:
+                        if isinstance(msg, Message):
+                            current_messages.append(msg)
+                        elif isinstance(msg, dict):
+                            current_messages.append(Message(**msg))
+                        else:
+                            current_messages.append(Message(
+                                role=getattr(msg, 'role', 'user'),
+                                content=str(msg),
+                                file_ids=getattr(msg, 'file_ids', None),
+                                created_at=getattr(msg, 'created_at', None),
+                                updated_at=getattr(msg, 'updated_at', None)
+                            ))
+                    
+                    # Add CrewAI context for dynamic tools
+                    running_extra_params = {
+                        'messages': current_messages,
+                        'crewai_config_id': self.tool_state.get('crewai_config_id'),
+                        'curried_proxy_id': self.tool_state.get('curried_proxy_id'),
+                        'context': {
+                            'tool_request': message,
+                            'active_tools': self.tool_state.get('active_tools', []),
+                            'total_tools': self.tool_state.get('total_tools', 0)
+                        }
+                    }
+                    
+                    # Run task with CrewAI context
+                    response = await self.state_manager.task_runner.run_task(
+                        tasksmanager_id=manager_id,
+                        task_id=task_id,
+                        running_extra_params=running_extra_params
+                    )
+                    
+                    # Process response
+                    if isinstance(response, dict) and 'response' in response:
+                        response_text = response['response']
+                        
+                        # Update tool state if new tool was created
+                        if 'tool_created' in response:
+                            self.tool_state['active_tools'].append(response['tool_created'])
+                            self.tool_state['total_tools'] += 1
+                            
+                            # Save updated state
+                            try:
+                                state_data = self.view_state.dict()
+                                await self.state_manager.save_session_state("tools_catalog", state_data)
+                            except Exception as e:
+                                self.logger.error(f"Failed to save session state: {str(e)}")
+                    else:
+                        response_text = str(response)
+                    
+                    # Add assistant response to chat history
+                    self.view_state.chat_history.append({
+                        "role": "assistant",
+                        "content": response_text
+                    })
+                    
+                    return response_text
+                else:
+                    return "No active task to process message."
+            else:
+                return "Tools management not loaded. Please initialize first."
+                
         except Exception as e:
             self.logger.error(f"Chat handling error: {str(e)}")
             return f"An error occurred: {str(e)}"
