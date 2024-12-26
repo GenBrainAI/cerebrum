@@ -921,28 +921,76 @@ class ContextManagerUI:
                 # Get unique files (root items) in this index
                 files = await self.vector_store.get_index_contents(idx['name'])
                 
+                # Add debug logging
+                st.write(f"Debug - Processing index: {idx['name']}")
+                st.write(f"Debug - Number of raw files: {len(files)}")
+                
+                # Deduplicate files based on file_id
+                unique_files = {}
+                for file_info in files:
+                    metadata = file_info.get('metadata', {})
+                    file_id = metadata.get('file_id')
+                    if file_id:
+                        # Keep the most recent version if duplicate
+                        if file_id not in unique_files or (
+                            metadata.get('added_at', '') > unique_files[file_id].get('metadata', {}).get('added_at', '')
+                        ):
+                            unique_files[file_id] = file_info
+                
+                # Convert back to list and sort by added_at
+                files = sorted(
+                    unique_files.values(),
+                    key=lambda x: x.get('metadata', {}).get('added_at', ''),
+                    reverse=True
+                )
+                
+                st.write(f"Debug - Number of unique files: {len(files)}")
+                
                 # Display index with file count
                 with st.expander(f"📁 {idx['name'].replace('vs_', '')} ({len(files)} files)"):
                     st.write(f"Description: {idx.get('description', 'No description')}")
                     
                     if files:
-                        for file_info in files:
+                        # Keep track of used keys to ensure uniqueness
+                        used_keys = set()
+                        
+                        for file_idx, file_info in enumerate(files):
                             metadata = file_info.get('metadata', {})
                             chunks = metadata.get('chunks', [])
+                            file_id = metadata.get('file_id', f'unknown_{file_idx}')
+                            
+                            # Debug logging for file info
+                            st.write(f"Debug - Processing file {file_idx}:")
+                            st.write(f"  Name: {metadata.get('original_name', 'Unnamed')}")
+                            st.write(f"  ID: {file_id}")
+                            st.write(f"  Added at: {metadata.get('added_at', 'Unknown')}")
                             
                             col1, col2 = st.columns([20, 1])
                             with col1:
                                 st.write(f"📄 {metadata.get('original_name', 'Unnamed')}")
                                 st.write(f"Added: {metadata.get('added_at', 'Unknown')}")
                                 st.write(f"Size: {metadata.get('size', 'Unknown')} bytes")
-                                st.write(f"Chunks: {metadata.get('total_chunks', len(chunks))}")  # Use total_chunks from metadata
+                                st.write(f"Chunks: {metadata.get('total_chunks', len(chunks))}")
                             with col2:
-                                if st.button("🗑️", key=f"delete_{idx['name']}_{metadata.get('file_id')}", 
+                                # Create a unique key for each delete button
+                                base_key = f"delete_{idx['name']}_{file_id}"
+                                delete_key = base_key
+                                counter = 0
+                                
+                                # Ensure key uniqueness
+                                while delete_key in used_keys:
+                                    counter += 1
+                                    delete_key = f"{base_key}_{counter}"
+                                
+                                used_keys.add(delete_key)
+                                st.write(f"Debug - Delete button key: {delete_key}")
+                                
+                                if st.button("🗑️", key=delete_key, 
                                            help=f"Delete {metadata.get('original_name', 'file')}"):
                                     try:
                                         await self.vector_store.delete_file_from_index(
                                             index_name=idx['name'],
-                                            file_id=metadata.get('file_id')
+                                            file_id=file_id
                                         )
                                         st.success("File deleted!")
                                         time.sleep(0.5)
@@ -952,8 +1000,19 @@ class ContextManagerUI:
                     else:
                         st.info("No files in this index")
                     
-                    # Add index delete button
-                    if st.button("Delete Index", key=f"delete_index_{idx['name']}", 
+                    # Create a unique key for the index delete button using counter
+                    base_index_key = f"delete_index_{idx['name']}"
+                    index_delete_key = base_index_key
+                    counter = 0
+                    
+                    while index_delete_key in used_keys:
+                        counter += 1
+                        index_delete_key = f"{base_index_key}_{counter}"
+                    
+                    used_keys.add(index_delete_key)
+                    st.write(f"Debug - Index delete button key: {index_delete_key}")
+                    
+                    if st.button("Delete Index", key=index_delete_key, 
                                help=f"Delete entire index {idx['name']}"):
                         try:
                             await self.vector_store.delete_index(idx['name'])
@@ -965,6 +1024,9 @@ class ContextManagerUI:
 
         except Exception as e:
             st.error(f"Error listing vector store contents: {str(e)}")
+            # Add stack trace for debugging
+            import traceback
+            st.error(f"Stack trace: {traceback.format_exc()}")
 
     async def render_task_context_associations(self):
         """Render the task context associations view."""
