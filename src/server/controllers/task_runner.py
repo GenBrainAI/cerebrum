@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
+import asyncio
 
 from ..models.message import Message
 from ..models.tasks_manager import TasksManager
@@ -12,6 +13,7 @@ from ..context.context_provider import ContextProvider
 from ..context.context_analytics import ContextAnalytics
 from ..controllers.task_tree_controller import TaskNode
 from ..persistence.persistence_model import PersistenceModelBase
+from .task_observability import TaskObservabilityManager
 
 class TaskExecutionError(Exception):
     """Exception raised when task execution fails."""
@@ -23,16 +25,18 @@ class TaskExecutor:
     def __init__(self, task: Task, task_runner: 'TaskRunner'):
         self.task = task
         self.task_runner = task_runner
+        self.observability = TaskObservabilityManager(task.id)
 
     async def run(self, context: Dict[str, Any]) -> str:
         """Execute the task with the given context."""
         try:
-            result = await self.task_runner._run_standard_task(
-                task=self.task,
-                tasksmanager=self.task_runner.persistence_model.tasksmanagers.read(self.task.tasksmanager_id),
-                running_extra_params=context
-            )
-            return result.get("response", "")
+            with self.observability:
+                result = await self.task_runner._run_standard_task(
+                    task=self.task,
+                    tasksmanager=self.task_runner.persistence_model.tasksmanagers.read(self.task.tasksmanager_id),
+                    running_extra_params=context
+                )
+                return result.get("response", "")
         except Exception as e:
             raise TaskExecutionError(f"Task execution failed: {str(e)}")
 
@@ -64,6 +68,7 @@ class TaskRunner:
         self.context_provider = ContextProvider()
         self.context_analytics = ContextAnalytics()
         self.logger = logging.getLogger(__name__)
+        self._active_observability_managers: Dict[str, TaskObservabilityManager] = {}
 
     async def initialize(self):
         """Initialize the task runner and its components."""
@@ -97,15 +102,39 @@ class TaskRunner:
             if task.tasksmanager_id != tasksmanager_id:
                 raise ValueError(f"Task {task_id} does not belong to TasksManager {tasksmanager_id}")
 
-            # Determine execution path based on task type
-            if task.crewai_config_id:
-                return await self._run_crewai_task(task, tasksmanager, running_extra_params)
-            else:
-                return await self._run_standard_task(task, tasksmanager, running_extra_params)
+            # Create observability manager for this task
+            observability = TaskObservabilityManager(task_id)
+            self._active_observability_managers[task_id] = observability
+
+            try:
+                with observability:
+                    # Start monitoring in background
+                    monitor_task = asyncio.create_task(observability.monitor_execution())
+
+                    # Determine execution path based on task type
+                    if task.crewai_config_id:
+                        result = await self._run_crewai_task(task, tasksmanager, running_extra_params)
+                    else:
+                        result = await self._run_standard_task(task, tasksmanager, running_extra_params)
+
+                    # Add final execution stats
+                    if isinstance(result, dict):
+                        observability.add_execution_stats(result)
+
+                    return result
+
+            finally:
+                # Clean up
+                monitor_task.cancel()
+                del self._active_observability_managers[task_id]
 
         except Exception as e:
             self.logger.error(f"Error running task {task_id}: {str(e)}", exc_info=True)
             raise
+
+    def get_task_observability(self, task_id: str) -> Optional[TaskObservabilityManager]:
+        """Get the observability manager for a task if it exists."""
+        return self._active_observability_managers.get(task_id)
 
     async def _run_standard_task(
         self,
