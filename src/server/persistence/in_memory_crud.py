@@ -42,6 +42,14 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
         # Serialize the storage dictionary to JSON
         return json.dumps(self.storage, default=pydantic_encoder)
 
+    # def from_json_old(self, data: str):
+    #     try:
+    #         # Deserialize JSON data to storage dictionary
+    #         items = json.loads(data)
+    #         self.storage = {k: self._model_class.parse_obj(v) for k, v in items.items()}
+    #     except Exception as e:
+    #         print(str(e))
+    #         # raise e
 
     def from_json(self, data: str):
         """Deserialize JSON data to storage dictionary with validation."""

@@ -25,8 +25,7 @@ class AgenticConfigView(BaseView):
         
         data.update({
             'chat_history': st.session_state.agentic_controller.view_state.chat_history
-            if 'agentic_controller' in st.session_state else [],
-            'view_mode': st.session_state.get('view_mode', 'chat')
+            if 'agentic_controller' in st.session_state else []
         })
         return data
         
@@ -37,8 +36,6 @@ class AgenticConfigView(BaseView):
         chat_history = session_data.get('chat_history', [])
         print(f"\n📖 Restoring chat history:")
         print(f"  Length: {len(chat_history)}")
-        
-        st.session_state.view_mode = session_data.get('view_mode', 'chat')
         
         if 'agentic_controller' in st.session_state:
             st.session_state.agentic_controller.view_state.chat_history = chat_history
@@ -54,132 +51,8 @@ class AgenticConfigView(BaseView):
             
             print("\n🗑️ Cleared agentic config session")
 
-def render_chat_view():
-    """Render the chat interface."""
-    # Display messages
-    for msg in st.session_state.agentic_controller.view_state.chat_history:
-        if isinstance(msg, Message):
-            role = msg.role
-            content = msg.content
-        elif isinstance(msg, dict):
-            role = msg["role"]
-            content = msg["content"]
-        else:
-            role = getattr(msg, 'role', 'user')
-            content = str(msg)
-        
-        with st.chat_message(role):
-            st.write(content)
-    
-    # Chat input
-    if prompt := st.chat_input("Type your message..."):
-        with st.chat_message("user"):
-            st.write(prompt)
-        
-        asyncio.run(st.session_state.agentic_controller.handle_chat(prompt))
-        st.rerun()
-
-def render_observability_view():
-    """Render the observability interface."""
-    if 'agentic_controller' not in st.session_state:
-        st.warning("No active agentic controller")
-        return
-        
-    # Get active task
-    task_status = st.session_state.agentic_controller.view_state.task_status
-    if not task_status or not task_status.get("loaded"):
-        st.info("No task selected")
-        return
-        
-    task_id = task_status.get("task_id")
-    if not task_id:
-        st.info("No task ID available")
-        return
-        
-    # Get observability manager
-    observability = st.session_state.agentic_controller.task_runner.get_task_observability(task_id)
-    if not observability:
-        st.info("No active task execution")
-        return
-        
-    # Create columns for stats and output
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Execution Stats")
-        entries = observability.get_all_entries()
-        stats_entries = [e for e in entries if e.get('metadata', {}).get('execution_stats')]
-        
-        if stats_entries:
-            latest_stats = stats_entries[-1]['metadata']['execution_stats']
-            st.json(latest_stats)
-        else:
-            st.info("No execution stats available")
-            
-    with col2:
-        st.subheader("Execution Output")
-        
-        # Get all entries
-        entries = observability.get_all_entries()
-        
-        # Format entries for display
-        formatted_lines = []
-        for entry in entries:
-            timestamp = entry['timestamp'].split('T')[1].split('.')[0]  # Extract time
-            level = entry['level']
-            message = entry['message']
-            
-            # Color-code based on level
-            if level == "ERROR":
-                message = f"🔴 {message}"
-            elif level == "WARNING":
-                message = f"🟡 {message}"
-            elif level == "INFO":
-                message = f"🟢 {message}"
-                
-            formatted_lines.append(f"[{timestamp}] {message}")
-            
-        # Create a scrollable container with auto-scroll
-        output_container = st.container()
-        with output_container:
-            # Calculate max height based on viewport
-            st.markdown("""
-                <style>
-                    .stMarkdown {
-                        max-height: 500px;
-                        overflow-y: auto;
-                    }
-                    .stMarkdown::-webkit-scrollbar {
-                        width: 10px;
-                        background: #f1f1f1;
-                    }
-                    .stMarkdown::-webkit-scrollbar-thumb {
-                        background: #888;
-                        border-radius: 5px;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-            
-            # Join lines and add newlines for proper markdown rendering
-            formatted_output = "\n".join(formatted_lines)
-            
-            # Use markdown with code block for monospace font
-            st.markdown(f"```\n{formatted_output}\n```")
-            
-            # Auto-scroll to bottom using JavaScript
-            if formatted_lines:
-                st.markdown("""
-                    <script>
-                        const elements = parent.document.querySelectorAll('.stMarkdown');
-                        const lastElement = elements[elements.length - 1];
-                        lastElement.scrollTop = lastElement.scrollHeight;
-                    </script>
-                    """, 
-                    unsafe_allow_html=True
-                )
-
 async def render_agentic_config_view():
-    """Render the agentic config view."""
+    """Render the agentic configuration view."""
     view = AgenticConfigView()
     view.load_session()
     
@@ -209,52 +82,30 @@ async def render_agentic_config_view():
             "Configure and manage agentic frameworks with integrated chat interface."
         )
         
-        # Add view mode toggle
-        col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
-        with col1:
-            if st.button("💬", help="Switch to chat view"):
-                st.session_state.active_tab = 0
-                st.rerun()
-        with col3:
-            if st.button("📊", help="Switch to observability view"):
-                st.session_state.active_tab = 1
-                st.rerun()
+        st.subheader("Agentic Configuration Chat")
         
-        # Initialize active tab if not set
-        if 'active_tab' not in st.session_state:
-            st.session_state.active_tab = 0
+        # Display messages
+        for msg in st.session_state.agentic_controller.view_state.chat_history:
+            if isinstance(msg, Message):
+                role = msg.role
+                content = msg.content
+            elif isinstance(msg, dict):
+                role = msg["role"]
+                content = msg["content"]
+            else:
+                role = getattr(msg, 'role', 'user')
+                content = str(msg)
             
-        # Chat View
-        if st.session_state.active_tab == 0:
-            st.subheader("Agentic Framework Chat")
-            
-            # Display messages
-            for msg in st.session_state.agentic_controller.view_state.chat_history:
-                if isinstance(msg, Message):
-                    role = msg.role
-                    content = msg.content
-                elif isinstance(msg, dict):
-                    role = msg["role"]
-                    content = msg["content"]
-                else:
-                    role = getattr(msg, 'role', 'user')
-                    content = str(msg)
-                
-                with st.chat_message(role):
-                    st.write(content)
-            
-            # Chat input
-            if prompt := st.chat_input("Type your message..."):
-                with st.chat_message("user"):
-                    st.write(prompt)
-                
-                await st.session_state.agentic_controller.handle_chat(prompt)
-                st.rerun()
+            with st.chat_message(role):
+                st.write(content)
         
-        # Observability View
-        else:
-            st.subheader("Agentic Framework Observability")
-            render_observability_view()
+        # Chat input
+        if prompt := st.chat_input("Type your message..."):
+            with st.chat_message("user"):
+                st.write(prompt)
+            
+            await st.session_state.agentic_controller.handle_chat(prompt)
+            st.rerun()
         
     except Exception as e:
         print(f"Error in render_agentic_config_view: {str(e)}")
@@ -262,7 +113,7 @@ async def render_agentic_config_view():
 
 def main():
     """Main entry point for agentic config view."""
-    st.set_page_config(page_title="Agentic Framework", layout="wide")
+    st.set_page_config(page_title="Agentic Configuration", layout="wide")
     asyncio.run(render_agentic_config_view())
 
 if __name__ == "__main__":
