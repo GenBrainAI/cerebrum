@@ -25,7 +25,8 @@ class ToolsCatalogView(BaseView):
         
         data.update({
             'chat_history': st.session_state.tools_controller.view_state.chat_history
-            if 'tools_controller' in st.session_state else []
+            if 'tools_controller' in st.session_state else [],
+            'view_mode': st.session_state.get('view_mode', 'chat')
         })
         return data
         
@@ -36,6 +37,8 @@ class ToolsCatalogView(BaseView):
         chat_history = session_data.get('chat_history', [])
         print(f"\n📖 Restoring chat history:")
         print(f"  Length: {len(chat_history)}")
+        
+        st.session_state.view_mode = session_data.get('view_mode', 'chat')
         
         if 'tools_controller' in st.session_state:
             st.session_state.tools_controller.view_state.chat_history = chat_history
@@ -50,6 +53,125 @@ class ToolsCatalogView(BaseView):
             self.save_session()
             
             print("\n🗑️ Cleared tools catalog session")
+
+def render_chat_view():
+    """Render the chat interface."""
+    # Display messages
+    for msg in st.session_state.tools_controller.view_state.chat_history:
+        if isinstance(msg, Message):
+            role = msg.role
+            content = msg.content
+        elif isinstance(msg, dict):
+            role = msg["role"]
+            content = msg["content"]
+        else:
+            role = getattr(msg, 'role', 'user')
+            content = str(msg)
+        
+        with st.chat_message(role):
+            st.write(content)
+    
+    # Chat input
+    if prompt := st.chat_input("Type your message..."):
+        with st.chat_message("user"):
+            st.write(prompt)
+        
+        asyncio.run(st.session_state.tools_controller.handle_chat(prompt))
+        st.rerun()
+
+def render_observability_view():
+    """Render the observability interface."""
+    if 'tools_controller' not in st.session_state:
+        st.warning("No active tools controller")
+        return
+        
+    # Get active task
+    active_task = st.session_state.get('selected_tool_task')
+    if not active_task:
+        st.info("No task selected")
+        return
+        
+    # Get observability manager
+    observability = st.session_state.tools_controller.task_runner.get_task_observability(active_task)
+    if not observability:
+        st.info("No active task execution")
+        return
+        
+    # Create columns for stats and output
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.subheader("Execution Stats")
+        entries = observability.get_all_entries()
+        stats_entries = [e for e in entries if e.get('metadata', {}).get('execution_stats')]
+        
+        if stats_entries:
+            latest_stats = stats_entries[-1]['metadata']['execution_stats']
+            st.json(latest_stats)
+        else:
+            st.info("No execution stats available")
+            
+    with col2:
+        st.subheader("Execution Output")
+        
+        # Get all entries
+        entries = observability.get_all_entries()
+        
+        # Format entries for display
+        formatted_lines = []
+        for entry in entries:
+            timestamp = entry['timestamp'].split('T')[1].split('.')[0]  # Extract time
+            level = entry['level']
+            message = entry['message']
+            
+            # Color-code based on level
+            if level == "ERROR":
+                message = f"🔴 {message}"
+            elif level == "WARNING":
+                message = f"🟡 {message}"
+            elif level == "INFO":
+                message = f"🟢 {message}"
+                
+            formatted_lines.append(f"[{timestamp}] {message}")
+            
+        # Create a scrollable container with auto-scroll
+        output_container = st.container()
+        with output_container:
+            # Calculate max height based on viewport
+            st.markdown("""
+                <style>
+                    .stMarkdown {
+                        max-height: 500px;
+                        overflow-y: auto;
+                    }
+                    .stMarkdown::-webkit-scrollbar {
+                        width: 10px;
+                        background: #f1f1f1;
+                    }
+                    .stMarkdown::-webkit-scrollbar-thumb {
+                        background: #888;
+                        border-radius: 5px;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            # Join lines and add newlines for proper markdown rendering
+            formatted_output = "\n".join(formatted_lines)
+            
+            # Use markdown with code block for monospace font
+            st.markdown(f"```\n{formatted_output}\n```")
+            
+            # Auto-scroll to bottom using JavaScript
+            if formatted_lines:
+                st.markdown("""
+                    <script>
+                        const elements = parent.document.querySelectorAll('.stMarkdown');
+                        const lastElement = elements[elements.length - 1];
+                        lastElement.scrollTop = lastElement.scrollHeight;
+                    </script>
+                    """, 
+                    unsafe_allow_html=True
+                )
 
 async def render_tools_catalog_view():
     """Render the tools catalog view."""
@@ -82,30 +204,52 @@ async def render_tools_catalog_view():
             "Browse and manage available tools with integrated chat interface."
         )
         
-        st.subheader("Tools Management Chat")
+        # Add view mode toggle
+        col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
+        with col1:
+            if st.button("💬", help="Switch to chat view"):
+                st.session_state.active_tab = 0
+                st.rerun()
+        with col3:
+            if st.button("📊", help="Switch to observability view"):
+                st.session_state.active_tab = 1
+                st.rerun()
         
-        # Display messages
-        for msg in st.session_state.tools_controller.view_state.chat_history:
-            if isinstance(msg, Message):
-                role = msg.role
-                content = msg.content
-            elif isinstance(msg, dict):
-                role = msg["role"]
-                content = msg["content"]
-            else:
-                role = getattr(msg, 'role', 'user')
-                content = str(msg)
+        # Initialize active tab if not set
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = 0
             
-            with st.chat_message(role):
-                st.write(content)
+        # Chat View
+        if st.session_state.active_tab == 0:
+            st.subheader("Tools Management Chat")
+            
+            # Display messages
+            for msg in st.session_state.tools_controller.view_state.chat_history:
+                if isinstance(msg, Message):
+                    role = msg.role
+                    content = msg.content
+                elif isinstance(msg, dict):
+                    role = msg["role"]
+                    content = msg["content"]
+                else:
+                    role = getattr(msg, 'role', 'user')
+                    content = str(msg)
+                
+                with st.chat_message(role):
+                    st.write(content)
+            
+            # Chat input
+            if prompt := st.chat_input("Type your message..."):
+                with st.chat_message("user"):
+                    st.write(prompt)
+                
+                await st.session_state.tools_controller.handle_chat(prompt)
+                st.rerun()
         
-        # Chat input
-        if prompt := st.chat_input("Type your message..."):
-            with st.chat_message("user"):
-                st.write(prompt)
-            
-            await st.session_state.tools_controller.handle_chat(prompt)
-            st.rerun()
+        # Observability View
+        else:
+            st.subheader("Tools Execution Observability")
+            render_observability_view()
         
     except Exception as e:
         print(f"Error in render_tools_catalog_view: {str(e)}")

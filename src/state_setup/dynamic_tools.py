@@ -6,10 +6,7 @@ import json
 import dotenv
 from typing import Any, Dict
 import logging
-from langchain_community.agent_toolkits import PlayWrightBrowserToolkit
-from langchain_community.tools.playwright.utils import create_async_playwright_browser
-import nest_asyncio
-from server.tools.tools_catalog import tools_catalog
+import aiohttp
 
 project_root = str(Path(__file__).parents[1])
 sys.path.append(project_root)
@@ -20,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Disable Streamlit warnings
 logging.getLogger('streamlit').setLevel(logging.ERROR)
 
+from server.tools.tools_catalog import tools_catalog
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from server.models.tasks_manager import TasksManager
 from server.models.task import Task
@@ -36,7 +34,6 @@ from server.models.persistence_models import StorageLocation, StorageType
 from server.controllers.curried_proxy import CurriedProxy
 from server.controllers.agents_controller import create_crew
 from server.controllers.persistence_controller import save_to_storage
-from server.models.curried_proxy_info import CurriedProxyInfo, ToolInfo
 from server.models.curried_proxy_info import CurriedProxyInfo, ToolInfo
 from server.context.context_provider import ContextProvider
 from server.context.knowledge_base import KnowledgeBase
@@ -217,6 +214,24 @@ class ProxyTools:
             logger.error(f"Error registering tool: {str(e)}")
             return {"status": "error", "message": str(e)}
 
+class URLTools:
+    """Tool for fetching data from URLs."""
+    
+    async def get_data_from_url(self, url: str) -> str:
+        """
+        Fetch content from a URL using aiohttp.
+        
+        :param url: The URL to fetch content from
+        :return: The content fetched from the URL
+        """
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    return await response.text()
+        except Exception as e:
+            logger.error(f"Error fetching URL: {str(e)}")
+            return f"Error: {str(e)}"
+
 async def setup_dynamic_tools_state():
     """Setup CrewAI configuration for dynamic Langchain tools generation."""
     try:
@@ -224,17 +239,144 @@ async def setup_dynamic_tools_state():
         os.environ['STREAMLIT_RUN_MODE'] = 'script'
         persistence_model = PersistenceModelFactory.persistence_model("inmemory")
         
-        # Initialize PlayWright Browser toolkit
-        nest_asyncio.apply()
-        async_browser = await create_async_playwright_browser()
-        browser_toolkit = PlayWrightBrowserToolkit.from_browser(async_browser=async_browser)
-        browser_tools = browser_toolkit.get_tools()
+        # Create curried proxy and add tools with proper module info
+        curried_proxy = CurriedProxy()
         
-        # Add browser tools to catalog
-        for tool in browser_tools:
-            tools_catalog.register_ai_tool(tool)
-            
-        print("🌐 Added PlayWright Browser tools to catalog")
+        # Add tools with proper module information for serialization
+        tool_infos = [
+            ToolInfo(
+                name="FetchURL",
+                type="function",
+                tool_data={
+                    "name": "fetch_url",
+                    "description": "Fetch content from a URL using HTTP GET request",
+                    "function_module": "aiohttp",
+                    "class_name": "ClientSession",
+                    "is_method": True,
+                    "parameters": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to fetch content from",
+                            "required": True
+                        },
+                        "headers": {
+                            "type": "object",
+                            "description": "Optional HTTP headers to include in the request",
+                            "required": False
+                        }
+                    },
+                    "returns": {
+                        "type": "string",
+                        "description": "The content fetched from the URL"
+                    }
+                }
+            ),
+            ToolInfo(
+                name="FileTools",
+                type="function",
+                tool_data={
+                    "name": "FileTools",
+                    "description": "File operations for tool management",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "FileTools",
+                    "is_method": True,
+                    "parameters": {
+                        "base_dir": {
+                            "type": "string",
+                            "description": "Base directory for file operations",
+                            "required": False,
+                            "default": "tools"
+                        }
+                    }
+                }
+            ),
+            ToolInfo(
+                name="CredentialsTools",
+                type="function",
+                tool_data={
+                    "name": "CredentialsTools",
+                    "description": "Credentials management tools",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "CredentialsTools",
+                    "is_method": True,
+                    "parameters": {
+                        "env_path": {
+                            "type": "string",
+                            "description": "Path to the .env file",
+                            "required": False
+                        }
+                    }
+                }
+            ),
+            ToolInfo(
+                name="TestingTools",
+                type="function",
+                tool_data={
+                    "name": "TestingTools",
+                    "description": "Testing and validation tools",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "TestingTools",
+                    "is_method": True,
+                    "parameters": {
+                        "test_dir": {
+                            "type": "string",
+                            "description": "Directory containing test files",
+                            "required": False,
+                            "default": "tests"
+                        }
+                    }
+                }
+            ),
+            ToolInfo(
+                name="ProxyTools",
+                type="function",
+                tool_data={
+                    "name": "ProxyTools",
+                    "description": "Dynamic tool registration",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "ProxyTools",
+                    "is_method": True,
+                    "parameters": {
+                        "tool_name": {
+                            "type": "string",
+                            "description": "Name to register the tool under",
+                            "required": True
+                        },
+                        "tool_instance": {
+                            "type": "object",
+                            "description": "The tool instance to register",
+                            "required": True
+                        }
+                    },
+                    "returns": {
+                        "type": "object",
+                        "description": "Dictionary containing registration status and message"
+                    }
+                }
+            ),
+            ToolInfo(
+                name="URLTools",
+                type="function",
+                tool_data={
+                    "name": "get_data_from_url",
+                    "description": "Fetch content from a URL using HTTP GET request",
+                    "function_module": "src.state_setup.dynamic_tools",
+                    "class_name": "URLTools",
+                    "is_method": True,
+                    "parameters": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to fetch content from",
+                            "required": True
+                        }
+                    },
+                    "returns": {
+                        "type": "string",
+                        "description": "The content fetched from the URL"
+                    }
+                }
+            )
+        ]
         
         # Initialize context database with proper configuration
         context_db = ContextDatabase(
@@ -272,76 +414,24 @@ async def setup_dynamic_tools_state():
         )
         print(f"📚 Added Langchain documentation links to knowledge base: {knowledge_id}")
         
+        # Create proxy info and reconstruct proxy
+        proxy_info = CurriedProxyInfo(tools=tool_infos)
+        curried_proxy = CurriedProxy.from_info(proxy_info)
+        
+        # Register tools in the catalog
         file_tools = FileTools()
         credentials_tools = CredentialsTools()
         testing_tools = TestingTools()
         proxy_tools = ProxyTools()
+        url_tools = URLTools()
         
-        # Create curried proxy and add tools with proper module info
-        curried_proxy = CurriedProxy()
+        tools_catalog.register_tool(file_tools, "FileTools")
+        tools_catalog.register_tool(credentials_tools, "CredentialsTools")
+        tools_catalog.register_tool(testing_tools, "TestingTools")
+        tools_catalog.register_tool(proxy_tools, "ProxyTools")
+        tools_catalog.register_tool(url_tools, "URLTools")
         
-        # Add tools with proper module information for serialization
-        tool_infos = [
-            ToolInfo(
-                name="NavigateTool",
-                type="function",
-                tool_data={
-                    "name": "navigate_browser",
-                    "description": "Navigate to a specific URL in the browser",
-                    "function_module": "langchain_community.tools.playwright",
-                    "class_name": "NavigateTool",
-                    "is_method": True
-                }
-            ),
-            ToolInfo(
-                name="FileTools",
-                type="function",
-                tool_data={
-                    "name": "FileTools",
-                    "description": "File operations for tool management",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "FileTools",
-                    "is_method": True
-                }
-            ),
-            ToolInfo(
-                name="CredentialsTools",
-                type="function",
-                tool_data={
-                    "name": "CredentialsTools",
-                    "description": "Credentials management tools",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "CredentialsTools",
-                    "is_method": True
-                }
-            ),
-            ToolInfo(
-                name="TestingTools",
-                type="function",
-                tool_data={
-                    "name": "TestingTools",
-                    "description": "Testing and validation tools",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "TestingTools",
-                    "is_method": True
-                }
-            ),
-            ToolInfo(
-                name="ProxyTools",
-                type="function",
-                tool_data={
-                    "name": "ProxyTools",
-                    "description": "Dynamic tool registration",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "ProxyTools",
-                    "is_method": True
-                }
-            )
-        ]
-        
-        # Create proxy info and reconstruct proxy
-        proxy_info = CurriedProxyInfo(tools=tool_infos)
-        curried_proxy = CurriedProxy.from_info(proxy_info)
+        print("🛠️ Registered tools in catalog")
         
         # Store curried proxy in persistence model
         curried_proxy_id = persistence_model.curried_proxies.create(curried_proxy).id
@@ -369,11 +459,11 @@ async def setup_dynamic_tools_state():
                 AgentModel(
                     role="LangChain Tool Architect",
                     goal="Design and specify new Langchain tools based on documentation analysis",
-                    backstory="Expert system architect specializing in Langchain integration and tool design. Starts by navigating to and analyzing relevant documentation before creating specifications.",
+                    backstory="Expert system architect specializing in Langchain integration and tool design. Starts by analyzing relevant documentation before creating specifications.",
                     tools=[
                         ToolModel(
-                            name="navigate_browser",
-                            description="Navigate to specific Langchain documentation URLs"
+                            name="URLTools.get_data_from_url",
+                            description="Fetch Langchain documentation content from URL"
                         ),
                         ToolModel(
                             name="FileTools.read_documentation",
@@ -596,7 +686,7 @@ async def setup_dynamic_tools_state():
         )
         
         if existing_entries:
-            print("📘 Found existing Langchain tools documentation in knowledge base")
+            print("🔍 Found existing Langchain tools documentation in knowledge base")
             knowledge_id = existing_entries[0]["id"]  # Use existing entry
         else:
             # Create new knowledge base entry for Langchain tools documentation
@@ -649,7 +739,7 @@ async def setup_dynamic_tools_state():
             tags=["langchain", "tools", "guide"],
             priority=90  # Slightly lower priority than the official docs
         )
-        print("📖 Added tool creation guide context")
+        print("🔧 Added tool creation guide context")
         
         # Save state
         state_location = StorageLocation(
