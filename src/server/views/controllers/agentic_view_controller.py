@@ -16,7 +16,6 @@ from ..components.tree_select_component import TreeSelectComponent
 import logging
 from pathlib import Path
 from ...models.message import Message
-from ...controllers.task_runner import TaskRunner
 
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
@@ -29,15 +28,11 @@ class AgenticViewController:
         self.agent_state = None
         self.tree_component = TreeSelectComponent(self.handle_node_click)
         self.logger = logging.getLogger(__name__)
-        self.task_runner = TaskRunner(persistence_model)
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
             print("Starting agentic controller initialization...")
-            # Initialize task runner
-            await self.task_runner.initialize()
-            
             state_file = StateLoader.get_state_file("agentic_framework_state.json")
             print(f"Checking state file path: {state_file}")
             
@@ -267,7 +262,7 @@ class AgenticViewController:
                     current_messages.append(user_message)
                     
                     # Run task with message context
-                    response = await self.task_runner.run_task(
+                    response = await self.state_manager.task_runner.run_task(
                         tasksmanager_id=manager_id,
                         task_id=task_id,
                         running_extra_params={'messages': current_messages}
@@ -323,6 +318,7 @@ class AgenticViewController:
         except Exception as e:
             raise StateError(f"Failed to get active agents: {str(e)}")
             
+    
     async def handle_node_click(self, node: TreeNode):
         """Handle click events on tree nodes."""
         try:
