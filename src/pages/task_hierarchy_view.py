@@ -235,16 +235,14 @@ async def render_task_hierarchy_view():
             print(f"Tree data received: {len(tree_data.children)} root children")
             print("✅ Tree rendered successfully")
         
-        # Create columns for view controls
-        col1, col2 = st.columns([1, 1])
-        
+        # Add view mode toggle
+        col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
         with col1:
             if st.button("💬", help="Switch to chat view"):
                 st.session_state.active_tab = 0
                 st.rerun()
-        
-        with col2:
-            if st.button("📈", help="Switch to observability view"):
+        with col3:
+            if st.button("📊", help="Switch to observability view"):
                 st.session_state.active_tab = 1
                 st.rerun()
         
