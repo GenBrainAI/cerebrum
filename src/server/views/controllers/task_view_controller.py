@@ -5,13 +5,17 @@ from datetime import datetime
 from pathlib import Path
 import json
 from uuid import UUID, uuid4
+from ...models.exceptions import StateError, StateNotFoundError, StateValidationError
 from ..models.view_state import ViewState
+from ..models.view_types import ViewType
+from ...models.specialized_state import StateType, TaskGenerationState, StateMetadata
 from ..state.state_manager import ViewStateManager
-from ...models.message import Message
-from ..components.tree_select_component import TreeSelectComponent
 from ..components.tree_component import TreeNode
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
+from ..components.tree_select_component import TreeSelectComponent
+from ...models.message import Message
+from ...controllers.task_runner import TaskRunner
 
 class TaskHierarchyController:
     """Controller for task hierarchy view."""
@@ -22,6 +26,8 @@ class TaskHierarchyController:
         self.view_state = ViewState(view_name="task_hierarchy")
         self.state_manager = ViewStateManager(persistence_model)
         self.tree_component = TreeSelectComponent(self.handle_node_click)
+        self.local_persistence = None
+        self.task_runner = None  # Will be initialized after local persistence is loaded
         self.view_state.task_status = {
             "loaded": False,
             "tasksmanager_name": "",
@@ -84,15 +90,16 @@ class TaskHierarchyController:
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            print("Starting task controller initialization...")
+            print("\n🚀 Starting task controller initialization...")
+            
             state_file = StateLoader.get_state_file("task_management_state.json")
-            print(f"Checking state file path: {state_file}")
+            print(f"📁 Checking state file path: {state_file}")
             
             if not state_file or not state_file.exists():
                 print(f"🔴 Specialized state file not found at {state_file}")
                 return
 
-            print(f"Loading state from: {state_file}")
+            print(f"📖 Loading state from: {state_file}")
             
             # Read state file content as string
             with open(state_file, 'r', encoding='utf-8') as f:
@@ -103,7 +110,13 @@ class TaskHierarchyController:
             self.local_persistence.from_json(json_str=json_str)
             
             if self.local_persistence:
-                print("Local persistence model created")
+                print("✅ Local persistence model created")
+                
+                # Initialize task runner with local persistence
+                self.task_runner = TaskRunner(self.local_persistence)
+                await self.task_runner.initialize()
+                print("✅ Task runner initialized with local persistence")
+                
                 # Get task context from local persistence
                 task_managers = self.local_persistence.tasksmanagers.list()
                 tasks = self.local_persistence.tasks.list()
@@ -146,10 +159,17 @@ class TaskHierarchyController:
         """Handle chat messages."""
         try:
             # Add user message to chat history
-            self.view_state.chat_history.append({
+            user_message = {
                 "role": "user",
-                "content": prompt
-            })
+                "content": prompt,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(user_message)
+            
+            # Save chat history to session state immediately after adding user message
+            if 'task_controller' in st.session_state:
+                st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history
             
             # Process the message if we have an active task
             if self.view_state.task_status and self.view_state.task_status.get("loaded"):
@@ -176,7 +196,16 @@ class TaskHierarchyController:
                             ))
                     
                     # Run task with message context
-                    response = await self.state_manager.task_runner.run_task(
+                    print("\n🔄 Using existing persistence model from session state")
+                    print("Context provider initialized and synced with persistence model")
+                    
+                    # Use the task runner with local persistence
+                    if not self.task_runner:
+                        print("🔄 Initializing task runner with local persistence")
+                        self.task_runner = TaskRunner(self.local_persistence)
+                        await self.task_runner.initialize()
+                    
+                    response = await self.task_runner.run_task(
                         tasksmanager_id=manager_id,
                         task_id=task_id,
                         running_extra_params={'messages': current_messages}
@@ -189,28 +218,62 @@ class TaskHierarchyController:
                         response_text = str(response)
                     
                     # Add assistant response to chat history
-                    self.view_state.chat_history.append({
+                    assistant_message = {
                         "role": "assistant",
-                        "content": response_text
-                    })
+                        "content": response_text,
+                        "created_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat()
+                    }
+                    self.view_state.chat_history.append(assistant_message)
+                    
+                    # Save updated chat history to session state
+                    if 'task_controller' in st.session_state:
+                        st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history
+                    
+                    # Save chat history to persistence
+                    if self.local_persistence and task_id:
+                        task = self.local_persistence.tasks.read(task_id)
+                        if task:
+                            if not hasattr(task, 'chat_sessions'):
+                                task.chat_sessions = {}
+                            session_id = str(uuid4())
+                            task.chat_sessions[session_id] = self.view_state.chat_history
+                            self.local_persistence.tasks.update(task_id, task)
                 else:
                     # Add simple response if no active task
-                    self.view_state.chat_history.append({
+                    response_message = {
                         "role": "assistant",
-                        "content": "No active task to process message."
-                    })
+                        "content": "No active task to process message.",
+                        "created_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat()
+                    }
+                    self.view_state.chat_history.append(response_message)
             else:
                 # Add simple response if no task loaded
-                self.view_state.chat_history.append({
+                response_message = {
                     "role": "assistant",
-                    "content": "Task management not loaded. Please initialize first."
-                })
+                    "content": "Task management not loaded. Please initialize first.",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat()
+                }
+                self.view_state.chat_history.append(response_message)
+            
+            # Final save of chat history to session state
+            if 'task_controller' in st.session_state:
+                st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history
                 
         except Exception as e:
             self.logger.error(f"Error handling chat: {str(e)}")
             st.error(f"Error handling chat: {str(e)}")
             # Add error message to chat history
-            self.view_state.chat_history.append({
+            error_message = {
                 "role": "assistant",
-                "content": f"Error processing message: {str(e)}"
-            })
+                "content": f"Error processing message: {str(e)}",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(error_message)
+            
+            # Save error message to session state
+            if 'task_controller' in st.session_state:
+                st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history

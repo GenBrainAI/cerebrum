@@ -20,9 +20,11 @@ from ..components.tree_select_component import TreeSelectComponent
 from ...tools.tools_catalog import tools_catalog
 from ...models.message import Message
 from ..components.tool_dialog import ToolDialog
+from ...controllers.task_runner import TaskRunner
 import logging
 import json
 from pathlib import Path
+import streamlit as st
 
 class ToolsCatalogController:
     """Controller for tools catalog view with specialized state support."""
@@ -35,27 +37,21 @@ class ToolsCatalogController:
         self.tool_state = None
         self.tree_component = TreeSelectComponent(self.handle_node_click)
         self.logger = logging.getLogger(__name__)
+        self.task_runner = None  # Will be initialized after local persistence is loaded
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            print("Starting controller initialization...")
-            # Note: We keep the old state file path in remarks for future reference
-            # old_state_file = StateLoader.get_state_file("tools_management_state.json")
+            print("\n🚀 Starting tools controller initialization...")
             
             state_file = StateLoader.get_state_file("dynamic_tools_state.json")
-            print(f"Checking state file path: {state_file}")
+            print(f"📁 Checking state file path: {state_file}")
             
             if not state_file or not state_file.exists():
                 print(f"🔴 Specialized state file not found at {state_file}")
-                # Future enhancement: Add fallback to tools_management_state.json
-                # if old_state_file and old_state_file.exists():
-                #     print("Falling back to tools management state...")
-                #     state_file = old_state_file
-                # else:
                 return
 
-            print(f"Loading state from: {state_file}")
+            print(f"📖 Loading state from: {state_file}")
             
             # Read state file content as string
             with open(state_file, 'r', encoding='utf-8') as f:
@@ -66,18 +62,23 @@ class ToolsCatalogController:
             self.local_persistence.from_json(json_str=json_str)
             
             if self.local_persistence:
-                print("Local persistence model created")
+                print("✅ Local persistence model created")
+                
+                # Initialize task runner with local persistence
+                self.task_runner = TaskRunner(self.local_persistence)
+                await self.task_runner.initialize()
+                print("✅ Task runner initialized with local persistence")
+                
                 # Get task context from local persistence
                 task_managers = self.local_persistence.tasksmanagers.list()
                 tasks = self.local_persistence.tasks.list()
                 
-                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                print(f"📊 Found {len(task_managers)} task managers and {len(tasks)} tasks")
                 
                 if task_managers and tasks:
-                    # Find the dynamic tools manager and task
-                    # Note: Old lookup was for "Tools Management"
+                    # Find the tools management manager and task
                     tools_manager = next(
-                        (m for m in task_managers if "Dynamic Langchain Tools Generator" in m.name),
+                        (m for m in task_managers if "Tools Management" in m.name),
                         task_managers[0]
                     )
                     tools_task = next(
@@ -86,6 +87,7 @@ class ToolsCatalogController:
                     )
                     
                     if tools_task:
+                        print(f"🎯 Found tools task: {tools_task.name} ({tools_task.id})")
                         # Update view state with task context
                         self.view_state.set_active_task(
                             task_id=tools_task.id,
@@ -94,35 +96,16 @@ class ToolsCatalogController:
                             manager_name=tools_manager.name
                         )
                         
-                        # Set tool state with CrewAI context
-                        # Note: This is new for dynamic tools, old version only had:
-                        # self.tool_state = {
-                        #     "active_tools": [],
-                        #     "total_tools": 0,
-                        #     "manager_id": tools_manager.id,
-                        #     "task_id": tools_task.id
-                        # }
-                        self.tool_state = {
-                            "active_tools": [],
-                            "total_tools": 0,
-                            "manager_id": tools_manager.id,
-                            "task_id": tools_task.id,
-                            "crewai_config_id": tools_task.crewai_config_id,
-                            "curried_proxy_id": tools_task.curried_proxy_id
-                        }
-                        
                         print(f"🟢 Loaded state for {tools_manager.name}-{tools_task.name}")
-                        print(f"CrewAI Config ID: {tools_task.crewai_config_id}")
-                        print(f"Curried Proxy ID: {tools_task.curried_proxy_id}")
                     else:
-                        print("🔴 No dynamic tools task found")
+                        print("🔴 No tools management task found")
                 else:
                     print("🔴 No task context found in state file")
             else:
                 print("🔴 Failed to create local persistence model")
                 
         except Exception as e:
-            print(f"Error initializing tools controller: {str(e)}")
+            print(f"❌ Error initializing tools controller: {str(e)}")
             raise
         
     async def get_tools_tree(self) -> Optional[TreeNode]:
@@ -283,18 +266,53 @@ class ToolsCatalogController:
     async def handle_chat(self, message: str) -> str:
         """Process chat messages."""
         try:
-            # Add user message to chat history
-            self.view_state.chat_history.append({
-                "role": "user",
-                "content": message
-            })
+            # Debug logging for persistence models
+            print("\n🔍 Debug - Tools Controller State:")
+            print(f"  Global Persistence Type: {type(self.global_persistence)}")
+            print(f"  Local Persistence Type: {type(self.local_persistence) if hasattr(self, 'local_persistence') else 'None'}")
             
-            # Process the message if we have an active task
+            # Add user message to chat history
+            user_message = {
+                "role": "user",
+                "content": message,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(user_message)
+            
+            # Save chat history to session state immediately after adding user message
+            if 'tools_controller' in st.session_state:
+                st.session_state.tools_controller.view_state.chat_history = self.view_state.chat_history
+            
+            # Debug task status
+            if self.view_state.task_status:
+                print("\n📋 Task Status:")
+                print(f"  Loaded: {self.view_state.task_status.get('loaded')}")
+                print(f"  Task ID: {self.view_state.task_status.get('task_id')}")
+                print(f"  Manager ID: {self.view_state.task_status.get('tasksmanager_id')}")
+                
+                # List available tasks in both persistence models
+                if hasattr(self, 'local_persistence') and self.local_persistence:
+                    local_tasks = self.local_persistence.tasks.list()
+                    print("\n📚 Local Persistence Tasks:")
+                    for task in local_tasks:
+                        print(f"  - {task.id}: {task.name}")
+                
+                global_tasks = self.global_persistence.tasks.list()
+                print("\n🌍 Global Persistence Tasks:")
+                for task in global_tasks:
+                    print(f"  - {task.id}: {task.name}")
+            
+            # Process message and get response
             if self.view_state.task_status and self.view_state.task_status.get("loaded"):
                 task_id = self.view_state.task_status.get("task_id")
                 manager_id = self.view_state.task_status.get("tasksmanager_id")
                 
                 if task_id and manager_id:
+                    print(f"\n🎯 Attempting to run task:")
+                    print(f"  Task ID: {task_id}")
+                    print(f"  Manager ID: {manager_id}")
+                    
                     # Prepare messages context
                     current_messages = []
                     
@@ -313,57 +331,82 @@ class ToolsCatalogController:
                                 updated_at=getattr(msg, 'updated_at', None)
                             ))
                     
-                    # Add CrewAI context for dynamic tools
-                    running_extra_params = {
-                        'messages': current_messages,
-                        'crewai_config_id': self.tool_state.get('crewai_config_id'),
-                        'curried_proxy_id': self.tool_state.get('curried_proxy_id'),
-                        'context': {
-                            'tool_request': message,
-                            'active_tools': self.tool_state.get('active_tools', []),
-                            'total_tools': self.tool_state.get('total_tools', 0)
-                        }
-                    }
-                    
-                    # Run task with CrewAI context
-                    response = await self.state_manager.task_runner.run_task(
+                    # Run task with message context
+                    response = await self.task_runner.run_task(
                         tasksmanager_id=manager_id,
                         task_id=task_id,
-                        running_extra_params=running_extra_params
+                        running_extra_params={'messages': current_messages}
                     )
                     
                     # Process response
                     if isinstance(response, dict) and 'response' in response:
                         response_text = response['response']
-                        
-                        # Update tool state if new tool was created
-                        if 'tool_created' in response:
-                            self.tool_state['active_tools'].append(response['tool_created'])
-                            self.tool_state['total_tools'] += 1
-                            
-                            # Save updated state
-                            try:
-                                state_data = self.view_state.dict()
-                                await self.state_manager.save_session_state("tools_catalog", state_data)
-                            except Exception as e:
-                                self.logger.error(f"Failed to save session state: {str(e)}")
                     else:
                         response_text = str(response)
                     
                     # Add assistant response to chat history
-                    self.view_state.chat_history.append({
+                    assistant_message = {
                         "role": "assistant",
-                        "content": response_text
-                    })
+                        "content": response_text,
+                        "created_at": datetime.now().isoformat(),
+                        "updated_at": datetime.now().isoformat()
+                    }
+                    self.view_state.chat_history.append(assistant_message)
+                    
+                    # Save updated chat history to session state
+                    if 'tools_controller' in st.session_state:
+                        st.session_state.tools_controller.view_state.chat_history = self.view_state.chat_history
+                    
+                    # Save chat history to persistence
+                    if self.local_persistence and task_id:
+                        task = self.local_persistence.tasks.read(task_id)
+                        if task:
+                            if not hasattr(task, 'chat_sessions'):
+                                task.chat_sessions = {}
+                            session_id = str(uuid4())
+                            task.chat_sessions[session_id] = self.view_state.chat_history
+                            self.local_persistence.tasks.update(task_id, task)
                     
                     return response_text
                 else:
-                    return "No active task to process message."
+                    print("\n⚠️ Missing task or manager ID")
+                    response_text = "No active task or manager ID available"
             else:
-                return "Tools management not loaded. Please initialize first."
+                print("\n⚠️ No active task loaded")
+                response_text = "No active task loaded. Please initialize first."
+            
+            # Add system response to chat history
+            system_message = {
+                "role": "assistant",
+                "content": response_text,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(system_message)
+            
+            # Final save of chat history to session state
+            if 'tools_controller' in st.session_state:
+                st.session_state.tools_controller.view_state.chat_history = self.view_state.chat_history
+            
+            return response_text
                 
         except Exception as e:
             self.logger.error(f"Chat handling error: {str(e)}")
+            print(f"\n❌ Error in handle_chat: {str(e)}")
+            
+            # Add error message to chat history
+            error_message = {
+                "role": "assistant",
+                "content": f"An error occurred: {str(e)}",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(error_message)
+            
+            # Save error message to session state
+            if 'tools_controller' in st.session_state:
+                st.session_state.tools_controller.view_state.chat_history = self.view_state.chat_history
+            
             return f"An error occurred: {str(e)}"
             
     async def _process_tool_command(self, message: str) -> str:
@@ -429,7 +472,7 @@ class ToolsCatalogController:
                     current_messages.append(user_message)
                     
                     # Run task with message context
-                    response = await self.state_manager.task_runner.run_task(
+                    response = await self.task_runner.run_task(
                         tasksmanager_id=manager_id,
                         task_id=task_id,
                         running_extra_params={'messages': current_messages}

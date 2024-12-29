@@ -17,7 +17,8 @@ import logging
 from pathlib import Path
 from ...models.message import Message
 from ...controllers.task_runner import TaskRunner
-
+import streamlit as st
+from uuid import uuid4
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
     
@@ -29,23 +30,21 @@ class AgenticViewController:
         self.agent_state = None
         self.tree_component = TreeSelectComponent(self.handle_node_click)
         self.logger = logging.getLogger(__name__)
-        self.task_runner = TaskRunner(persistence_model)
+        self.task_runner = None  # Will be initialized after local persistence is loaded
         
     async def initialize(self):
         """Initialize controller with specialized state."""
         try:
-            print("Starting agentic controller initialization...")
-            # Initialize task runner
-            await self.task_runner.initialize()
+            print("\n🚀 Starting agentic controller initialization...")
             
             state_file = StateLoader.get_state_file("agentic_framework_state.json")
-            print(f"Checking state file path: {state_file}")
+            print(f"📁 Checking state file path: {state_file}")
             
             if not state_file or not state_file.exists():
                 print(f"🔴 Specialized state file not found at {state_file}")
                 return
 
-            print(f"Loading state from: {state_file}")
+            print(f"📖 Loading state from: {state_file}")
             
             # Read state file content as string
             with open(state_file, 'r', encoding='utf-8') as f:
@@ -56,7 +55,13 @@ class AgenticViewController:
             self.local_persistence.from_json(json_str=json_str)
             
             if self.local_persistence:
-                print("Local persistence model created")
+                print("✅ Local persistence model created")
+                
+                # Initialize task runner with local persistence
+                self.task_runner = TaskRunner(self.local_persistence)
+                await self.task_runner.initialize()
+                print("✅ Task runner initialized with local persistence")
+                
                 # Get task context from local persistence
                 task_managers = self.local_persistence.tasksmanagers.list()
                 tasks = self.local_persistence.tasks.list()
@@ -178,30 +183,65 @@ class AgenticViewController:
     async def handle_chat(self, message: str) -> str:
         """Process chat messages."""
         try:
+            # Add user message to chat history
+            user_message = {
+                "role": "user",
+                "content": message,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(user_message)
+            
+            # Save chat history to session state immediately after adding user message
+            if 'agentic_controller' in st.session_state:
+                st.session_state.agentic_controller.view_state.chat_history = self.view_state.chat_history
+            
             # Process message and get response
             response = await self._process_agent_command(message)
             
-            # Add messages to chat history
-            self.view_state.chat_history.append({
-                "role": "user",
-                "content": message
-            })
-            self.view_state.chat_history.append({
+            # Add assistant response to chat history
+            assistant_message = {
                 "role": "assistant",
-                "content": response
-            })
+                "content": response,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(assistant_message)
             
-            # Save session state after chat update
-            try:
-                state_data = self.view_state.dict()
-                await self.state_manager.save_session_state("agentic_config", state_data)
-            except Exception as e:
-                self.logger.error(f"Failed to save session state: {str(e)}")
+            # Save updated chat history to session state
+            if 'agentic_controller' in st.session_state:
+                st.session_state.agentic_controller.view_state.chat_history = self.view_state.chat_history
+            
+            # Save chat history to persistence if we have an active task
+            if self.view_state.task_status and self.view_state.task_status.get("loaded"):
+                task_id = self.view_state.task_status.get("task_id")
+                if self.local_persistence and task_id:
+                    task = self.local_persistence.tasks.read(task_id)
+                    if task:
+                        if not hasattr(task, 'chat_sessions'):
+                            task.chat_sessions = {}
+                        session_id = str(uuid4())
+                        task.chat_sessions[session_id] = self.view_state.chat_history
+                        self.local_persistence.tasks.update(task_id, task)
             
             return response
             
         except Exception as e:
             self.logger.error(f"Chat handling error: {str(e)}")
+            
+            # Add error message to chat history
+            error_message = {
+                "role": "assistant",
+                "content": f"An error occurred: {str(e)}",
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+            self.view_state.chat_history.append(error_message)
+            
+            # Save error message to session state
+            if 'agentic_controller' in st.session_state:
+                st.session_state.agentic_controller.view_state.chat_history = self.view_state.chat_history
+            
             return f"An error occurred: {str(e)}"
             
     async def _process_agent_command(self, message: str) -> str:

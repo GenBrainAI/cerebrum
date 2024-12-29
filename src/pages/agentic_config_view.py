@@ -8,6 +8,7 @@ from server.views.base_view import BaseView
 from server.views.models.view_types import ViewType
 from typing import Dict, Any
 from server.models.message import Message
+from server.controllers.task_runner import TaskRunner
 
 class AgenticConfigView(BaseView):
     def __init__(self):
@@ -85,10 +86,10 @@ def render_observability_view():
         st.warning("No active agentic controller")
         return
         
-    # Get active task
+    # Get active task from controller's view state
     task_status = st.session_state.agentic_controller.view_state.task_status
     if not task_status or not task_status.get("loaded"):
-        st.info("No task selected")
+        st.info("No active task loaded")
         return
         
     task_id = task_status.get("task_id")
@@ -96,10 +97,20 @@ def render_observability_view():
         st.info("No task ID available")
         return
         
+    # Initialize task runner if needed
+    if not hasattr(st.session_state.agentic_controller, 'task_runner'):
+        st.session_state.agentic_controller.task_runner = TaskRunner(st.session_state.agentic_controller.global_persistence)
+        
     # Get observability manager
     observability = st.session_state.agentic_controller.task_runner.get_task_observability(task_id)
+    
     if not observability:
-        st.info("No active task execution")
+        st.info("No observability data available for this task")
+        return
+        
+    entries = observability.get_all_entries()
+    if not entries:
+        st.info("No execution entries available")
         return
         
     # Create columns for stats and output
@@ -179,35 +190,36 @@ def render_observability_view():
                 )
 
 async def render_agentic_config_view():
-    """Render the agentic config view."""
-    view = AgenticConfigView()
-    view.load_session()
-    
+    """Render the agentic configuration view."""
     try:
-        # Initialize controller if needed
+        # Initialize view and session state
+        view = AgenticConfigView()
+        
+        # Initialize persistence model if not in session state
+        if 'persistence_model' not in st.session_state:
+            st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+        
+        # Initialize agentic controller if not in session state
         if 'agentic_controller' not in st.session_state:
-            print("Initializing agentic controller...")
-            persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-            controller = AgenticViewController(persistence_model)
-            await controller.initialize()
-            st.session_state.agentic_controller = controller
+            st.session_state.agentic_controller = AgenticViewController(st.session_state.persistence_model)
+            await st.session_state.agentic_controller.initialize()
             
-        # Add clear session icon in sidebar
+            # Load saved session state
+            view.load_session()
+        
+        # Render header
+        render_header("Agentic Framework")
+        
+        # Add reset button in sidebar
         with st.sidebar:
             col1, col2 = st.columns([0.1, 0.9])
             with col1:
-                if st.empty().button("🔄", help="Clear chat history", key="clear_chat_icon"):
+                if st.button("🔄", help="Reset chat history"):
                     view.clear_session()
                     st.rerun()
-    
+        
         # Render sidebar
         await render_agentic_config_sidebar()
-        
-        # Render header
-        render_header(
-            "Agentic Framework Configuration",
-            "Configure and manage agentic frameworks with integrated chat interface."
-        )
         
         # Add view mode toggle
         col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
@@ -249,16 +261,21 @@ async def render_agentic_config_view():
                     st.write(prompt)
                 
                 await st.session_state.agentic_controller.handle_chat(prompt)
+                
+                # Save session after each message
+                view.save_session()
+                
                 st.rerun()
         
         # Observability View
         else:
             st.subheader("Agentic Framework Observability")
             render_observability_view()
-        
+            
     except Exception as e:
+        st.error(f"Error rendering agentic config view: {str(e)}")
         print(f"Error in render_agentic_config_view: {str(e)}")
-        st.error("Error initializing view. Check console for details.")
+        raise
 
 def main():
     """Main entry point for agentic config view."""

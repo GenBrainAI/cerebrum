@@ -10,6 +10,8 @@ from server.views.base_view import BaseView
 from server.views.models.view_types import ViewType
 from typing import Dict, Any
 from server.models.message import Message
+from datetime import datetime, timedelta
+from server.controllers.task_runner import TaskRunner
 
 class TaskHierarchyView(BaseView):
     def __init__(self):
@@ -95,16 +97,31 @@ def render_observability_view():
         st.warning("No active task controller")
         return
         
-    # Get active task
-    active_task = st.session_state.get('selected_task')
-    if not active_task:
-        st.info("No task selected")
+    # Get active task from controller's view state
+    task_status = st.session_state.task_controller.view_state.task_status
+    if not task_status or not task_status.get("loaded"):
+        st.info("No active task loaded")
         return
         
+    task_id = task_status.get("task_id")
+    if not task_id:
+        st.info("No task ID available")
+        return
+        
+    # Initialize task runner if needed
+    if not hasattr(st.session_state.task_controller, 'task_runner'):
+        st.session_state.task_controller.task_runner = TaskRunner(st.session_state.task_controller.global_persistence)
+        
     # Get observability manager
-    observability = st.session_state.task_controller.task_runner.get_task_observability(active_task)
+    observability = st.session_state.task_controller.task_runner.get_task_observability(task_id)
+    
     if not observability:
-        st.info("No active task execution")
+        st.info("No observability data available for this task")
+        return
+        
+    entries = observability.get_all_entries()
+    if not entries:
+        st.info("No execution entries available")
         return
         
     # Create columns for stats and output
@@ -112,7 +129,6 @@ def render_observability_view():
     
     with col1:
         st.subheader("Execution Stats")
-        entries = observability.get_all_entries()
         stats_entries = [e for e in entries if e.get('metadata', {}).get('execution_stats')]
         
         if stats_entries:
@@ -123,9 +139,6 @@ def render_observability_view():
             
     with col2:
         st.subheader("Execution Output")
-        
-        # Get all entries
-        entries = observability.get_all_entries()
         
         # Format entries for display
         formatted_lines = []
@@ -185,34 +198,42 @@ def render_observability_view():
 
 async def render_task_hierarchy_view():
     """Render the task hierarchy view."""
-    view = TaskHierarchyView()
-    view.load_session()
-    
     try:
-        # Initialize controller if needed
+        # Initialize view and session state
+        view = TaskHierarchyView()
+        
+        # Initialize persistence model if not in session state
+        if 'persistence_model' not in st.session_state:
+            st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+        
+        # Initialize task controller if not in session state
         if 'task_controller' not in st.session_state:
-            print("Initializing task controller...")
-            persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-            controller = TaskHierarchyController(persistence_model)
-            await controller.initialize()
-            st.session_state.task_controller = controller
+            st.session_state.task_controller = TaskHierarchyController(st.session_state.persistence_model)
+            await st.session_state.task_controller.initialize()
             
-        # Add clear session icon in sidebar
+            # Load saved session state
+            view.load_session()
+        
+        # Render header
+        render_header("Task Hierarchy")
+        
+        # Add reset button in sidebar
         with st.sidebar:
             col1, col2 = st.columns([0.1, 0.9])
             with col1:
-                if st.empty().button("🔄", help="Clear chat history", key="clear_chat_icon"):
+                if st.button("🔄", help="Reset chat history"):
                     view.clear_session()
                     st.rerun()
-    
-        # Render sidebar first, outside of columns
+        
+        # Render sidebar
         await render_task_hierarchy_sidebar()
         
-        # Render header
-        render_header(
-            "Task Hierarchy Management",
-            "Manage and organize tasks in a hierarchical structure with integrated chat interface."
-        )
+        # Get task tree data
+        print("\n🌳 Getting task tree for sidebar...")
+        tree_data = await st.session_state.task_controller.get_task_tree()
+        if tree_data:
+            print(f"Tree data received: {len(tree_data.children)} root children")
+            print("✅ Tree rendered successfully")
         
         # Add view mode toggle
         col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
@@ -254,16 +275,21 @@ async def render_task_hierarchy_view():
                     st.write(prompt)
                 
                 await st.session_state.task_controller.handle_chat(prompt)
+                
+                # Save session after each message
+                view.save_session()
+                
                 st.rerun()
         
         # Observability View
         else:
             st.subheader("Task Execution Observability")
             render_observability_view()
-        
+            
     except Exception as e:
+        st.error(f"Error rendering task hierarchy view: {str(e)}")
         print(f"Error in render_task_hierarchy_view: {str(e)}")
-        st.error("Error initializing view. Check console for details.")
+        raise
 
 def main():
     """Main entry point for task hierarchy view."""
