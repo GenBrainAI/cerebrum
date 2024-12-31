@@ -15,6 +15,7 @@ class AgentModel(BaseModel):
     goal: str
     backstory: str
     tools: List[ToolModel]
+    class_tools: Optional[List[ToolModel]] = None
     verbose: bool = True
     
     model_config = ConfigDict(arbitrary_types_allowed=True)

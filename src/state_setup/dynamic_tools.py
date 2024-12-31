@@ -4,7 +4,7 @@ import asyncio
 import os
 import json
 import dotenv
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 import logging
 import aiohttp
 import unittest
@@ -43,6 +43,9 @@ from server.models.curried_proxy_info import CurriedProxyInfo, ToolInfo
 from server.context.context_provider import ContextProvider
 from server.context.knowledge_base import KnowledgeBase
 from server.context.context_database import ContextDatabase
+from server.context.crew_ai_knowledge_bridge import CrewAIKnowledgeBridge
+from server.context.context_aware_agent_factory import ContextAwareAgentFactory
+from server.context.unified_context import UnifiedContextState, ContextConfig
 
 class FileTools:
     """Tool for file operations."""
@@ -54,23 +57,27 @@ class FileTools:
     def save_implementation(self, code: str, tool_name: str) -> dict:
         """Save generated tool implementation to file."""
         try:
+            logger.info(f"Attempting to save implementation for tool: {tool_name}")
             # Create a valid filename from the tool name
             filename = f"{tool_name.lower().replace(' ', '_')}.py"
             file_path = os.path.join(self.base_dir, filename)
             
+            logger.info(f"Target file path: {file_path}")
             # Create the directory if it doesn't exist
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # Save the code
             with open(file_path, 'w') as f:
                 f.write(code)
-                
+            
+            logger.info(f"Successfully saved implementation to: {file_path}")
             return {
                 "status": "success",
                 "message": f"Code saved to {file_path}",
                 "path": file_path
             }
         except Exception as e:
+            logger.error(f"Failed to save implementation: {str(e)}", exc_info=True)
             return {
                 "status": "error",
                 "message": f"Failed to save implementation: {str(e)}",
@@ -80,24 +87,28 @@ class FileTools:
     def save_tests(self, test_code: str, tool_name: str) -> dict:
         """Save test code to file."""
         try:
+            logger.info(f"Attempting to save tests for tool: {tool_name}")
             # Create a valid filename from the tool name
             filename = f"test_{tool_name.lower().replace(' ', '_')}.py"
             test_dir = os.path.join(self.base_dir, "tests")
             file_path = os.path.join(test_dir, filename)
             
+            logger.info(f"Target test file path: {file_path}")
             # Create the test directory if it doesn't exist
             os.makedirs(test_dir, exist_ok=True)
             
             # Save the test code
             with open(file_path, 'w') as f:
                 f.write(test_code)
-                
+            
+            logger.info(f"Successfully saved tests to: {file_path}")
             return {
                 "status": "success",
                 "message": f"Tests saved to {file_path}",
                 "path": file_path
             }
         except Exception as e:
+            logger.error(f"Failed to save tests: {str(e)}", exc_info=True)
             return {
                 "status": "error",
                 "message": f"Failed to save tests: {str(e)}",
@@ -262,20 +273,33 @@ class TestingTools:
 class ProxyTools:
     def __init__(self):
         self.proxy = CurriedProxy()
+        logger.info("Initialized ProxyTools with new CurriedProxy instance")
         
     def register_tool(self, tool_path: str, tool_name: str) -> dict:
         """Register tool with global CurriedProxy."""
         try:
+            logger.info(f"Attempting to register tool: {tool_name} from path: {tool_path}")
             # Import the tool module
             spec = importlib.util.spec_from_file_location(tool_name, tool_path)
+            if spec is None:
+                logger.error(f"Failed to create module spec for: {tool_path}")
+                return {
+                    "status": "error",
+                    "message": "Failed to create module spec",
+                    "tool_info": None
+                }
+            
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
+            logger.info(f"Successfully loaded module: {module.__name__}")
             
             # Get the tool class
             tool_class = getattr(module, tool_name)
+            logger.info(f"Found tool class: {tool_class.__name__}")
             
             # Register the tool
             self.proxy.register_tool(tool_class)
+            logger.info(f"Successfully registered tool: {tool_name}")
             
             return {
                 "status": "success",
@@ -287,6 +311,7 @@ class ProxyTools:
                 }
             }
         except Exception as e:
+            logger.error(f"Failed to register tool: {str(e)}", exc_info=True)
             return {
                 "status": "error",
                 "message": f"Failed to register tool: {str(e)}",
@@ -325,28 +350,268 @@ class URLTools:
         """Close the aiohttp session."""
         await self.session.close()
 
+class ContextConfig:
+    """Configuration for context handling across different frameworks."""
+    
+    def __init__(self):
+        self.vector_config = {
+            "batch_size": 100,
+            "max_retries": 3,
+            "retry_delay": 1,
+            "connection_timeout": 30,
+            "max_concurrent_requests": 10,
+            "chunk_size": 1000,
+            "chunk_overlap": 100,
+            "embedding_model": "text-embedding-3-small",
+            "embeddings_provider": "openai"
+        }
+        
+        self.knowledge_config = {
+            "base_path": "persistent_state/context/knowledge_base",
+            "domains": ["langchain", "tools", "patterns", "system"],
+            "default_tags": ["documentation", "tools", "patterns"]
+        }
+        
+        self.code_config = {
+            "analyze_deps": True,
+            "parse_docs": True,
+            "deep_scan": False,
+            "exclude_dirs": ["venv", "__pycache__", ".git", "node_modules"]
+        }
+        
+        self.framework_configs = {
+            "cerebrum": {
+                "default_context_types": ["vector", "knowledge", "code"],
+                "context_weights": {
+                    "vector": 1.0,
+                    "knowledge": 0.8,
+                    "code": 0.6
+                }
+            },
+            "crew_ai": {
+                "default_context_types": ["vector", "knowledge"],
+                "context_weights": {
+                    "vector": 0.8,
+                    "knowledge": 1.0
+                },
+                "min_relevance": 0.7
+            }
+        }
+
+class UnifiedContextState:
+    """Manages different types of contexts and their assignments to various agent frameworks."""
+    
+    def __init__(self, base_path: str = "persistent_state/context", config: Optional[ContextConfig] = None):
+        self.base_path = Path(base_path)
+        self.base_path.mkdir(parents=True, exist_ok=True)
+        
+        # Use provided config or create default
+        self.config = config or ContextConfig()
+        
+        # Initialize different context stores with config
+        self.vector_store = VectorStore(
+            config=VectorStoreConfig(**self.config.vector_config),
+            base_path=str(self.base_path / "vector_store")
+        )
+        self.knowledge_base = KnowledgeBase(
+            base_path=str(self.base_path / "knowledge_base")
+        )
+        self.code_catalog = CodeCatalog()
+        
+        # Initialize context assignments
+        self.context_assignments = {
+            "cerebrum": {
+                "tasks": {},
+                "task_managers": {}
+            },
+            "crew_ai": {
+                "agents": {},
+                "tasks": {},
+                "crews": {}
+            }
+        }
+        
+        # Initialize context bridges
+        self.crew_bridge = None
+        self.context_provider = None
+        
+    async def initialize(self):
+        """Initialize context provider and bridges."""
+        self.context_provider = ContextProvider()
+        self.crew_bridge = CrewAIKnowledgeBridge(self.context_provider)
+        
+    async def assign_context_to_cerebrum_task(
+        self,
+        task_id: str,
+        context_types: List[str],
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """Assign context to a Cerebrum task."""
+        self.context_assignments["cerebrum"]["tasks"][task_id] = {
+            "types": context_types,
+            "metadata": metadata or {}
+        }
+        
+    async def assign_context_to_crew_agent(
+        self,
+        agent_id: str,
+        context_types: List[str],
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """Assign context to a CrewAI agent."""
+        self.context_assignments["crew_ai"]["agents"][agent_id] = {
+            "types": context_types,
+            "metadata": metadata or {}
+        }
+        
+    async def get_context_for_entity(
+        self,
+        entity_type: str,
+        framework: str,
+        entity_id: str,
+        query: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get assigned context for a specific entity with framework-specific weights."""
+        assignments = self.context_assignments.get(framework, {}).get(entity_type, {})
+        entity_context = assignments.get(entity_id, {})
+        
+        if not entity_context:
+            # Use default context types from framework config
+            framework_config = self.config.framework_configs.get(framework, {})
+            context_types = framework_config.get("default_context_types", [])
+        else:
+            context_types = entity_context["types"]
+            
+        if not context_types:
+            return []
+            
+        # Get framework-specific weights and minimum relevance
+        framework_config = self.config.framework_configs.get(framework, {})
+        context_weights = framework_config.get("context_weights", {})
+        min_relevance = framework_config.get("min_relevance", 0.0)
+        
+        contexts = []
+        for context_type in context_types:
+            weight = context_weights.get(context_type, 1.0)
+            
+            if context_type == "vector":
+                vector_contexts = await self.context_provider._get_vector_contexts(
+                    entity_id, query or ""
+                )
+                for ctx in vector_contexts:
+                    ctx["weighted_relevance"] = ctx.get("relevance", 0) * weight
+                contexts.extend(vector_contexts)
+                
+            elif context_type == "knowledge":
+                knowledge_contexts = await self.context_provider._get_knowledge_contexts(
+                    entity_id
+                )
+                for ctx in knowledge_contexts:
+                    ctx["weighted_relevance"] = ctx.get("relevance", 0) * weight
+                contexts.extend(knowledge_contexts)
+                
+            elif context_type == "code":
+                code_contexts = await self.context_provider._get_code_contexts(
+                    entity_id
+                )
+                for ctx in code_contexts:
+                    ctx["weighted_relevance"] = ctx.get("relevance", 0) * weight
+                contexts.extend(code_contexts)
+        
+        # Filter by minimum relevance and sort by weighted relevance
+        filtered_contexts = [
+            ctx for ctx in contexts 
+            if ctx.get("weighted_relevance", 0) >= min_relevance
+        ]
+        filtered_contexts.sort(key=lambda x: x.get("weighted_relevance", 0), reverse=True)
+        
+        return filtered_contexts
+        
+    async def create_specialized_state(
+        self,
+        state_type: str,
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Create a specialized state for different frameworks."""
+        if state_type == "crew_ai":
+            return await self._create_crew_ai_state(config)
+        elif state_type == "cerebrum":
+            return await self._create_cerebrum_state(config)
+        else:
+            raise ValueError(f"Unsupported state type: {state_type}")
+            
+    async def _create_crew_ai_state(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create specialized state for CrewAI."""
+        crew_config = CrewConfiguration(**config)
+        
+        # Enhance agents with context
+        for agent in crew_config.agents:
+            contexts = await self.get_context_for_entity(
+                "agents", "crew_ai", agent.role, None
+            )
+            agent.backstory = self._enhance_backstory(agent.backstory, contexts)
+            
+        return {
+            "crew_config": crew_config,
+            "context_provider": self.context_provider,
+            "crew_bridge": self.crew_bridge
+        }
+        
+    async def _create_cerebrum_state(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Create specialized state for Cerebrum."""
+        return {
+            "context_provider": self.context_provider,
+            "vector_store": self.vector_store,
+            "knowledge_base": self.knowledge_base,
+            "code_catalog": self.code_catalog
+        }
+        
+    def _enhance_backstory(self, original_backstory: str, contexts: List[Dict[str, Any]]) -> str:
+        """Enhance agent backstory with context."""
+        if not contexts:
+            return original_backstory
+            
+        enhanced = f"{original_backstory}\n\nRelevant Context:\n"
+        for context in contexts:
+            enhanced += f"\n• [{context['type']}] {context['content']}"
+            if 'metadata' in context:
+                enhanced += f" (Source: {context['metadata'].get('source', 'unknown')})"
+                
+        return enhanced
+
 async def setup_dynamic_tools_state():
     """Initialize and configure the dynamic tools environment."""
-    url_tools = None  # Initialize outside try block for cleanup
     try:
+        logger.info("Starting dynamic tools state setup")
+        
+        # Create context configuration
+        context_config = ContextConfig()
+        
+        # Initialize unified context state with config
+        unified_state = UnifiedContextState(config=context_config)
+        await unified_state.initialize()
+        
         # Initialize tools
         file_tools = FileTools()
         testing_tools = TestingTools()
         proxy_tools = ProxyTools()
-        url_tools = URLTools()  # Store reference for cleanup
+        url_tools = URLTools()
+        
+        logger.info("Tools initialized successfully")
         
         # Create necessary directories
         os.makedirs("src/tools", exist_ok=True)
         os.makedirs("src/tools/tests", exist_ok=True)
+        logger.info("Created necessary directories")
         
         # Initialize logging
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-        logger = logging.getLogger(__name__)
         
-        # Set up CrewAI configuration
+        logger.info("Setting up CrewAI configuration")
+        # Set up CrewAI configuration with context
         crew_config = CrewConfiguration(
             agents=[
                 AgentModel(
@@ -362,12 +627,18 @@ async def setup_dynamic_tools_state():
                             name="CredentialsTools.validate_credentials",
                             description="Validate required credentials are present and properly formatted"
                         )
-                    ]
+                    ],
+                    context={
+                        "domain": "security",
+                        "tags": ["credentials", "validation"]
+                    }
                 ),
                 AgentModel(
                     role="LangChain Tool Architect",
                     goal="Design and specify Langchain tools",
-                    backstory="Expert in Langchain architecture who creates tool specifications",
+                    backstory="""Expert in Langchain architecture who creates tool specifications.
+                    Has deep knowledge of LangChain patterns and best practices.
+                    Focuses on creating reusable and maintainable tool designs.""",
                     tools=[
                         ToolModel(
                             name="URLTools.fetch_documentation",
@@ -377,12 +648,19 @@ async def setup_dynamic_tools_state():
                             name="FileTools.read_documentation",
                             description="Read local documentation files for additional context"
                         )
-                    ]
+                    ],
+                    context={
+                        "domain": "langchain",
+                        "tags": ["architecture", "design", "tools"],
+                        "documentation_path": "docs/langchain_tools/langchain_tools.md"
+                    }
                 ),
                 AgentModel(
                     role="Tool Implementation Engineer",
                     goal="Implement Langchain tools following specifications and best practices",
-                    backstory="Senior developer with expertise in Langchain tool implementation. Ensures code is saved in the correct location and follows project structure.",
+                    backstory="""Senior developer with expertise in Langchain tool implementation.
+                    Ensures code is saved in the correct location and follows project structure.
+                    Implements tools based on architect's specifications while maintaining code quality.""",
                     tools=[
                         ToolModel(
                             name="FileTools.save_implementation",
@@ -392,23 +670,44 @@ async def setup_dynamic_tools_state():
                             name="ProxyTools.register_tool",
                             description="Register tool with global CurriedProxy for dynamic loading"
                         )
-                    ]
+                    ],
+                    context={
+                        "domain": "implementation",
+                        "tags": ["coding", "langchain", "tools"],
+                        "project_structure": {
+                            "implementation_path": "src/tools",
+                            "test_path": "src/tools/tests"
+                        }
+                    }
                 ),
                 AgentModel(
                     role="Test Engineer",
                     goal="Create comprehensive test suites for tools",
-                    backstory="Testing specialist who writes thorough unit tests and ensures they are saved in the correct location.",
+                    backstory="""Testing specialist who writes thorough unit tests and ensures they are saved in the correct location.
+                    Creates tests that verify both functionality and edge cases.
+                    Ensures test coverage meets project standards.""",
                     tools=[
                         ToolModel(
                             name="FileTools.save_tests",
                             description="Save test code to file. Returns a dictionary with status, message, and path."
                         )
-                    ]
+                    ],
+                    context={
+                        "domain": "testing",
+                        "tags": ["tests", "coverage", "quality"],
+                        "test_requirements": {
+                            "min_coverage": 80,
+                            "required_test_types": ["unit", "integration"],
+                            "test_path": "src/tools/tests"
+                        }
+                    }
                 ),
                 AgentModel(
                     role="QA Automation Engineer",
                     goal="Automate and execute tests, ensure quality",
-                    backstory="Quality assurance expert who automates testing processes and validates results. Verifies that tests are properly saved and executable.",
+                    backstory="""Quality assurance expert who automates testing processes and validates results.
+                    Verifies that tests are properly saved and executable.
+                    Ensures test coverage meets quality standards.""",
                     tools=[
                         ToolModel(
                             name="TestingTools.run_unit_tests",
@@ -418,7 +717,15 @@ async def setup_dynamic_tools_state():
                             name="TestingTools.validate_test_coverage",
                             description="Calculate test coverage and ensure it meets quality standards. Expects test file path from FileTools.save_tests response."
                         )
-                    ]
+                    ],
+                    context={
+                        "domain": "qa",
+                        "tags": ["automation", "coverage", "validation"],
+                        "quality_standards": {
+                            "min_coverage": 80,
+                            "max_complexity": 10
+                        }
+                    }
                 )
             ],
             tasks=[
@@ -433,7 +740,10 @@ async def setup_dynamic_tools_state():
                             "missing": []
                         }
                     }""",
-                    agent_role="Security Manager"
+                    agent_role="Security Manager",
+                    context={
+                        "required_credentials": ["API_KEY", "DATABASE_URL"]
+                    }
                 ),
                 TaskModel(
                     description="Analyze Langchain documentation and create tool specification",
@@ -447,7 +757,18 @@ async def setup_dynamic_tools_state():
                         }
                     }""",
                     agent_role="LangChain Tool Architect",
-                    depends_on=["Load and validate project credentials"]
+                    depends_on=["Load and validate project credentials"],
+                    context={
+                        "documentation_sources": [
+                            "docs/langchain_tools/langchain_tools.md"
+                        ],
+                        "tool_type": "graphql",
+                        "required_features": [
+                            "query execution",
+                            "schema validation",
+                            "error handling"
+                        ]
+                    }
                 ),
                 TaskModel(
                     description="Implement the tool following Langchain patterns",
@@ -461,7 +782,14 @@ async def setup_dynamic_tools_state():
                         }
                     }""",
                     agent_role="Tool Implementation Engineer",
-                    depends_on=["Analyze Langchain documentation and create tool specification"]
+                    depends_on=["Analyze Langchain documentation and create tool specification"],
+                    context={
+                        "implementation_standards": {
+                            "code_style": "pep8",
+                            "max_complexity": 10,
+                            "required_docstrings": true
+                        }
+                    }
                 ),
                 TaskModel(
                     description="Create comprehensive unit tests",
@@ -475,7 +803,17 @@ async def setup_dynamic_tools_state():
                         }
                     }""",
                     agent_role="Test Engineer",
-                    depends_on=["Implement the tool following Langchain patterns"]
+                    depends_on=["Implement the tool following Langchain patterns"],
+                    context={
+                        "test_requirements": {
+                            "coverage_threshold": 80,
+                            "required_test_types": [
+                                "unit",
+                                "integration",
+                                "edge_cases"
+                            ]
+                        }
+                    }
                 ),
                 TaskModel(
                     description="Execute tests and validate coverage",
@@ -490,27 +828,49 @@ async def setup_dynamic_tools_state():
                         }
                     }""",
                     agent_role="QA Automation Engineer",
-                    depends_on=["Create comprehensive unit tests"]
+                    depends_on=["Create comprehensive unit tests"],
+                    context={
+                        "quality_requirements": {
+                            "min_coverage": 80,
+                            "max_allowed_failures": 0
+                        }
+                    }
                 )
             ],
         )
         
+        # Create specialized states
+        crew_state = await unified_state.create_specialized_state(
+            "crew_ai",
+            crew_config.dict()
+        )
+        
+        cerebrum_state = await unified_state.create_specialized_state(
+            "cerebrum",
+            {}
+        )
+        
         # Return initialized state
-        return {
+        state = {
             "file_tools": file_tools,
             "testing_tools": testing_tools,
             "proxy_tools": proxy_tools,
             "url_tools": url_tools,
-            "crew_config": crew_config,
+            "unified_state": unified_state,
+            "crew_state": crew_state,
+            "cerebrum_state": cerebrum_state,
             "logger": logger
         }
         
+        logger.info("Dynamic tools state setup completed successfully")
+        return state
+        
     except Exception as e:
-        logger.error(f"Failed to set up dynamic tools state: {str(e)}")
+        logger.error(f"Failed to set up dynamic tools state: {str(e)}", exc_info=True)
         raise
     finally:
-        # Clean up aiohttp session if it was created
         if url_tools is not None:
+            logger.info("Cleaning up URL tools session")
             await url_tools.close()
 
 if __name__ == "__main__":
