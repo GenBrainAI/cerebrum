@@ -31,10 +31,11 @@ class TaskExecutor:
         """Execute the task with the given context."""
         try:
             with self.observability:
+                tasksmanager = self.task_runner.persistence_model.tasksmanagers.read(self.task.tasksmanager_id)
                 result = await self.task_runner._run_standard_task(
                     task=self.task,
-                    tasksmanager=self.task_runner.persistence_model.tasksmanagers.read(self.task.tasksmanager_id),
-                    running_extra_params=context
+                    running_extra_params=context,
+                    tasksmanager=tasksmanager
                 )
                 return result.get("response", "")
         except Exception as e:
@@ -228,7 +229,8 @@ class TaskRunner:
     async def _run_standard_task(
         self,
         task: Task,
-        running_extra_params: Optional[Dict] = None
+        running_extra_params: Optional[Dict] = None,
+        tasksmanager: Optional[TasksManager] = None
     ) -> Dict[str, Any]:
         """Execute a standard task with context support."""
         try:
