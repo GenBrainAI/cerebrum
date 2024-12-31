@@ -62,20 +62,50 @@ class TaskObservabilityManager:
         self._entry_queue = Queue()
         self.logger = logging.getLogger(__name__)
         self.tee_stdout = TeeStdout(self.original_stdout, self.output_buffer)
+        self._capture_active = False
 
     def start_capture(self):
         """Start capturing stdout"""
-        sys.stdout = self.tee_stdout
-        self.add_entry("Started output capture", ObservabilityLevel.INFO)
+        if not self._capture_active:
+            print("\n📝 Starting output capture for task:", self.task_id)
+            sys.stdout = self.tee_stdout
+            self._capture_active = True
+            self.add_entry("Started output capture", ObservabilityLevel.INFO)
+            # Immediately process any buffered output
+            self._process_current_output()
         return self
 
     def stop_capture(self):
         """Stop capturing and restore original stdout"""
-        sys.stdout = self.original_stdout
-        self.add_entry("Stopped output capture", ObservabilityLevel.INFO)
+        if self._capture_active:
+            # Process any remaining output before stopping
+            self._process_current_output()
+            sys.stdout = self.original_stdout
+            self._capture_active = False
+            self.add_entry("Stopped output capture", ObservabilityLevel.INFO)
+            print("\n✅ Stopped output capture for task:", self.task_id)
+
+    def _process_current_output(self):
+        """Process current output in buffer and add as entries."""
+        with self._buffer_lock:
+            current_output = self.output_buffer.getvalue()
+            if len(current_output) > self._last_output_pos:
+                new_output = current_output[self._last_output_pos:]
+                self._last_output_pos = len(current_output)
+                
+                # Split and process each line
+                for line in new_output.splitlines():
+                    if line.strip():  # Only process non-empty lines
+                        self.add_entry(
+                            line.strip(),
+                            ObservabilityLevel.INFO,
+                            metadata={"output_type": "stdout"}
+                        )
 
     def get_new_output(self) -> str:
-        """Get any new output since last check"""
+        """Get any new output since last check and process it."""
+        if self._capture_active:
+            self._process_current_output()
         with self._buffer_lock:
             current_output = self.output_buffer.getvalue()
             if len(current_output) > self._last_output_pos:
@@ -135,19 +165,10 @@ class TaskObservabilityManager:
     async def monitor_execution(self, interval: float = 0.1):
         """Continuously monitor for new output and entries"""
         try:
-            while True:
-                # Check for new stdout
-                new_output = self.get_new_output()
-                if new_output:
-                    # Split output into lines and add each as a separate entry
-                    for line in new_output.splitlines():
-                        if line.strip():  # Only add non-empty lines
-                            self.add_entry(
-                                line,
-                                ObservabilityLevel.INFO,
-                                metadata={"output_type": "stdout"}
-                            )
-
+            while self._capture_active:
+                # Process any new output
+                self._process_current_output()
+                
                 # Small delay to prevent busy waiting
                 await asyncio.sleep(interval)
 

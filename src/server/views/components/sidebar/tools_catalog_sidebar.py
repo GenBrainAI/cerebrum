@@ -27,18 +27,14 @@ class ToolsCatalogSidebar:
             
             st.markdown("---")
             
-            # Add quick actions at the top
-            # if st.button("➕ Add New Tool"):
-            #     # TODO: Implement tool creation dialog
-            #     st.info("Tool creation coming soon")
-                
-            # if st.button("🔄 Refresh Catalog"):
+            # # Add refresh button
+            # if st.button("🔄 Refresh", help="Refresh the tools catalog"):
             #     st.rerun()
-                
+            
             # st.markdown("---")
             
             # Render tools catalog tree as main sidebar content
-            st.subheader("Tools Catalog")
+            st.subheader("Available Tools")
             if self.controller:
                 tree_data = await self.controller.get_tools_tree()
                 if tree_data:

@@ -7,6 +7,10 @@ import dotenv
 from typing import Any, Dict
 import logging
 import aiohttp
+import unittest
+import importlib.util
+import coverage
+from io import StringIO
 
 project_root = str(Path(__file__).parents[1])
 sys.path.append(project_root)
@@ -28,7 +32,8 @@ from server.models.agent import (
     ToolModel,
     ToolsProxyCollection,
     ObjectToolSpec,
-    CrewAIConfig
+    CrewAIConfig,
+    CrewConfiguration
 )
 from server.models.persistence_models import StorageLocation, StorageType
 from server.controllers.curried_proxy import CurriedProxy
@@ -40,58 +45,82 @@ from server.context.knowledge_base import KnowledgeBase
 from server.context.context_database import ContextDatabase
 
 class FileTools:
-    """Tool for handling file operations related to documentation and code."""
+    """Tool for file operations."""
     
-    def __init__(self, base_dir: str = "tools"):
+    def __init__(self, base_dir="src/tools"):
         self.base_dir = base_dir
         os.makedirs(base_dir, exist_ok=True)
+        
+    def save_implementation(self, code: str, tool_name: str) -> dict:
+        """Save generated tool implementation to file."""
+        try:
+            # Create a valid filename from the tool name
+            filename = f"{tool_name.lower().replace(' ', '_')}.py"
+            file_path = os.path.join(self.base_dir, filename)
+            
+            # Create the directory if it doesn't exist
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Save the code
+            with open(file_path, 'w') as f:
+                f.write(code)
+                
+            return {
+                "status": "success",
+                "message": f"Code saved to {file_path}",
+                "path": file_path
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to save implementation: {str(e)}",
+                "path": None
+            }
+            
+    def save_tests(self, test_code: str, tool_name: str) -> dict:
+        """Save test code to file."""
+        try:
+            # Create a valid filename from the tool name
+            filename = f"test_{tool_name.lower().replace(' ', '_')}.py"
+            test_dir = os.path.join(self.base_dir, "tests")
+            file_path = os.path.join(test_dir, filename)
+            
+            # Create the test directory if it doesn't exist
+            os.makedirs(test_dir, exist_ok=True)
+            
+            # Save the test code
+            with open(file_path, 'w') as f:
+                f.write(test_code)
+                
+            return {
+                "status": "success",
+                "message": f"Tests saved to {file_path}",
+                "path": file_path
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to save tests: {str(e)}",
+                "path": None
+            }
 
-    async def read_documentation(self, file_path: str) -> str:
+    async def read_documentation(self, file_path: str) -> Dict[str, Any]:
         """
         Read documentation from a file.
         
         :param file_path: Path to the documentation file
-        :return: Content of the documentation file
+        :return: Dictionary containing file content
         """
+        print(f"\n📖 Reading documentation from: {file_path}")
         try:
             with open(file_path, 'r') as f:
-                return f.read()
+                content = f.read()
+            print(f"✅ Successfully read documentation ({len(content)} chars)")
+            return {"status": "success", "content": content}
         except Exception as e:
-            logger.error(f"Error reading documentation: {str(e)}")
-            return f"Error: {str(e)}"
-
-    async def save_implementation(self, code: str, file_path: str) -> Dict[str, Any]:
-        """
-        Save generated code to a file.
-        
-        :param code: The code content to save
-        :param file_path: Path where to save the code
-        :return: Dictionary containing save status
-        """
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w') as f:
-                f.write(code)
-            return {"status": "success", "message": f"Code saved to {file_path}"}
-        except Exception as e:
-            logger.error(f"Error saving implementation: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def save_tests(self, test_code: str, file_path: str) -> Dict[str, Any]:
-        """
-        Save test code to a file.
-        
-        :param test_code: The test code content to save
-        :param file_path: Path where to save the tests
-        :return: Dictionary containing save status
-        """
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w') as f:
-                f.write(test_code)
-            return {"status": "success", "message": f"Tests saved to {file_path}"}
-        except Exception as e:
-            logger.error(f"Error saving tests: {str(e)}")
+            error_msg = f"Error reading documentation: {str(e)}"
+            logger.error(error_msg)
+            print(f"❌ {error_msg}")
             return {"status": "error", "message": str(e)}
 
 class CredentialsTools:
@@ -132,319 +161,198 @@ class CredentialsTools:
 class TestingTools:
     """Tool for running tests and validating coverage."""
     
-    def __init__(self, test_dir: str = "tests"):
-        self.test_dir = test_dir
-
-    async def run_unit_tests(self, test_file: str) -> Dict[str, Any]:
-        """
-        Run unit tests and return results.
+    def __init__(self):
+        self.test_runner = unittest.TextTestRunner(verbosity=2)
         
-        :param test_file: Path to the test file to run
-        :return: Dictionary containing test results
-        """
+    def run_unit_tests(self, test_file_path: str) -> dict:
+        """Run unit tests and get results."""
         try:
-            import unittest
+            logger.info(f"Attempting to run tests from file: {test_file_path}")
+            
+            if not os.path.exists(test_file_path):
+                logger.error(f"Test file not found: {test_file_path}")
+                return {
+                    "status": "error",
+                    "message": f"Test file not found: {test_file_path}",
+                    "results": None
+                }
+                
+            logger.info(f"Loading test module from: {test_file_path}")
+            # Load the test module
+            spec = importlib.util.spec_from_file_location("test_module", test_file_path)
+            if spec is None:
+                logger.error(f"Failed to create module spec for: {test_file_path}")
+                return {
+                    "status": "error",
+                    "message": "Failed to create module spec",
+                    "results": None
+                }
+                
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            logger.info(f"Successfully loaded test module: {module.__name__}")
+            
+            # Find and run tests
             loader = unittest.TestLoader()
-            suite = loader.discover(os.path.dirname(test_file))
-            runner = unittest.TextTestRunner(verbosity=2)
-            result = runner.run(suite)
+            suite = loader.loadTestsFromModule(module)
+            logger.info(f"Found {suite.countTestCases()} test cases")
+            
+            result = self.test_runner.run(suite)
+            logger.info(f"Test execution completed: {result.testsRun} tests run")
+            
             return {
                 "status": "success",
+                "message": "Tests executed successfully",
                 "results": {
-                    "tests_run": result.testsRun,
-                    "errors": len(result.errors),
+                    "run": result.testsRun,
                     "failures": len(result.failures),
+                    "errors": len(result.errors),
                     "skipped": len(result.skipped)
                 }
             }
         except Exception as e:
-            logger.error(f"Error running tests: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-    async def validate_test_coverage(self, test_file: str) -> Dict[str, Any]:
-        """
-        Calculate test coverage percentage.
-        
-        :param test_file: Path to the test file to analyze
-        :return: Dictionary containing coverage results
-        """
-        try:
-            import coverage
-            cov = coverage.Coverage()
-            cov.start()
-            await self.run_unit_tests(test_file)
-            cov.stop()
-            coverage_result = cov.report()
-            return {
-                "status": "success",
-                "coverage_percentage": coverage_result
-            }
-        except ImportError:
+            logger.error(f"Error running tests: {str(e)}", exc_info=True)
             return {
                 "status": "error",
-                "message": "Coverage package not installed"
+                "message": f"Failed to run tests: {str(e)}",
+                "results": None
             }
-        except Exception as e:
-            logger.error(f"Error calculating coverage: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-class ProxyTools:
-    """Tool for managing dynamic tool registration."""
-    
-    def __init__(self):
-        self.registered_tools = set()
-
-    async def register_tool(self, tool_name: str, tool_instance: Any) -> Dict[str, Any]:
-        """
-        Register a tool with the global CurriedProxy.
-        
-        :param tool_name: Name to register the tool under
-        :param tool_instance: The tool instance to register
-        :return: Dictionary containing registration status
-        """
+            
+    def validate_test_coverage(self, test_file_path: str) -> dict:
+        """Calculate test coverage."""
         try:
-            from server.controllers.curried_proxy import global_proxy
-            global_proxy.add_tool(tool_name, tool_instance)
-            self.registered_tools.add(tool_name)
+            if not os.path.exists(test_file_path):
+                return {
+                    "status": "error",
+                    "message": f"Test file not found: {test_file_path}",
+                    "coverage": None
+                }
+                
+            # Initialize coverage
+            cov = coverage.Coverage()
+            cov.start()
+            
+            # Run the tests
+            test_result = self.run_unit_tests(test_file_path)
+            
+            # Stop coverage
+            cov.stop()
+            cov.save()
+            
+            # Get coverage report
+            report = StringIO()
+            cov.report(file=report)
+            coverage_output = report.getvalue()
+            
             return {
                 "status": "success",
-                "message": f"Tool {tool_name} registered successfully"
+                "message": "Coverage analysis completed",
+                "coverage": {
+                    "report": coverage_output,
+                    "test_results": test_result["results"]
+                }
             }
         except Exception as e:
-            logger.error(f"Error registering tool: {str(e)}")
-            return {"status": "error", "message": str(e)}
+            return {
+                "status": "error",
+                "message": f"Failed to analyze coverage: {str(e)}",
+                "coverage": None
+            }
+
+class ProxyTools:
+    def __init__(self):
+        self.proxy = CurriedProxy()
+        
+    def register_tool(self, tool_path: str, tool_name: str) -> dict:
+        """Register tool with global CurriedProxy."""
+        try:
+            # Import the tool module
+            spec = importlib.util.spec_from_file_location(tool_name, tool_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            # Get the tool class
+            tool_class = getattr(module, tool_name)
+            
+            # Register the tool
+            self.proxy.register_tool(tool_class)
+            
+            return {
+                "status": "success",
+                "message": f"Tool {tool_name} registered successfully",
+                "tool_info": {
+                    "name": tool_name,
+                    "path": tool_path,
+                    "class": tool_class.__name__
+                }
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to register tool: {str(e)}",
+                "tool_info": None
+            }
 
 class URLTools:
-    """Tool for fetching data from URLs."""
-    
-    async def get_data_from_url(self, url: str) -> str:
-        """
-        Fetch content from a URL using aiohttp.
+    def __init__(self):
+        self.session = aiohttp.ClientSession()
         
-        :param url: The URL to fetch content from
-        :return: The content fetched from the URL
-        """
+    async def fetch_documentation(self, url: str) -> dict:
+        """Fetch documentation from URL."""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    return await response.text()
+            async with self.session.get(url) as response:
+                if response.status != 200:
+                    return {
+                        "status": "error",
+                        "message": f"Failed to fetch documentation: HTTP {response.status}",
+                        "content": None
+                    }
+                    
+                content = await response.text()
+                return {
+                    "status": "success",
+                    "message": f"Documentation fetched from {url}",
+                    "content": content
+                }
         except Exception as e:
-            logger.error(f"Error fetching URL: {str(e)}")
-            return f"Error: {str(e)}"
+            return {
+                "status": "error",
+                "message": f"Failed to fetch documentation: {str(e)}",
+                "content": None
+            }
+            
+    async def close(self):
+        """Close the aiohttp session."""
+        await self.session.close()
 
 async def setup_dynamic_tools_state():
-    """Setup CrewAI configuration for dynamic Langchain tools generation."""
+    """Initialize and configure the dynamic tools environment."""
+    url_tools = None  # Initialize outside try block for cleanup
     try:
-        # Initialize persistence model without Streamlit context
-        os.environ['STREAMLIT_RUN_MODE'] = 'script'
-        persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-        
-        # Create curried proxy and add tools with proper module info
-        curried_proxy = CurriedProxy()
-        
-        # Add tools with proper module information for serialization
-        tool_infos = [
-            ToolInfo(
-                name="FetchURL",
-                type="function",
-                tool_data={
-                    "name": "fetch_url",
-                    "description": "Fetch content from a URL using HTTP GET request",
-                    "function_module": "aiohttp",
-                    "class_name": "ClientSession",
-                    "is_method": True,
-                    "parameters": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to fetch content from",
-                            "required": True
-                        },
-                        "headers": {
-                            "type": "object",
-                            "description": "Optional HTTP headers to include in the request",
-                            "required": False
-                        }
-                    },
-                    "returns": {
-                        "type": "string",
-                        "description": "The content fetched from the URL"
-                    }
-                }
-            ),
-            ToolInfo(
-                name="FileTools",
-                type="function",
-                tool_data={
-                    "name": "FileTools",
-                    "description": "File operations for tool management",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "FileTools",
-                    "is_method": True,
-                    "parameters": {
-                        "base_dir": {
-                            "type": "string",
-                            "description": "Base directory for file operations",
-                            "required": False,
-                            "default": "tools"
-                        }
-                    }
-                }
-            ),
-            ToolInfo(
-                name="CredentialsTools",
-                type="function",
-                tool_data={
-                    "name": "CredentialsTools",
-                    "description": "Credentials management tools",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "CredentialsTools",
-                    "is_method": True,
-                    "parameters": {
-                        "env_path": {
-                            "type": "string",
-                            "description": "Path to the .env file",
-                            "required": False
-                        }
-                    }
-                }
-            ),
-            ToolInfo(
-                name="TestingTools",
-                type="function",
-                tool_data={
-                    "name": "TestingTools",
-                    "description": "Testing and validation tools",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "TestingTools",
-                    "is_method": True,
-                    "parameters": {
-                        "test_dir": {
-                            "type": "string",
-                            "description": "Directory containing test files",
-                            "required": False,
-                            "default": "tests"
-                        }
-                    }
-                }
-            ),
-            ToolInfo(
-                name="ProxyTools",
-                type="function",
-                tool_data={
-                    "name": "ProxyTools",
-                    "description": "Dynamic tool registration",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "ProxyTools",
-                    "is_method": True,
-                    "parameters": {
-                        "tool_name": {
-                            "type": "string",
-                            "description": "Name to register the tool under",
-                            "required": True
-                        },
-                        "tool_instance": {
-                            "type": "object",
-                            "description": "The tool instance to register",
-                            "required": True
-                        }
-                    },
-                    "returns": {
-                        "type": "object",
-                        "description": "Dictionary containing registration status and message"
-                    }
-                }
-            ),
-            ToolInfo(
-                name="URLTools",
-                type="function",
-                tool_data={
-                    "name": "get_data_from_url",
-                    "description": "Fetch content from a URL using HTTP GET request",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "URLTools",
-                    "is_method": True,
-                    "parameters": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to fetch content from",
-                            "required": True
-                        }
-                    },
-                    "returns": {
-                        "type": "string",
-                        "description": "The content fetched from the URL"
-                    }
-                }
-            )
-        ]
-        
-        # Initialize context database with proper configuration
-        context_db = ContextDatabase(
-            persist_directory="persistent_state/context/context_db",
-            batch_size=100
-        )
-        
-        # Initialize context provider with context database
-        context_provider = ContextProvider()
-        context_provider.context_db = context_db
-        knowledge_base = KnowledgeBase()
-        
-        # Create documentation links for navigation
-        langchain_docs = {
-            "Tool Creation Guide": "https://python.langchain.com/docs/modules/agents/tools/custom_tools",
-            "Tool Concepts": "https://python.langchain.com/docs/modules/agents/tools/",
-            "Tool Examples": "https://python.langchain.com/docs/integrations/tools",
-            "Agent Tools": "https://python.langchain.com/docs/modules/agents/tools/",
-            "Structured Tools": "https://python.langchain.com/docs/modules/agents/tools/structured"
-        }
-        
-        # Add documentation links to knowledge base
-        docs_content = "# Langchain Tools Documentation Links\n\n"
-        for title, url in langchain_docs.items():
-            docs_content += f"- [{title}]({url})\n"
-            
-        knowledge_id = await knowledge_base.add_knowledge(
-            content=docs_content,
-            domain="langchain",
-            metadata={
-                "type": "documentation_links",
-                "category": "tools",
-                "tags": ["tools", "documentation", "navigation"]
-            }
-        )
-        print(f"📚 Added Langchain documentation links to knowledge base: {knowledge_id}")
-        
-        # Create proxy info and reconstruct proxy
-        proxy_info = CurriedProxyInfo(tools=tool_infos)
-        curried_proxy = CurriedProxy.from_info(proxy_info)
-        
-        # Register tools in the catalog
+        # Initialize tools
         file_tools = FileTools()
-        credentials_tools = CredentialsTools()
         testing_tools = TestingTools()
         proxy_tools = ProxyTools()
-        url_tools = URLTools()
+        url_tools = URLTools()  # Store reference for cleanup
         
-        tools_catalog.register_tool(file_tools, "FileTools")
-        tools_catalog.register_tool(credentials_tools, "CredentialsTools")
-        tools_catalog.register_tool(testing_tools, "TestingTools")
-        tools_catalog.register_tool(proxy_tools, "ProxyTools")
-        tools_catalog.register_tool(url_tools, "URLTools")
+        # Create necessary directories
+        os.makedirs("src/tools", exist_ok=True)
+        os.makedirs("src/tools/tests", exist_ok=True)
         
-        print("🛠️ Registered tools in catalog")
+        # Initialize logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        logger = logging.getLogger(__name__)
         
-        # Store curried proxy in persistence model
-        curried_proxy_id = persistence_model.curried_proxies.create(curried_proxy).id
-        print(f"🔧 Created curried proxy with ID: {curried_proxy_id}")
-        
-        # Create CrewAI configuration
-        crew_request = CreateCrewRequest(
-            description="Dynamic Langchain Tools Generator",
+        # Set up CrewAI configuration
+        crew_config = CrewConfiguration(
             agents=[
                 AgentModel(
                     role="Security Manager",
-                    goal="Manage and validate project credentials securely",
-                    backstory="Security expert responsible for handling sensitive credentials and ensuring secure access patterns.",
+                    goal="Ensure secure handling of credentials and sensitive data",
+                    backstory="Security expert who validates and manages project credentials",
                     tools=[
                         ToolModel(
                             name="CredentialsTools.load_credentials",
@@ -452,63 +360,63 @@ async def setup_dynamic_tools_state():
                         ),
                         ToolModel(
                             name="CredentialsTools.validate_credentials",
-                            description="Validate required credentials"
+                            description="Validate required credentials are present and properly formatted"
                         )
                     ]
                 ),
                 AgentModel(
                     role="LangChain Tool Architect",
-                    goal="Design and specify new Langchain tools based on documentation analysis",
-                    backstory="Expert system architect specializing in Langchain integration and tool design. Starts by analyzing relevant documentation before creating specifications.",
+                    goal="Design and specify Langchain tools",
+                    backstory="Expert in Langchain architecture who creates tool specifications",
                     tools=[
                         ToolModel(
-                            name="URLTools.get_data_from_url",
-                            description="Fetch Langchain documentation content from URL"
+                            name="URLTools.fetch_documentation",
+                            description="Fetch Langchain documentation from URL to understand patterns and requirements"
                         ),
                         ToolModel(
                             name="FileTools.read_documentation",
-                            description="Read tool documentation from file"
+                            description="Read local documentation files for additional context"
                         )
                     ]
                 ),
                 AgentModel(
                     role="Tool Implementation Engineer",
                     goal="Implement Langchain tools following specifications and best practices",
-                    backstory="Senior developer with expertise in Langchain tool implementation.",
+                    backstory="Senior developer with expertise in Langchain tool implementation. Ensures code is saved in the correct location and follows project structure.",
                     tools=[
                         ToolModel(
                             name="FileTools.save_implementation",
-                            description="Save generated tool implementation to file"
+                            description="Save generated tool implementation to file. Returns a dictionary with status, message, and path."
                         ),
                         ToolModel(
                             name="ProxyTools.register_tool",
-                            description="Register tool with global CurriedProxy"
+                            description="Register tool with global CurriedProxy for dynamic loading"
                         )
                     ]
                 ),
                 AgentModel(
                     role="Test Engineer",
                     goal="Create comprehensive test suites for tools",
-                    backstory="Testing specialist who writes thorough unit tests.",
+                    backstory="Testing specialist who writes thorough unit tests and ensures they are saved in the correct location.",
                     tools=[
                         ToolModel(
                             name="FileTools.save_tests",
-                            description="Save test code to file"
+                            description="Save test code to file. Returns a dictionary with status, message, and path."
                         )
                     ]
                 ),
                 AgentModel(
                     role="QA Automation Engineer",
                     goal="Automate and execute tests, ensure quality",
-                    backstory="Quality assurance expert who automates testing processes and validates results.",
+                    backstory="Quality assurance expert who automates testing processes and validates results. Verifies that tests are properly saved and executable.",
                     tools=[
                         ToolModel(
                             name="TestingTools.run_unit_tests",
-                            description="Run unit tests and get results"
+                            description="Run unit tests and get results. Expects test file path from FileTools.save_tests response."
                         ),
                         ToolModel(
                             name="TestingTools.validate_test_coverage",
-                            description="Calculate test coverage"
+                            description="Calculate test coverage and ensure it meets quality standards. Expects test file path from FileTools.save_tests response."
                         )
                     ]
                 )
@@ -516,256 +424,94 @@ async def setup_dynamic_tools_state():
             tasks=[
                 TaskModel(
                     description="Load and validate project credentials",
-                    expected_output="Credentials loaded and validated successfully",
+                    expected_output="""Credentials validation report:
+                    {
+                        "status": "success",
+                        "credentials": {
+                            "loaded": true,
+                            "validated": true,
+                            "missing": []
+                        }
+                    }""",
                     agent_role="Security Manager"
                 ),
                 TaskModel(
                     description="Analyze Langchain documentation and create tool specification",
-                    expected_output="""
-                    1. List of relevant documentation pages visited
-                    2. Key patterns and requirements identified
-                    3. Tool specification document created
-                    """,
+                    expected_output="""Documentation analysis report:
+                    {
+                        "status": "success",
+                        "documentation": {
+                            "pages_visited": ["<url_list>"],
+                            "patterns_identified": ["<pattern_list>"],
+                            "specification": "<tool_spec_content>"
+                        }
+                    }""",
                     agent_role="LangChain Tool Architect",
                     depends_on=["Load and validate project credentials"]
                 ),
                 TaskModel(
                     description="Implement the tool following Langchain patterns",
-                    expected_output="Tool implementation code generated and saved",
+                    expected_output="""Implementation report:
+                    {
+                        "status": "success",
+                        "implementation": {
+                            "code_saved": true,
+                            "file_path": "<file_path>",
+                            "tool_registered": true
+                        }
+                    }""",
                     agent_role="Tool Implementation Engineer",
                     depends_on=["Analyze Langchain documentation and create tool specification"]
                 ),
                 TaskModel(
                     description="Create comprehensive unit tests",
-                    expected_output="Test suite created and saved",
+                    expected_output="""Test creation report:
+                    {
+                        "status": "success",
+                        "tests": {
+                            "saved": true,
+                            "file_path": "<file_path>",
+                            "test_cases": ["<test_case_list>"]
+                        }
+                    }""",
                     agent_role="Test Engineer",
                     depends_on=["Implement the tool following Langchain patterns"]
                 ),
                 TaskModel(
                     description="Execute tests and validate coverage",
-                    expected_output="Test execution report with coverage metrics",
+                    expected_output="""Test execution report:
+                    {
+                        "status": "success",
+                        "execution": {
+                            "tests_run": "<number>",
+                            "passed": "<number>",
+                            "failed": "<number>",
+                            "coverage_percentage": "<number>"
+                        }
+                    }""",
                     agent_role="QA Automation Engineer",
                     depends_on=["Create comprehensive unit tests"]
                 )
             ],
-            tools_proxy_collection=ToolsProxyCollection(
-                toolsets=[],
-                functions=[],
-                objects=[
-                    ObjectToolSpec(
-                        name="FileTools",
-                        object_type="FileTools",
-                        methods=[
-                            "FileTools.read_documentation",
-                            "FileTools.save_implementation",
-                            "FileTools.save_tests"
-                        ]
-                    ),
-                    ObjectToolSpec(
-                        name="CredentialsTools",
-                        object_type="CredentialsTools",
-                        methods=[
-                            "CredentialsTools.load_credentials",
-                            "CredentialsTools.validate_credentials"
-                        ]
-                    ),
-                    ObjectToolSpec(
-                        name="TestingTools",
-                        object_type="TestingTools",
-                        methods=[
-                            "TestingTools.run_unit_tests",
-                            "TestingTools.validate_test_coverage"
-                        ]
-                    ),
-                    ObjectToolSpec(
-                        name="ProxyTools",
-                        object_type="ProxyTools",
-                        methods=[
-                            "ProxyTools.register_tool"
-                        ]
-                    )
-                ]
-            )
         )
         
-        # Create crew and store configuration
-        crew = await create_crew(crew_request, curried_proxy)
-        crewai_config = persistence_model.crewai_config.create(CrewAIConfig(create_crew=crew_request))
-        print(f"👥 Created CrewAI configuration with ID: {crewai_config.id}")
-        
-        # Create TasksManager for dynamic tools
-        tasksmanager = TasksManager(
-            name="Dynamic Langchain Tools Generator",
-            model="gpt-4o",
-            description="Manages the generation and integration of Langchain tools",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are a specialized AI assistant coordinating the creation of Langchain tools.
-                    Your team consists of specialized agents:
-                    
-                    1. Security Manager
-                    - Handles project credentials securely
-                    - Validates required credentials
-                    - Ensures secure access patterns
-                    
-                    2. LangChain Tool Architect
-                    - Analyzes tool documentation and requirements
-                    - Creates detailed specifications for implementation
-                    - Ensures alignment with Langchain patterns
-                    
-                    3. Tool Implementation Engineer
-                    - Implements tools based on specifications
-                    - Follows Langchain's tool interface requirements
-                    - Ensures proper error handling and type hints
-                    - Registers tools with global CurriedProxy
-                    
-                    4. Test Engineer
-                    - Creates comprehensive unit tests
-                    - Ensures test coverage of all functionality
-                    - Follows testing best practices
-                    
-                    5. QA Automation Engineer
-                    - Executes automated tests
-                    - Validates test coverage
-                    - Ensures quality standards are met
-                    
-                    The tools must be compatible with Langchain's patterns:
-                    - Implement required methods (_run, _arun)
-                    - Include proper type hints and documentation
-                    - Handle errors appropriately
-                    - Support async operations when needed
-                    
-                    Tools will be integrated with our DynamicToolsLoader system,
-                    so ensure they support:
-                    - Dynamic registration with global CurriedProxy
-                    - Runtime loading
-                    - Proper state management
-                    - Tool discovery mechanisms
-                    
-                    The process follows these steps:
-                    1. Validate credentials and security
-                    2. Analyze requirements and create specifications
-                    3. Implement tool following specifications
-                    4. Create comprehensive tests
-                    5. Execute tests and validate quality"""
-                }
-            ]
-        )
-        tasksmanager = persistence_model.tasksmanagers.create(tasksmanager)
-        print(f"📋 Created tasks manager with ID: {tasksmanager.id}")
-        
-        # Create Task
-        task = Task(
-            name="Generate Dynamic Langchain Tool",
-            description="Generate and integrate a new Langchain tool",
-            tasksmanager_id=tasksmanager.id,
-            crewai_config_id=crewai_config.id,
-            curried_proxy_id=curried_proxy_id,
-            use_context=True,
-            inherit_manager_context=True
-        )
-        task = persistence_model.tasks.create(task)
-        print(f"✨ Created task with ID: {task.id}")
-        
-        # Now handle the Langchain tools documentation
-        docs_path = Path("docs/langchain_tools/langchain_tools.md")
-        if not docs_path.exists():
-            print(f"🔴 Langchain tools documentation not found at {docs_path}")
-            return
-            
-        with open(docs_path, 'r', encoding='utf-8') as f:
-            langchain_docs = f.read()
-            
-        print(f"📚 Loaded Langchain tools documentation from {docs_path}")
-        
-        # Check if documentation already exists in knowledge base
-        existing_entries = knowledge_base.get_knowledge(
-            domain="langchain",
-            tags=["tools", "documentation"]
-        )
-        
-        if existing_entries:
-            print("🔍 Found existing Langchain tools documentation in knowledge base")
-            knowledge_id = existing_entries[0]["id"]  # Use existing entry
-        else:
-            # Create new knowledge base entry for Langchain tools documentation
-            knowledge_id = await knowledge_base.add_knowledge(
-                content=langchain_docs,
-                domain="langchain",
-                metadata={
-                    "source": "docs/langchain_tools/langchain_tools.md",
-                    "type": "documentation",
-                    "category": "tools",
-                    "tags": ["tools", "documentation"]
-                }
-            )
-            print(f"📝 Created new knowledge base entry: {knowledge_id}")
-        
-        # Now that we have the task and knowledge base entry, add contexts
-        existing_contexts = await context_provider.get_task_contexts(task.id)
-        has_langchain_docs = any(
-            ctx.get('type') == 'knowledge' and 
-            ctx.get('source_id') == str(knowledge_id)
-            for ctx in existing_contexts
-        )
-        
-        if not has_langchain_docs:
-            # Add knowledge base context to task
-            await context_provider.add_context_to_task(
-                task_id=task.id,
-                type="knowledge",
-                source_id=str(knowledge_id),
-                priority=100,  # High priority as this is essential documentation
-                metadata={
-                    "name": "langchain_tools_docs",
-                    "description": "Official Langchain tools documentation",
-                    "tags_str": ",".join(["langchain", "tools", "documentation"]),
-                    "source": "docs/langchain_tools/langchain_tools.md"
-                }
-            )
-            print(f"🔗 Added knowledge base context to task")
-        else:
-            print("✅ Task already has Langchain tools documentation context")
-        
-        # Add system context with tool creation guide
-        await context_provider.add_system_context(
-            task_id=task.id,
-            name="langchain_tools_guide",
-            content="""# Langchain Tool Creation Guide
-            # ... (keep existing guide content)
-            """,
-            description="Guide for creating Langchain tools",
-            tags=["langchain", "tools", "guide"],
-            priority=90  # Slightly lower priority than the official docs
-        )
-        print("🔧 Added tool creation guide context")
-        
-        # Save state
-        state_location = StorageLocation(
-            type=StorageType.file,
-            location="state/specialized",
-            state_name="dynamic_tools_state.json"
-        )
-        
-        # Ensure the state directory exists
-        os.makedirs("state/specialized", exist_ok=True)
-        
-        # Save persistence state
-        result = save_to_storage(state_location)
-        print(f"💾 Dynamic tools state saved: {result}")
-        
-        # Return state info
+        # Return initialized state
         return {
-            "tasksmanager_id": tasksmanager.id,
-            "task_id": task.id,
-            "curried_proxy_id": curried_proxy_id,
-            "crewai_config_id": crewai_config.id
+            "file_tools": file_tools,
+            "testing_tools": testing_tools,
+            "proxy_tools": proxy_tools,
+            "url_tools": url_tools,
+            "crew_config": crew_config,
+            "logger": logger
         }
         
     except Exception as e:
-        print(f"Error setting up dynamic tools state: {str(e)}")
+        logger.error(f"Failed to set up dynamic tools state: {str(e)}")
         raise
+    finally:
+        # Clean up aiohttp session if it was created
+        if url_tools is not None:
+            await url_tools.close()
 
 if __name__ == "__main__":
     asyncio.run(setup_dynamic_tools_state()) 

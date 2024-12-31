@@ -31,6 +31,7 @@ class ToolsCatalogController:
     
     def __init__(self, persistence_model):
         self.global_persistence = persistence_model
+        self.persistence_model = persistence_model
         self.view_state = ViewState(view_name="tools_catalog")
         self.state_manager = ViewStateManager(persistence_model)
         self.local_persistence = None
@@ -60,6 +61,7 @@ class ToolsCatalogController:
             # Create local persistence model and load state from string
             self.local_persistence = InMemoryPersistenceModel()
             self.local_persistence.from_json(json_str=json_str)
+            self.persistence_model = self.local_persistence
             
             if self.local_persistence:
                 print("✅ Local persistence model created")
@@ -74,6 +76,26 @@ class ToolsCatalogController:
                 tasks = self.local_persistence.tasks.list()
                 
                 print(f"📊 Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                
+                # Debug tools catalog state
+                print("\n🔍 Checking tools catalog state...")
+                try:
+                    catalog_tools = tools_catalog.list_tools()
+                    print(f"📦 Found {len(catalog_tools)} tools in catalog:")
+                    for tool in catalog_tools:
+                        print(f"  - {tool}")
+                except Exception as e:
+                    print(f"❌ Error listing catalog tools: {str(e)}")
+                
+                # Debug persisted tools
+                print("\n🔍 Checking persisted tools...")
+                try:
+                    persisted_tools = self.global_persistence.tools.list()
+                    print(f"💾 Found {len(persisted_tools)} persisted tools:")
+                    for tool in persisted_tools:
+                        print(f"  - {tool.name}")
+                except Exception as e:
+                    print(f"❌ Error listing persisted tools: {str(e)}")
                 
                 if task_managers and tasks:
                     # Find the tools management manager and task
@@ -111,8 +133,11 @@ class ToolsCatalogController:
     async def get_tools_tree(self) -> Optional[TreeNode]:
         """Get tools catalog as tree structure."""
         try:
+            print("\n🌳 Building tools catalog tree...")
+            
             # Create root node
             root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Tools Catalog", "root")
+            print("✅ Created root node")
             
             # Create category nodes with fixed UUIDs for consistency
             categories = {
@@ -147,6 +172,7 @@ class ToolsCatalogController:
                     "category"
                 )
             }
+            print("✅ Created category nodes")
             
             # Add all categories to root (even if empty)
             for category in categories.values():
@@ -155,14 +181,16 @@ class ToolsCatalogController:
             # Try to get tools from both sources
             try:
                 persisted_tools = self.global_persistence.tools.list()
+                print(f"\n📦 Found {len(persisted_tools)} persisted tools")
             except Exception as e:
-                print(f"Error getting persisted tools: {str(e)}")
+                print(f"❌ Error getting persisted tools: {str(e)}")
                 persisted_tools = []
             
             try:
                 catalog_tool_names = tools_catalog.list_tools()
+                print(f"📦 Found {len(catalog_tool_names)} catalog tools")
             except Exception as e:
-                print(f"Error getting catalog tools: {str(e)}")
+                print(f"❌ Error getting catalog tools: {str(e)}")
                 catalog_tool_names = []
             
             # Process persisted tools if any
@@ -194,9 +222,10 @@ class ToolsCatalogController:
                         
                         # Add tool to appropriate category
                         categories[category].children.append(tool_node)
+                        print(f"✅ Added persisted tool '{tool.name}' to {category} category")
                         
                     except Exception as e:
-                        print(f"Error processing persisted tool {tool.id}: {str(e)}")
+                        print(f"❌ Error processing persisted tool {tool.id}: {str(e)}")
             
             # Process catalog tools if any
             if catalog_tool_names:
@@ -205,11 +234,11 @@ class ToolsCatalogController:
                         # Get tool instance
                         tool = tools_catalog.get_tool_instance(tool_name)
                         if not tool:
+                            print(f"⚠️ Could not get instance for tool '{tool_name}'")
                             continue
                         
                         # Create unique UUID based on tool name
-                        tool_uuid = uuid4() # UUID(bytes=tool_name.encode()[:16], version=3)
-                        # print(f"Creating tool node for {tool_name} with UUID {tool_uuid}")
+                        tool_uuid = uuid4()
                         tool_node = TreeNode(
                             tool_uuid,
                             tool_name,
@@ -239,16 +268,19 @@ class ToolsCatalogController:
                         
                         # Add tool to appropriate category
                         categories[category].children.append(tool_node)
+                        print(f"✅ Added catalog tool '{tool_name}' to {category} category")
                         
                     except Exception as e:
-                        print(f"Error processing catalog tool {tool_name}: {str(e)}")
+                        print(f"❌ Error processing catalog tool {tool_name}: {str(e)}")
             
             # Sort tools within each category
             for category in categories.values():
                 category.children.sort(key=lambda x: x.name)
+            print("\n📋 Sorted tools within categories")
             
             # Add empty state indicators to categories
-            for category in categories.values():
+            empty_categories = []
+            for category_name, category in categories.items():
                 if not category.children:
                     empty_node = TreeNode(
                         uuid4(),
@@ -256,11 +288,16 @@ class ToolsCatalogController:
                         "empty"
                     )
                     category.children.append(empty_node)
+                    empty_categories.append(category_name)
             
+            if empty_categories:
+                print(f"ℹ️ Empty categories: {', '.join(empty_categories)}")
+            
+            print("✅ Tools catalog tree built successfully")
             return root
             
         except Exception as e:
-            print(f"Error building tools tree: {str(e)}")
+            print(f"❌ Error building tools tree: {str(e)}")
             return None
             
     async def handle_chat(self, message: str) -> str:
@@ -528,20 +565,8 @@ class ToolsCatalogController:
         except Exception as e:
             raise StateError(f"Failed to get active tools: {str(e)}")
         
-    def show_tool_dialog(self) -> Optional[Dict[str, Any]]:
-        """Show dialog for adding/configuring tools."""
-        dialog = ToolDialog(self.view_state, self.persistence_model)
-        result = dialog.render()
-        
-        if result:
-            # TODO: Implement tool creation/configuration
-            if hasattr(self.persistence_model, 'tools'):
-                return self.persistence_model.tools.create(result)
-        return None
-        
     def handle_node_click(self, node: TreeNode):
         """Handle tree node click events."""
         self.view_state.selected_node = node.id
-        if node.type == "tool":
-            # Show tool configuration dialog
-            self.show_tool_dialog()
+        # No action needed for node clicks in this version
+        pass
