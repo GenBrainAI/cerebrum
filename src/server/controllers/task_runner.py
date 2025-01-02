@@ -61,15 +61,21 @@ class TaskExecutor:
         return self.task.tasksmanager_id
 
 class TaskRunner:
-    """Runs tasks with proper context and observability."""
-    
+    """Runner for executing tasks."""
+
     def __init__(self, persistence_model: Any):
-        """Initialize the task runner."""
+        """Initialize TaskRunner with persistence model."""
         self.persistence_model = persistence_model
-        self.context_provider = ContextProvider()
+        self.tools_operator = ToolsOperator()
+        self.observability_managers: Dict[str, TaskObservabilityManager] = {}
+        self.context_provider = ContextProvider(persistence_model)
+        self.context_analytics = ContextAnalytics()
         self._active_observability_managers = {}
-        self.logger = logging.getLogger(__name__)
-        self.operator = None  # Will be initialized in initialize()
+        self._active_tasks = set()  # Track currently running tasks
+        self._task_locks = {}  # Locks for each task
+        self._task_results = {}  # Store task results
+        self._task_errors = {}  # Store task errors
+        self._task_status = {}  # Store task status
 
     async def initialize(self):
         """Initialize the task runner components."""

@@ -13,35 +13,32 @@
 
 
 from __future__ import annotations
-import pprint
-import re  # noqa: F401
+from datetime import datetime
+from typing import Any, Dict, List, Optional, ClassVar
+from pydantic import BaseModel, StrictStr
 import json
-
-
-
-
-from pydantic import BaseModel, ConfigDict, StrictStr
-from typing import Any, ClassVar, Dict, List, Optional
-try:
-    from typing import Self
-except ImportError:
-    from typing_extensions import Self
+import pprint
+from ...models.function import Function
 
 class Tool(BaseModel):
     """
     Tool
     """ # noqa: E501
-    function: Optional[StrictStr] = None
+    id: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    function: Optional[Function] = None
     arguments: Optional[Dict[str, Any]] = None
     settings: Optional[Dict[str, Any]] = None
-    __properties: ClassVar[List[str]] = ["function", "arguments", "settings"]
+    type: Optional[str] = "function"
+    __properties: ClassVar[List[str]] = ["id", "name", "description", "function", "arguments", "settings", "type"]
 
     model_config = {
         "populate_by_name": True,
         "validate_assignment": True,
         "protected_namespaces": (),
+        "arbitrary_types_allowed": True
     }
-
 
     def to_str(self) -> str:
         """Returns the string representation of the model using alias"""
@@ -49,34 +46,27 @@ class Tool(BaseModel):
 
     def to_json(self) -> str:
         """Returns the JSON representation of the model using alias"""
-        # TODO: pydantic v2: use .model_dump_json(by_alias=True, exclude_unset=True) instead
         return json.dumps(self.to_dict())
 
     @classmethod
-    def from_json(cls, json_str: str) -> Self:
+    def from_json(cls, json_str: str) -> Tool:
         """Create an instance of Tool from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
-        """Return the dictionary representation of the model using alias.
-
-        This has the following differences from calling pydantic's
-        `self.model_dump(by_alias=True)`:
-
-        * `None` is only added to the output dict for nullable fields that
-          were set at model initialization. Other fields with value `None`
-          are ignored.
-        """
+        """Return the dictionary representation of the model using alias."""
         _dict = self.model_dump(
             by_alias=True,
-            exclude={
-            },
+            exclude={},
             exclude_none=True,
         )
+        # Convert function to dict if it exists
+        if self.function and isinstance(self.function, Function):
+            _dict["function"] = self.function.model_dump()
         return _dict
 
     @classmethod
-    def from_dict(cls, obj: Dict) -> Self:
+    def from_dict(cls, obj: Dict) -> Tool:
         """Create an instance of Tool from a dict"""
         if obj is None:
             return None
@@ -84,10 +74,24 @@ class Tool(BaseModel):
         if not isinstance(obj, dict):
             return cls.model_validate(obj)
 
+        # Convert function dict to Function object if it exists
+        function_data = obj.get("function")
+        if isinstance(function_data, dict):
+            function = Function.model_validate(function_data)
+        elif isinstance(function_data, str):
+            # Handle case where function is a string (name only)
+            function = Function(name=function_data)
+        else:
+            function = None
+
         _obj = cls.model_validate({
-            "function": obj.get("function"),
+            "id": obj.get("id"),
+            "name": obj.get("name"),
+            "description": obj.get("description"),
+            "function": function,
             "arguments": obj.get("arguments"),
-            "settings": obj.get("settings")
+            "settings": obj.get("settings"),
+            "type": obj.get("type", "function")
         })
         return _obj
 

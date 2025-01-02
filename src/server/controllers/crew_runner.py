@@ -7,7 +7,19 @@ from ..controllers.curried_proxy import CurriedProxy
 def format_response(response: Union[str, Dict[str, Any], Any]) -> str:
     """Format the crew response into a string."""
     if isinstance(response, str):
-        return response
+        try:
+            # Try to parse as JSON first
+            parsed = json.loads(response)
+            # If it's already a string representation of JSON, return it
+            if isinstance(parsed, str):
+                try:
+                    json.loads(parsed)  # Try to parse again to validate
+                    return parsed
+                except json.JSONDecodeError:
+                    return json.dumps(parsed)
+            return response
+        except json.JSONDecodeError:
+            return response
     elif isinstance(response, dict):
         try:
             return json.dumps(response)

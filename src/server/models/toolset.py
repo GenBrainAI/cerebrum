@@ -1,10 +1,7 @@
 from __future__ import annotations
-from datetime import date, datetime
-
-import re
+from datetime import datetime
 from typing import Any, Dict, List, Optional
-
-from pydantic import AnyUrl, BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, Field
 from .toolset_credentials import ToolsetCredentials
 from .function import Function
 
@@ -30,6 +27,15 @@ class Toolset(BaseModel):
     updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
     tool_ids: Optional[List[str]] = Field(alias="tool_ids", default=None)
 
+    model_config = {
+        "populate_by_name": True,
+        "validate_assignment": True,
+        "protected_namespaces": (),
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+    }
 
 class Tool(BaseModel):
     id: Optional[str] = Field(alias="id", default=None)
@@ -37,5 +43,53 @@ class Tool(BaseModel):
     type: str = Field(alias="type", default="function")
     created_at: Optional[datetime] = Field(alias="created_at", default=None)
     updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
+
+    model_config = {
+        "populate_by_name": True,
+        "validate_assignment": True,
+        "protected_namespaces": (),
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+    }
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Custom model dump to handle datetime serialization"""
+        data = super().model_dump(**kwargs)
+        # Handle datetime fields
+        if self.created_at:
+            data["created_at"] = self.created_at.isoformat()
+        if self.updated_at:
+            data["updated_at"] = self.updated_at.isoformat()
+        # Handle function field
+        if self.function:
+            data["function"] = self.function.model_dump()
+        return data
+
+    @classmethod
+    def model_validate(cls, obj: Dict[str, Any]) -> Tool:
+        """Custom validation to handle datetime and function parsing"""
+        if not isinstance(obj, dict):
+            raise ValueError(f"Expected dict, got {type(obj)}")
+        
+        # Parse datetime fields
+        for field in ["created_at", "updated_at"]:
+            if field in obj and isinstance(obj[field], str):
+                try:
+                    obj[field] = datetime.fromisoformat(obj[field])
+                except (ValueError, TypeError):
+                    obj[field] = None
+        
+        # Parse function field
+        if "function" in obj:
+            if isinstance(obj["function"], dict):
+                obj["function"] = Function.model_validate(obj["function"])
+            elif isinstance(obj["function"], str):
+                obj["function"] = Function(name=obj["function"])
+            elif not isinstance(obj["function"], Function):
+                raise ValueError(f"Invalid function type: {type(obj['function'])}")
+        
+        return super().model_validate(obj)
 
 Toolset.update_forward_refs()

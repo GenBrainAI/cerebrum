@@ -8,14 +8,14 @@ import re
 from datetime import datetime
 from uuid import UUID, uuid4
 from pydantic import BaseModel, Field, create_model
-from typing import Dict, Any, List, Type, Union, Optional
+from typing import Dict, Any, List, Type, Union, Optional, cast
 from crewai_tools import BaseTool as CrewAITool
 from crewai_tools.tools.rag.rag_tool import RagTool
 from langchain.tools import BaseTool as LangChainTool
 from ..tools.tools_catalog import ToolsCatalog, tools_catalog, ParameterInfo
 from ..models.tools_descriptors import ToolMetadata, ToolType
 from ..models.toolset import Tool
-from ..models.function import ResolvedSchema
+from ..models.function import ResolvedSchema, ParameterSchema
 from ..models.curried_proxy_info import CurriedProxyInfo, ToolInfo
 from crewai_tools import BaseTool as CrewAITool
 
@@ -43,6 +43,17 @@ class CurriedProxy(BaseModel):
                     name=name,
                     type='tool',
                     tool_data=tool_metadata.original_obj.dict() if hasattr(tool_metadata.original_obj, 'dict') else {}
+                )
+            elif tool_metadata.tool_type == ToolType.CREWAI_TOOL:
+                # Handle CrewAI tools using their name attribute
+                tool_info = ToolInfo(
+                    name=name,
+                    type='crewai',
+                    tool_data={
+                        'name': name,
+                        'description': tool_metadata.description,
+                        'function_name': getattr(tool_metadata.original_obj, 'name', name)
+                    }
                 )
             else:
                 # Handle Python functions and methods
@@ -267,12 +278,19 @@ class CurriedProxy(BaseModel):
 
         for param_type, params in parameters.items():
             if param_type == 'requestBody':
-                # For requestBody, directly use the schema properties
-                if isinstance(params, ResolvedSchema):
+                # For requestBody, extract the schema from the nested structure
+                if isinstance(params, dict) and 'requestBody' in params:
+                    request_body = params['requestBody']
+                    if isinstance(request_body, ParameterSchema) and request_body.schema:
+                        converted = self._convert_schema(request_body.schema)
+                        schema["properties"] = converted.get("properties", {})
+                        if request_body.required:
+                            schema["required"].extend(converted.get("required", []))
+                elif isinstance(params, ResolvedSchema):
                     converted = self._convert_schema(params)
-                    schema["properties"] = converted.get("properties", {})  # Use the properties directly
-                else:
-                    schema["properties"] = self._convert_schema(params).get("properties", {})
+                    schema["properties"] = converted.get("properties", {})
+                    if params.required:
+                        schema["required"].extend(params.required)
             else:
                 # Handle other parameter types
                 for name, param in params.items():
@@ -441,15 +459,16 @@ class CurriedProxy(BaseModel):
             
             # Handle credentials from the tool's function
             if function.credentials:
-                if function.credentials.auth_type and function.credentials.auth_key:
-                    headers["Authorization"] = f"{function.credentials.auth_type}: {function.credentials.auth_key}"
+                if function.credentials.get('auth_type') and function.credentials.get('auth_key'):
+                    # Use the exact auth type from credentials without modifying case
+                    headers["Authorization"] = f"{function.credentials['auth_type']} {function.credentials['auth_key']}"
                     
             # Initialize parameter containers
             query_params = {}
             header_params = {}
             path_params = {}
             body_params = None
-
+            
             # Process parameters based on their location
             for param_type, params in function.parameters.items():
                 if param_type == 'query':
@@ -459,7 +478,7 @@ class CurriedProxy(BaseModel):
                 elif param_type == 'path':
                     path_params = {k: arguments.get(k) for k, v in params.items() if k in arguments}
                 elif param_type == 'requestBody':
-                    # Use the schema directly from the OpenAPI definition
+                    # For request body, use the arguments directly as they should match the schema
                     body_params = arguments
                     
             # Update headers with custom header parameters

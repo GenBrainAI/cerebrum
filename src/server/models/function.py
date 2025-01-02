@@ -1,54 +1,78 @@
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List, Union
+from __future__ import annotations
 from datetime import datetime
-from .toolset_credentials import ToolsetCredentials
-
-class ServerInfo(BaseModel):
-    url: str
-
-class Info(BaseModel):
-    title: str
-    version: str
-    description: Optional[str] = None
-
-class ResolvedSchema(BaseModel):
-    type: Optional[str] = None
-    properties: Optional[Dict[str, 'ResolvedSchema']] = None
-    items: Optional['ResolvedSchema'] = None
-    description: Optional[str] = None
-    required: Optional[List[str]] = None
-
-ResolvedSchema.update_forward_refs()
-
-class ParameterSchema(BaseModel):
-    name: Optional[str] = None
-    in_: Optional[str] = Field(None, alias='in')
-    description: Optional[str] = None
-    required: Optional[bool] = None
-    schema: ResolvedSchema
-
-class ResponseContent(BaseModel):
-    description: str
-    content: Dict[str, Dict[str, ResolvedSchema]]
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
+from .schema import ServerInfo, Info, ResolvedSchema, ParameterSchema, ResponseContent
 
 class Function(BaseModel):
-    id: Optional[str] = None
+    """Function model for tool definitions"""
     name: str
+    description: Optional[str] = None
+    parameters: Dict[str, Dict[str, ParameterSchema]] = Field(default_factory=dict)
+    responses: Dict[str, ResponseContent] = Field(default_factory=dict)
+    credentials: Optional[Dict[str, Any]] = None
+    toolsetId: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    url: Optional[str] = None
+    method: Optional[str] = None
+    servers: List[ServerInfo] = Field(default_factory=list)
+
+    model_config = {
+        "populate_by_name": True,
+        "validate_assignment": True,
+        "protected_namespaces": (),
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+    }
+
+    def model_dump(self, **kwargs) -> Dict[str, Any]:
+        """Custom model dump to handle datetime serialization"""
+        data = super().model_dump(**kwargs)
+        # Handle datetime fields
+        if self.created_at:
+            data["created_at"] = self.created_at.isoformat()
+        if self.updated_at:
+            data["updated_at"] = self.updated_at.isoformat()
+        return data
+
+    @classmethod
+    def model_validate(cls, obj: Dict[str, Any]) -> Function:
+        """Custom validation to handle datetime parsing"""
+        if isinstance(obj, str):
+            # If obj is a string, treat it as the function name
+            return cls(name=obj)
+        
+        if not isinstance(obj, dict):
+            raise ValueError(f"Expected dict or str, got {type(obj)}")
+        
+        # Parse datetime fields if they exist
+        for field in ["created_at", "updated_at"]:
+            if field in obj and isinstance(obj[field], str):
+                try:
+                    obj[field] = datetime.fromisoformat(obj[field])
+                except (ValueError, TypeError):
+                    obj[field] = None
+        
+        return super().model_validate(obj)
+
+class OpenAPIFunction(Function):
+    """OpenAPI-specific function model"""
     url: str
     method: str
-    description: str
     info: Info
     servers: List[ServerInfo]
-    parameters: Optional[Dict[str, Union[Dict[str, ParameterSchema], ResolvedSchema]]]
-    responses: Optional[Dict[str, ResponseContent]]
-    credentials: Optional[ToolsetCredentials] = None
-    toolsetId: Optional[str] = None
-    created_at: Optional[datetime] = Field(default=None)
-    updated_at: Optional[datetime] = Field(default=None)
+    parameters: Optional[Dict[str, Dict[str, ParameterSchema]]] = None
+    responses: Optional[Dict[str, ResponseContent]] = None
 
-class Tool(BaseModel):
-    id: Optional[str] = Field(alias="id", default=None)
-    function: Function
-    type: str = Field(alias="type", default="function")
-    created_at: Optional[datetime] = Field(alias="created_at", default=None)
-    updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
+    model_config = {
+        "populate_by_name": True,
+        "validate_assignment": True,
+        "protected_namespaces": (),
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            datetime: lambda v: v.isoformat() if v else None
+        }
+    }
