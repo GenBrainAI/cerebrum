@@ -1,7 +1,18 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Type, Union, get_type_hints
+from typing import Any, Dict, List, Optional, Union, Type
+from pydantic import BaseModel
+import logging
 import inspect
 import docstring_parser
+from enum import Enum
+from ..models.schema import ResolvedSchema, ParameterSchema
+from ..models.tools_descriptors import (
+    ToolType,
+    ParameterInfo,
+    ReturnInfo,
+    ToolMetadata,
+    DocstringInfo
+)
 from os import getenv
 from dotenv import load_dotenv
 from crewai_tools import (
@@ -15,9 +26,10 @@ from ..tools.file_tool import FileTool
 from ..tools.github_tool import GitHubTool
 from ..tools.microservices_tool import MicroservicesTool
 from ..tools.sms_tool import SMSTool
-from ..models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
 from ..models.toolset import Tool
-from ..models.function import ResolvedSchema
+from .internal_file_tools import InternalFileTools
+from .internal_testing_tools import InternalTestingTools
+from .internal_proxy_tools import InternalProxyTools
 
 load_dotenv()
 
@@ -98,6 +110,16 @@ class ToolsCatalog:
 
     def _initialize_default_tools(self):
         """Initialize the catalog with the default tools."""
+        # Initialize internal tools first
+        internal_file_tools = InternalFileTools()
+        internal_testing_tools = InternalTestingTools()
+        internal_proxy_tools = InternalProxyTools()
+        
+        self.register_tool(internal_file_tools, "internal_file_tools")
+        self.register_tool(internal_testing_tools, "internal_testing_tools")
+        self.register_tool(internal_proxy_tools, "internal_proxy_tools")
+        
+        # Initialize other default tools
         self.DEFAULT_TOOLS = {
             "WebsiteSearchTool": WebsiteSearchTool(),
             "SerperDevTool": SerperDevTool(),
@@ -519,14 +541,40 @@ class ToolsCatalog:
         if function.parameters:
             for param_location, params in function.parameters.items():
                 if param_location == 'requestBody':
-                    if isinstance(params, ResolvedSchema) and params.properties:
-                        # For request body, include the full structure
+                    if isinstance(params, dict) and 'requestBody' in params:
+                        request_body = params['requestBody']
+                        if isinstance(request_body, ParameterSchema) and request_body.schema:
+                            # Add the request body parameter itself
+                            parameters.append(ParameterInfo(
+                                name="requestBody",
+                                type_hint=str(request_body.schema),
+                                description=request_body.description or "Request body following schema",
+                                required=request_body.required
+                            ))
+                            # Also extract individual parameters from the request body schema
+                            for prop_name, prop_schema in request_body.schema.properties.items():
+                                parameters.append(ParameterInfo(
+                                    name=prop_name,
+                                    type_hint=str(prop_schema.type),
+                                    description=prop_schema.description or f"Parameter {prop_name}",
+                                    required=prop_name in (request_body.schema.required or [])
+                                ))
+                    elif isinstance(params, ResolvedSchema) and params.properties:
+                        # Add the request body parameter itself
                         parameters.append(ParameterInfo(
                             name="requestBody",
-                            type_hint=str(params),  # Include full schema structure
+                            type_hint=str(params),
                             description="Request body following schema",
                             required=True
                         ))
+                        # Also extract individual parameters from the schema
+                        for prop_name, prop_schema in params.properties.items():
+                            parameters.append(ParameterInfo(
+                                name=prop_name,
+                                type_hint=str(prop_schema.type),
+                                description=prop_schema.description or f"Parameter {prop_name}",
+                                required=prop_name in (params.required or [])
+                            ))
                 else:
                     # Handle path, query, and header parameters
                     for param_name, param_schema in params.items():
@@ -554,6 +602,26 @@ class ToolsCatalog:
         self._tools[tool_name] = metadata
         return tool_name
 
+    @classmethod
+    def reset(cls):
+        """Reset the catalog state. Should only be used in tests."""
+        if cls._instance is not None:
+            # Clear instance state
+            cls._instance._tools.clear()
+            cls._instance._instances.clear()
+            cls._instance._functions.clear()
+            cls._instance._classes.clear()
+            
+            # Re-initialize with internal tools
+            cls._instance._initialize_default_tools()
+
 
 # Create the global instance
 tools_catalog = ToolsCatalog()
+
+# Initialize and register internal tools
+internal_file_tools = InternalFileTools()
+internal_testing_tools = InternalTestingTools()
+
+tools_catalog.register_tool(internal_file_tools, "internal_file_tools")
+tools_catalog.register_tool(internal_testing_tools, "internal_testing_tools")

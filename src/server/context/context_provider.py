@@ -18,10 +18,10 @@ from src.server.context.vector_store import VectorStore
 class ContextProvider:
     """Provides context for tasks by managing different context sources."""
     
-    def __init__(self):
+    def __init__(self, persistence_model=None):
         self.context_db = None  # Initialize when needed
         self._vector_store = None  # Initialize when needed
-        self._persistence_model = None  # Add private storage
+        self._persistence_model = persistence_model  # Store provided model or None
         self.knowledge_base = KnowledgeBase()
         self.system_context = SystemContextManager()
         self.task_context_manager = TaskContextManager()
@@ -32,7 +32,9 @@ class ContextProvider:
         """Get persistence model instance when needed"""
         if self._persistence_model is not None:
             return self._persistence_model
-        return PersistenceModelFactory.persistence_model()
+        # Use global singleton if no model was provided
+        self._persistence_model = PersistenceModelFactory.persistence_model()
+        return self._persistence_model
 
     @persistence_model.setter
     def persistence_model(self, value):

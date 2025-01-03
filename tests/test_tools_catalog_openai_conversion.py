@@ -1,6 +1,6 @@
 import pytest
 from src.server.tools.tools_catalog import ToolsCatalog
-from src.server.models.function import Function, ResolvedSchema, Info, ServerInfo
+from src.server.models.function import Function, ResolvedSchema, Info, ServerInfo, ParameterSchema
 from src.server.models.toolset import Tool
 from src.server.models.toolset_credentials import ToolsetCredentials
 from src.server.models.function import Function, ResolvedSchema, Info, ServerInfo, ResponseContent
@@ -36,17 +36,26 @@ def sample_resolved_schema():
 
 @pytest.fixture
 def sample_function(sample_resolved_schema):
+    credentials = ToolsetCredentials(auth_type="Bearer", auth_key="test")
     return Function(
         name="test_function",
         url="/test",
         method="post",
         description="Test function",
         parameters={
-            "requestBody": sample_resolved_schema
+            "requestBody": {
+                "requestBody": ParameterSchema(
+                    name="requestBody",
+                    in_="body",
+                    description="Request body schema",
+                    required=True,
+                    schema=sample_resolved_schema
+                )
+            }
         },
         info=Info(title="Test API", version="1.0"),
         servers=[ServerInfo(url="http://test.com")],
-        credentials=ToolsetCredentials(auth_type="Bearer", auth_key="test"),
+        credentials=credentials.model_dump(),
         responses={
             "200": ResponseContent(
                 description="Successful response",

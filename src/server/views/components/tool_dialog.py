@@ -1,32 +1,97 @@
-from ..models.view_state import ViewState
+import streamlit as st
 from typing import Optional, Dict, Any
+from ...models.tools_descriptors import ToolType
+from ...models.function import Tool
 
 class ToolDialog:
-    def __init__(self, view_state: ViewState, persistence_model):
+    """Dialog for adding/configuring tools."""
+    
+    def __init__(self, view_state, persistence_model):
         self.view_state = view_state
         self.persistence_model = persistence_model
-        self._has_streamlit = False
-        try:
-            import streamlit as st
-            self._has_streamlit = True
-            self._st = st
-        except ImportError:
-            pass
-
-    def render(self) -> Optional[Dict[str, Any]]:
-        """Render the tool configuration dialog."""
-        if not self._has_streamlit:
-            return None
+    
+    def render(self) -> Optional[Tool]:
+        """Render the tool dialog.
+        
+        Returns:
+            Tool object if created, None otherwise
+        """
+        with st.form("tool_dialog"):
+            st.subheader("Add New Tool")
             
-        with self._st.form("tool_config_form"):
-            name = self._st.text_input("Tool Name")
-            description = self._st.text_area("Description")
-            tool_type = self._st.selectbox("Tool Type", ["API", "Function", "LangChain", "Utility", "Custom"])
+            # Basic tool info
+            name = st.text_input("Tool Name", help="Name of the tool")
+            description = st.text_area("Description", help="Description of what the tool does")
             
-            if self._st.form_submit_button("Save"):
-                return {
-                    "name": name,
-                    "description": description,
-                    "tool_type": tool_type
-                }
+            # Tool type selection
+            tool_type = st.selectbox(
+                "Tool Type",
+                options=[t.value for t in ToolType],
+                help="Type of tool to create"
+            )
+            
+            # Additional fields based on tool type
+            extra_fields = {}
+            if tool_type == ToolType.API_TOOL.value:
+                extra_fields["base_url"] = st.text_input(
+                    "Base URL",
+                    help="Base URL for API endpoints"
+                )
+                extra_fields["auth_type"] = st.selectbox(
+                    "Authentication Type",
+                    options=["None", "Bearer", "Basic", "API Key"],
+                    help="Type of authentication required"
+                )
+                if extra_fields["auth_type"] != "None":
+                    extra_fields["auth_key"] = st.text_input(
+                        "Authentication Key",
+                        type="password",
+                        help="Authentication key or token"
+                    )
+            
+            elif tool_type == ToolType.FUNCTION_TOOL.value:
+                extra_fields["code"] = st.text_area(
+                    "Function Code",
+                    help="Python code for the function"
+                )
+                extra_fields["parameters"] = st.text_area(
+                    "Parameters (one per line)",
+                    help="Function parameters, one per line"
+                )
+            
+            elif tool_type == ToolType.UTILITY_TOOL.value:
+                extra_fields["command"] = st.text_input(
+                    "Command",
+                    help="Command to execute"
+                )
+                extra_fields["working_dir"] = st.text_input(
+                    "Working Directory",
+                    help="Working directory for the command"
+                )
+            
+            # Submit button
+            submitted = st.form_submit_button("Add Tool")
+            
+            if submitted:
+                if not name:
+                    st.error("Tool name is required")
+                    return None
+                
+                try:
+                    # Create tool object
+                    tool = Tool(
+                        name=name,
+                        description=description,
+                        tool_type=tool_type,
+                        metadata=extra_fields
+                    )
+                    
+                    # Save to persistence
+                    created_tool = self.persistence_model.tools.create(tool)
+                    return created_tool
+                    
+                except Exception as e:
+                    st.error(f"Error creating tool: {str(e)}")
+                    return None
+        
         return None 

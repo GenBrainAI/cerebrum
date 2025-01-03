@@ -14,32 +14,25 @@ from pathlib import Path
 # Add near the top of the file, after the imports
 s3_client = boto3.client('s3')
 
-def save_to_storage(location: StorageLocation, context_state: Optional[Dict] = None) -> str:
+def save_to_storage(persistence_model, location: StorageLocation) -> str:
     """Save current state to storage."""
-    persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-    
-    # Get the state as JSON
-    json_str = persistence_model.to_json()
-    
-    # If we have context state, add it to the JSON
-    if context_state:
-        # Parse existing JSON
-        state_data = json.loads(json_str)
-        # Add context state
-        state_data['context_state'] = context_state
-        # Convert back to JSON
-        json_str = json.dumps(state_data, indent=4)
-    
-    # Save based on storage type
-    if location.type == StorageType.file:
-        # Remove .json extension if it exists and add it back once
-        base_name = location.state_name.replace('.json', '')
-        file_path = Path(location.location) / f"{base_name}.json"
-        with open(file_path, "w") as f:
-            f.write(json_str)
-        return f"State saved to {file_path}"
-    else:
-        raise ValueError(f"Unsupported storage type: {location.type}")
+    try:
+        # Get the state as JSON
+        state_data = persistence_model.to_json()
+        
+        # Save based on storage type
+        if location.type == StorageType.file:
+            # Remove .json extension if it exists and add it back once
+            base_name = location.state_name.replace('.json', '')
+            file_path = Path(location.location) / f"{base_name}.json"
+            with open(file_path, "w") as f:
+                f.write(state_data)
+            return f"State saved to {file_path}"
+        else:
+            raise ValueError(f"Unsupported storage type: {location.type}")
+    except Exception as e:
+        logging.error(f"Error saving state: {str(e)}")
+        raise
 
 def load_from_storage(location: StorageLocation) -> str:
     try:

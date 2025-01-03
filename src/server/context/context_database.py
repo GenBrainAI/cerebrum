@@ -312,19 +312,34 @@ class ContextDatabase:
             context_id = f"{task_id}_{context_type}_{source_id}"
             
             # Store in ChromaDB with task-specific metadata
-            self.collection.add(
-                ids=[context_id],
-                documents=[json.dumps(metadata)],  # Store metadata as document
-                metadatas={
-                    "task_id": task_id,
-                    "type": context_type,
-                    "source_id": source_id,
-                    "priority": priority,
-                    **metadata
-                }
-            )
-            
-            logging.info(f"Stored context {context_id} for task {task_id}")
+            try:
+                self.collection.add(
+                    ids=[context_id],
+                    documents=[json.dumps(metadata)],  # Store metadata as document
+                    metadatas={
+                        "task_id": task_id,
+                        "type": context_type,
+                        "source_id": source_id,
+                        "priority": priority,
+                        **metadata
+                    }
+                )
+                logging.info(f"Stored context {context_id} for task {task_id}")
+            except Exception as chroma_error:
+                # If ChromaDB fails (e.g. due to OpenAI API error), store without embeddings
+                self.collection.add(
+                    ids=[context_id],
+                    documents=[json.dumps(metadata)],  # Store metadata as document
+                    metadatas={
+                        "task_id": task_id,
+                        "type": context_type,
+                        "source_id": source_id,
+                        "priority": priority,
+                        **metadata
+                    },
+                    embeddings=[[0.0] * 1536]  # Use zero vector as fallback
+                )
+                logging.warning(f"Stored context {context_id} without embeddings due to error: {str(chroma_error)}")
             
         except Exception as e:
             logging.error(f"Error storing context: {str(e)}")

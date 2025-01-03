@@ -53,6 +53,10 @@ def cleanup_curried_proxy(curried_proxy):
 
 @pytest.fixture
 def mock_tool():
+    credentials = ToolsetCredentials(
+        auth_type='Bearer',
+        auth_key='mock_token'
+    )
     return Tool(
         function=Function(
             name="mock_function",
@@ -91,10 +95,7 @@ def mock_tool():
                     }
                 )
             },
-            credentials=ToolsetCredentials(
-                auth_type='Bearer',
-                auth_key='mock_token'
-            )
+            credentials=credentials.model_dump()
         ),
         type="function"
     )
@@ -103,13 +104,16 @@ def mock_tool():
 @pytest.mark.asyncio
 async def test_add_and_use_api_tool(curried_proxy, mock_tool):
     # Check if mock_tool has credentials, if not, add them
-    if mock_tool.function.credentials is None or mock_tool.function.credentials.auth_type is None:
+    if mock_tool.function.credentials is None or mock_tool.function.credentials.get('auth_type') is None:
         mock_tool.function.credentials = ToolsetCredentials(
             auth_type="Bearer",
             auth_key="mock_token"
-        )
+        ).model_dump()
 
+    print(f"\nDebug - Mock tool before adding: {mock_tool.function.model_dump()}")
     curried_proxy.add_tool("mock_api", mock_tool)
+    print(f"\nDebug - Tool names after adding: {curried_proxy.list_tools()}")
+    print(f"\nDebug - Tool metadata: {curried_proxy.get_tool('mock_api')}")
 
     # Create a mock response
     mock_response = AsyncMock()
@@ -123,6 +127,7 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
         # Call the curried_proxy and await the result
         curried_func = curried_proxy.curried_proxy("mock_api")
         result = await curried_func({})
+        print(f"\nDebug - Result from curried_func: {result}")
 
         # Assertions
         # assert result == {"result": "success"}
@@ -135,7 +140,7 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
 
         assert kwargs['url'] == 'https://api.example.com/resource'
         assert 'Authorization' in kwargs['headers']
-        assert kwargs['headers']['Authorization'] == 'Bearer: mock_token'
+        assert kwargs['headers']['Authorization'] == 'Bearer mock_token'
         assert kwargs['headers']['Content-Type'] == 'application/x-www-form-urlencoded'
         assert kwargs['headers']['Accept'] == '*/*'
 
@@ -143,7 +148,7 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
         mock_response.json.assert_awaited_once()
 
     # Print debug information
-    print(f"Mock tool credentials after test: {mock_tool.function.credentials.dict()}")
+    print(f"Mock tool credentials after test: {mock_tool.function.credentials}")
 
 
 async def test_add_and_use_function_tool(curried_proxy):

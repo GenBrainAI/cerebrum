@@ -93,7 +93,16 @@ def create_toolset(credentials, name, description, swagger_content):
             parameters = {}
             for param_type, param_value in function_data['parameters'].items():
                 if param_type == 'requestBody':
-                    parameters[param_type] = ResolvedSchema.parse_obj(param_value)
+                    schema = ResolvedSchema.parse_obj(param_value)
+                    parameters[param_type] = {
+                        'requestBody': ParameterSchema(
+                            name='requestBody',
+                            in_='body',
+                            description='Request body schema',
+                            required=True,
+                            schema=schema
+                        )
+                    }
                 else:
                     parameters[param_type] = {
                         name: ParameterSchema(name=name, in_=param_type, **param_info)
@@ -106,7 +115,7 @@ def create_toolset(credentials, name, description, swagger_content):
                     description=resp_data['description'],
                     content={
                         content_type: {
-                            'schema': ResolvedSchema.parse_obj(content_schema)
+                            'schema': ResolvedSchema.parse_obj(content_schema).model_dump()
                         }
                         for content_type, content_schema in resp_data['content'].items()
                     }
@@ -123,7 +132,7 @@ def create_toolset(credentials, name, description, swagger_content):
                 responses=responses,
                 info=Info(**function_data['info']),
                 servers=[ServerInfo(**s) for s in function_data['servers']],
-                credentials=toolset_credentials,
+                credentials=toolset_credentials.model_dump(),
                 toolsetId=persisted_toolset.id
             )
 
@@ -227,7 +236,7 @@ async def generate_tools(
 
 @router.post("/state/save", status_code=status.HTTP_201_CREATED)
 async def save_state(storage: StorageLocation):
-    message = save_to_storage(storage)
+    message = save_to_storage(persistence_model, storage)
     return Response(
         content=message,
         status_code=status.HTTP_201_CREATED,

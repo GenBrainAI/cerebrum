@@ -1,383 +1,137 @@
+import logging
 import sys
 from pathlib import Path
+
+# Add project root to Python path
+project_root = str(Path(__file__).parents[2])  # Go up two levels to reach project root
+sys.path.append(project_root)
+
 import asyncio
 import os
 import json
-import dotenv
-from typing import Any, Dict
-import logging
+from typing import Dict, Any
 import aiohttp
+import uuid
+from datetime import datetime
 
-project_root = str(Path(__file__).parents[1])
-sys.path.append(project_root)
+from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
+from src.server.tools.tools_catalog import tools_catalog
+from src.server.tools.internal_file_tools import InternalFileTools
+from src.server.tools.internal_credentials_tools import InternalCredentialsTools
+from src.server.tools.internal_testing_tools import InternalTestingTools
+from src.server.tools.internal_proxy_tools import InternalProxyTools
+from src.server.tools.url_tools import URLTools
+from src.server.controllers.curried_proxy import CurriedProxy
+from src.server.models.agent import CrewAIConfig
+from src.server.models.tasks_manager import TasksManager
+from src.server.models.task import Task
+from src.server.models.task_context_model import ContextReference
+from src.server.context.context_database import ContextDatabase
+from src.server.context.context_provider import ContextProvider
+from src.server.context.knowledge_base import KnowledgeBase
+from src.server.controllers.agents_controller import CreateCrewRequest, AgentModel, TaskModel
+from src.server.models.agent import ToolsProxyCollection, ObjectToolSpec, ToolModel
+from src.server.controllers.agents_controller import create_crew
+from src.server.models.persistence_models import StorageLocation, StorageType
+from src.server.controllers.persistence_controller import save_to_storage
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.tools.github_tool import GitHubTool
 
 # Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Disable Streamlit warnings
 logging.getLogger('streamlit').setLevel(logging.ERROR)
 
-from server.tools.tools_catalog import tools_catalog
-from server.persistence.persistence_model_factory import PersistenceModelFactory
-from server.models.tasks_manager import TasksManager
-from server.models.task import Task
-from server.models.agent import (
-    CreateCrewRequest, 
-    AgentModel, 
-    TaskModel, 
-    ToolModel,
-    ToolsProxyCollection,
-    ObjectToolSpec,
-    CrewAIConfig
-)
-from server.models.persistence_models import StorageLocation, StorageType
-from server.controllers.curried_proxy import CurriedProxy
-from server.controllers.agents_controller import create_crew
-from server.controllers.persistence_controller import save_to_storage
-from server.models.curried_proxy_info import CurriedProxyInfo, ToolInfo
-from server.context.context_provider import ContextProvider
-from server.context.knowledge_base import KnowledgeBase
-from server.context.context_database import ContextDatabase
+async def add_langchain_tools_docs_to_knowledge_base(persistence_model: InMemoryPersistenceModel) -> None:
+    """Add Langchain tools documentation to the knowledge base."""
+    # Load documentation from file
+    docs_path = Path("docs/langchain_tools/langchain_tools.md")
+    if not docs_path.exists():
+        print(f"🔴 Langchain tools documentation not found at {docs_path}")
+        return
 
-class FileTools:
-    """Tool for handling file operations related to documentation and code."""
-    
-    def __init__(self, base_dir: str = "tools"):
-        self.base_dir = base_dir
-        os.makedirs(base_dir, exist_ok=True)
+    with open(docs_path, 'r', encoding='utf-8') as f:
+        langchain_docs = f.read()
+    print(f"📚 Loaded Langchain tools documentation from {docs_path}")
 
-    async def read_documentation(self, file_path: str) -> str:
-        """
-        Read documentation from a file.
-        
-        :param file_path: Path to the documentation file
-        :return: Content of the documentation file
-        """
-        try:
-            with open(file_path, 'r') as f:
-                return f.read()
-        except Exception as e:
-            logger.error(f"Error reading documentation: {str(e)}")
-            return f"Error: {str(e)}"
+    # Add to knowledge base
+    knowledge_id = "knowledge_53_4863043375099098577"  # Fixed ID for testing
+    print("🔍 Found existing Langchain tools documentation in knowledge base")
 
-    async def save_implementation(self, code: str, file_path: str) -> Dict[str, Any]:
-        """
-        Save generated code to a file.
-        
-        :param code: The code content to save
-        :param file_path: Path where to save the code
-        :return: Dictionary containing save status
-        """
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w') as f:
-                f.write(code)
-            return {"status": "success", "message": f"Code saved to {file_path}"}
-        except Exception as e:
-            logger.error(f"Error saving implementation: {str(e)}")
-            return {"status": "error", "message": str(e)}
+    # Add knowledge base context
+    context = ContextReference(
+        type="knowledge",
+        source_id=f"knowledge_{knowledge_id}",
+        metadata={
+            "name": "langchain_tools_docs",
+            "description": "Official Langchain tools documentation",
+            "tags_str": "langchain,tools,documentation",
+            "source": "docs/langchain_tools/langchain_tools.md"
+        },
+        priority=100
+    )
+    task = persistence_model.tasks.get(task_id)
+    task.contexts = [context]
+    persistence_model.tasks.update(task)
+    print("🔗 Added knowledge base context to task")
 
-    async def save_tests(self, test_code: str, file_path: str) -> Dict[str, Any]:
-        """
-        Save test code to a file.
-        
-        :param test_code: The test code content to save
-        :param file_path: Path where to save the tests
-        :return: Dictionary containing save status
-        """
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w') as f:
-                f.write(test_code)
-            return {"status": "success", "message": f"Tests saved to {file_path}"}
-        except Exception as e:
-            logger.error(f"Error saving tests: {str(e)}")
-            return {"status": "error", "message": str(e)}
+async def add_tool_creation_guide_context(persistence_model: InMemoryPersistenceModel, task_id: str) -> None:
+    """Add tool creation guide context to the task."""
+    # Add context reference
+    context_id = str(uuid.uuid4())
+    source_id = "knowledge_53_4863043375099098577"
+    metadata = {
+        'name': 'langchain_tools_docs',
+        'description': 'Official Langchain tools documentation',
+        'tags_str': 'langchain,tools,documentation',
+        'source': 'docs/langchain_tools/langchain_tools.md'
+    }
+    print(f"Debug - Adding context to task {task_id}:")
+    print(f"Type: knowledge")
+    print(f"Source ID: {source_id}")
+    print(f"Priority: 100")
+    print(f"Metadata: {metadata}")
 
-class CredentialsTools:
-    """Tool for managing project credentials."""
-    
-    def __init__(self, env_path: str = None):
-        self.env_path = env_path or os.path.join(project_root, '.env')
+    # Get the task
+    task = persistence_model.tasks.read(task_id)
+    if task is None:
+        raise ValueError(f"Task {task_id} not found")
 
-    async def load_credentials(self) -> Dict[str, Any]:
-        """
-        Load credentials from .env file.
-        
-        :return: Dictionary containing credentials or error message
-        """
-        try:
-            creds = dotenv.dotenv_values(self.env_path)
-            return {"status": "success", "credentials": creds}
-        except Exception as e:
-            logger.error(f"Error loading credentials: {str(e)}")
-            return {"status": "error", "message": str(e)}
+    # Create context reference
+    context_ref = {
+        'id': context_id,
+        'type': 'knowledge',
+        'source_id': source_id,
+        'metadata': metadata,
+        'priority': 100,
+        'created_at': datetime.now()
+    }
 
-    async def validate_credentials(self, credentials: Dict[str, str]) -> Dict[str, Any]:
-        """
-        Validate that required credentials are present.
-        
-        :param credentials: Dictionary of credentials to validate
-        :return: Dictionary containing validation status
-        """
-        required_keys = ['API_KEY', 'DATABASE_URL']
-        missing = [key for key in required_keys if key not in credentials]
-        if missing:
-            return {
-                "status": "error",
-                "message": f"Missing required credentials: {', '.join(missing)}"
-            }
-        return {"status": "success", "message": "All required credentials present"}
+    # Add context to task
+    if task.contexts is None:
+        task.contexts = []
+    task.contexts.append(context_ref)
 
-class TestingTools:
-    """Tool for running tests and validating coverage."""
-    
-    def __init__(self, test_dir: str = "tests"):
-        self.test_dir = test_dir
+    # Update task in persistence model
+    persistence_model.tasks.update(task_id, task)
 
-    async def run_unit_tests(self, test_file: str) -> Dict[str, Any]:
-        """
-        Run unit tests and return results.
-        
-        :param test_file: Path to the test file to run
-        :return: Dictionary containing test results
-        """
-        try:
-            import unittest
-            loader = unittest.TestLoader()
-            suite = loader.discover(os.path.dirname(test_file))
-            runner = unittest.TextTestRunner(verbosity=2)
-            result = runner.run(suite)
-            return {
-                "status": "success",
-                "results": {
-                    "tests_run": result.testsRun,
-                    "errors": len(result.errors),
-                    "failures": len(result.failures),
-                    "skipped": len(result.skipped)
-                }
-            }
-        except Exception as e:
-            logger.error(f"Error running tests: {str(e)}")
-            return {"status": "error", "message": str(e)}
+    print("Debug - Creating new task context for", task_id)
+    print("Debug - Added context reference:", context_ref)
 
-    async def validate_test_coverage(self, test_file: str) -> Dict[str, Any]:
-        """
-        Calculate test coverage percentage.
-        
-        :param test_file: Path to the test file to analyze
-        :return: Dictionary containing coverage results
-        """
-        try:
-            import coverage
-            cov = coverage.Coverage()
-            cov.start()
-            await self.run_unit_tests(test_file)
-            cov.stop()
-            coverage_result = cov.report()
-            return {
-                "status": "success",
-                "coverage_percentage": coverage_result
-            }
-        except ImportError:
-            return {
-                "status": "error",
-                "message": "Coverage package not installed"
-            }
-        except Exception as e:
-            logger.error(f"Error calculating coverage: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-class ProxyTools:
-    """Tool for managing dynamic tool registration."""
-    
-    def __init__(self):
-        self.registered_tools = set()
-
-    async def register_tool(self, tool_name: str, tool_instance: Any) -> Dict[str, Any]:
-        """
-        Register a tool with the global CurriedProxy.
-        
-        :param tool_name: Name to register the tool under
-        :param tool_instance: The tool instance to register
-        :return: Dictionary containing registration status
-        """
-        try:
-            from server.controllers.curried_proxy import global_proxy
-            global_proxy.add_tool(tool_name, tool_instance)
-            self.registered_tools.add(tool_name)
-            return {
-                "status": "success",
-                "message": f"Tool {tool_name} registered successfully"
-            }
-        except Exception as e:
-            logger.error(f"Error registering tool: {str(e)}")
-            return {"status": "error", "message": str(e)}
-
-class URLTools:
-    """Tool for fetching data from URLs."""
-    
-    async def get_data_from_url(self, url: str) -> str:
-        """
-        Fetch content from a URL using aiohttp.
-        
-        :param url: The URL to fetch content from
-        :return: The content fetched from the URL
-        """
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    return await response.text()
-        except Exception as e:
-            logger.error(f"Error fetching URL: {str(e)}")
-            return f"Error: {str(e)}"
-
-async def setup_dynamic_tools_state():
-    """Setup CrewAI configuration for dynamic Langchain tools generation."""
+async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel) -> Dict[str, Any]:
+    """Set up the dynamic tools state."""
     try:
-        # Initialize persistence model without Streamlit context
-        os.environ['STREAMLIT_RUN_MODE'] = 'script'
-        persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-        
-        # Create curried proxy and add tools with proper module info
-        curried_proxy = CurriedProxy()
-        
-        # Add tools with proper module information for serialization
-        tool_infos = [
-            ToolInfo(
-                name="FetchURL",
-                type="function",
-                tool_data={
-                    "name": "fetch_url",
-                    "description": "Fetch content from a URL using HTTP GET request",
-                    "function_module": "aiohttp",
-                    "class_name": "ClientSession",
-                    "is_method": True,
-                    "parameters": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to fetch content from",
-                            "required": True
-                        },
-                        "headers": {
-                            "type": "object",
-                            "description": "Optional HTTP headers to include in the request",
-                            "required": False
-                        }
-                    },
-                    "returns": {
-                        "type": "string",
-                        "description": "The content fetched from the URL"
-                    }
-                }
-            ),
-            ToolInfo(
-                name="FileTools",
-                type="function",
-                tool_data={
-                    "name": "FileTools",
-                    "description": "File operations for tool management",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "FileTools",
-                    "is_method": True,
-                    "parameters": {
-                        "base_dir": {
-                            "type": "string",
-                            "description": "Base directory for file operations",
-                            "required": False,
-                            "default": "tools"
-                        }
-                    }
-                }
-            ),
-            ToolInfo(
-                name="CredentialsTools",
-                type="function",
-                tool_data={
-                    "name": "CredentialsTools",
-                    "description": "Credentials management tools",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "CredentialsTools",
-                    "is_method": True,
-                    "parameters": {
-                        "env_path": {
-                            "type": "string",
-                            "description": "Path to the .env file",
-                            "required": False
-                        }
-                    }
-                }
-            ),
-            ToolInfo(
-                name="TestingTools",
-                type="function",
-                tool_data={
-                    "name": "TestingTools",
-                    "description": "Testing and validation tools",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "TestingTools",
-                    "is_method": True,
-                    "parameters": {
-                        "test_dir": {
-                            "type": "string",
-                            "description": "Directory containing test files",
-                            "required": False,
-                            "default": "tests"
-                        }
-                    }
-                }
-            ),
-            ToolInfo(
-                name="ProxyTools",
-                type="function",
-                tool_data={
-                    "name": "ProxyTools",
-                    "description": "Dynamic tool registration",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "ProxyTools",
-                    "is_method": True,
-                    "parameters": {
-                        "tool_name": {
-                            "type": "string",
-                            "description": "Name to register the tool under",
-                            "required": True
-                        },
-                        "tool_instance": {
-                            "type": "object",
-                            "description": "The tool instance to register",
-                            "required": True
-                        }
-                    },
-                    "returns": {
-                        "type": "object",
-                        "description": "Dictionary containing registration status and message"
-                    }
-                }
-            ),
-            ToolInfo(
-                name="URLTools",
-                type="function",
-                tool_data={
-                    "name": "get_data_from_url",
-                    "description": "Fetch content from a URL using HTTP GET request",
-                    "function_module": "src.state_setup.dynamic_tools",
-                    "class_name": "URLTools",
-                    "is_method": True,
-                    "parameters": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to fetch content from",
-                            "required": True
-                        }
-                    },
-                    "returns": {
-                        "type": "string",
-                        "description": "The content fetched from the URL"
-                    }
-                }
-            )
-        ]
-        
+        # Register tools in catalog
+        tools_catalog.register_class("internal_file_tools", InternalFileTools)
+        tools_catalog.register_class("internal_credentials_tools", InternalCredentialsTools)
+        tools_catalog.register_class("internal_testing_tools", InternalTestingTools)
+        tools_catalog.register_class("internal_proxy_tools", InternalProxyTools)
+        tools_catalog.register_class("url_tools", URLTools)
+        tools_catalog.register_class("GitHubTool", GitHubTool)  # Register GitHubTool class directly
+        print("🛠️ Registered tools in catalog")
+
         # Initialize context database with proper configuration
         context_db = ContextDatabase(
             persist_directory="persistent_state/context/context_db",
@@ -414,29 +168,27 @@ async def setup_dynamic_tools_state():
         )
         print(f"📚 Added Langchain documentation links to knowledge base: {knowledge_id}")
         
-        # Create proxy info and reconstruct proxy
-        proxy_info = CurriedProxyInfo(tools=tool_infos)
-        curried_proxy = CurriedProxy.from_info(proxy_info)
+
+        # Create curried proxy
+        curried_proxy = CurriedProxy()
         
-        # Register tools in the catalog
-        file_tools = FileTools()
-        credentials_tools = CredentialsTools()
-        testing_tools = TestingTools()
-        proxy_tools = ProxyTools()
-        url_tools = URLTools()
+        # Register tools with the proxy
+        for tool_name in tools_catalog.list_tools():
+            print(f"\nDebug - Processing tool: {tool_name}")
+            tool_instance = tools_catalog.get_tool_instance(tool_name)
+            if tool_instance:
+                print(f"Debug - Tool instance type: {type(tool_instance)}")
+                tool_metadata = tools_catalog.get_tool(tool_name)
+                if tool_metadata:
+                    print(f"Debug - Tool metadata:")
+                    print(f"  - Type: {tool_metadata.tool_type}")
+                    print(f"  - Original obj: {type(tool_metadata.original_obj)}")
+                    print(f"  - Has __name__: {hasattr(tool_metadata.original_obj, '__name__')}")
+                curried_proxy.add_tool(tool_name, tool_instance)
         
-        tools_catalog.register_tool(file_tools, "FileTools")
-        tools_catalog.register_tool(credentials_tools, "CredentialsTools")
-        tools_catalog.register_tool(testing_tools, "TestingTools")
-        tools_catalog.register_tool(proxy_tools, "ProxyTools")
-        tools_catalog.register_tool(url_tools, "URLTools")
-        
-        print("🛠️ Registered tools in catalog")
-        
-        # Store curried proxy in persistence model
         curried_proxy_id = persistence_model.curried_proxies.create(curried_proxy).id
         print(f"🔧 Created curried proxy with ID: {curried_proxy_id}")
-        
+
         # Create CrewAI configuration
         crew_request = CreateCrewRequest(
             description="Dynamic Langchain Tools Generator",
@@ -596,7 +348,7 @@ async def setup_dynamic_tools_state():
         # Create TasksManager for dynamic tools
         tasksmanager = TasksManager(
             name="Dynamic Langchain Tools Generator",
-            model="gpt-4o",
+            model="gpt-4",
             description="Manages the generation and integration of Langchain tools",
             messages=[
                 {
@@ -752,7 +504,7 @@ async def setup_dynamic_tools_state():
         os.makedirs("state/specialized", exist_ok=True)
         
         # Save persistence state
-        result = save_to_storage(state_location)
+        result = save_to_storage(persistence_model, state_location)
         print(f"💾 Dynamic tools state saved: {result}")
         
         # Return state info
@@ -762,10 +514,13 @@ async def setup_dynamic_tools_state():
             "curried_proxy_id": curried_proxy_id,
             "crewai_config_id": crewai_config.id
         }
-        
     except Exception as e:
-        print(f"Error setting up dynamic tools state: {str(e)}")
+        print(f"❌ Error setting up dynamic tools state: {e}")
         raise
 
+
 if __name__ == "__main__":
-    asyncio.run(setup_dynamic_tools_state()) 
+        # Initialize persistence model without Streamlit context
+    os.environ['STREAMLIT_RUN_MODE'] = 'script'
+    persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+    asyncio.run(setup_dynamic_tools_state(persistence_model)) 

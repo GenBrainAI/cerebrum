@@ -7,7 +7,19 @@ from ..controllers.curried_proxy import CurriedProxy
 def format_response(response: Union[str, Dict[str, Any], Any]) -> str:
     """Format the crew response into a string."""
     if isinstance(response, str):
-        return response
+        try:
+            # Try to parse as JSON first
+            parsed = json.loads(response)
+            # If it's already a string representation of JSON, return it
+            if isinstance(parsed, str):
+                try:
+                    json.loads(parsed)  # Try to parse again to validate
+                    return parsed
+                except json.JSONDecodeError:
+                    return json.dumps(parsed)
+            return response
+        except json.JSONDecodeError:
+            return response
     elif isinstance(response, dict):
         try:
             return json.dumps(response)
@@ -27,16 +39,33 @@ def format_response(response: Union[str, Dict[str, Any], Any]) -> str:
         except Exception:
             return "N/S"  # Non-serializable object
 
-async def run_crew_task(task_id: str, task_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Execute a CrewAI task."""
+async def run_crew_task(
+    task_id: str, 
+    task_input: Optional[Dict[str, Any]] = None,
+    persistence_model: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Execute a CrewAI task.
+    
+    Args:
+        task_id: The ID of the task to run
+        task_input: Optional input parameters for the task
+        persistence_model: Optional persistence model to use. If None, uses global persistence.
+    """
     try:
-        persistence_model = PersistenceModelFactory.persistence_model()
+        # Use provided persistence model or get global one
+        if persistence_model is None:
+            persistence_model = PersistenceModelFactory.persistence_model()
+            print("🌍 Using global persistence model")
+        else:
+            print(f"🔧 Using provided persistence model: {type(persistence_model)}")
         
-        # Get the task and its CrewAI configuration
+        # Debug task lookup
+        print(f"\n🔍 Looking for task {task_id} in persistence model")
         task = persistence_model.tasks.read(task_id)
-        if not task or not task.crewai_config_id:
-            raise ValueError(f"Task {task_id} not found or is not a CrewAI task")
-            
+        if not task:
+            raise ValueError(f"Task {task_id} not found in persistence model")
+        print(f"✅ Found task: {task.name}")
+        
         crewai_config = persistence_model.crewai_config.read(task.crewai_config_id)
         if not crewai_config:
             raise ValueError(f"CrewAI configuration {task.crewai_config_id} not found")
@@ -64,6 +93,8 @@ async def run_crew_task(task_id: str, task_input: Optional[Dict[str, Any]] = Non
             "status": "success"
         }
     except Exception as e:
+        error_msg = f"run_crew_task failed with error: {str(e)}"
+        print(f"❌ {error_msg}")
         return {
             "response": f"run_crew_task failed with error: {str(e)}",
             "status": "error"

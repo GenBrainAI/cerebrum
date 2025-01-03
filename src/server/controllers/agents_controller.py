@@ -90,7 +90,7 @@ async def create_crew(
                 
             task = Task(
                 description=task_data.description,
-                expected_output=task_data.expected_output,
+                expected_output=str(task_data.expected_output),
                 agent=agent
             )
             tasks.append(task)
