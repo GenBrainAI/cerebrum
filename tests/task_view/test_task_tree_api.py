@@ -3,6 +3,14 @@ from fastapi.testclient import TestClient
 from src.server.models.message import Message
 from src.server.utils.task_utils import find_file
 from src.server.controllers.tasks_tree_controller import ExecutionStrategy
+from src.server.tools.tools_catalog import tools_catalog
+
+@pytest.fixture(autouse=True)
+def cleanup_tools():
+    """Cleanup fixture that runs automatically before and after each test."""
+    tools_catalog.reset()
+    yield
+    tools_catalog.reset()
 
 def test_complex_calculator_tree(client: TestClient):
     # Read the calculator swagger YAML for complex number operations
@@ -34,6 +42,7 @@ def test_complex_calculator_tree(client: TestClient):
     root_system_message = Message(
         role="system",
         content="""You are a math expert that compares results of complex number calculations.
+        When you receive results from the calculator tasks, they will be in the format {"result": number}.
         Compare the results provided and indicate if there are any differences.
         Provide ONLY the final result if they match, or highlight the differences if they don't.
         Do not include any explanations or additional text."""
@@ -54,6 +63,14 @@ def test_complex_calculator_tree(client: TestClient):
         role="system",
         content="""You are a math expert that performs complex number calculations.
         Use the calculator API to perform the requested calculations.
+        For complex numbers like a + bi, split them into two numbers and use the calculator API twice:
+        1. First calculate with the real parts (a)
+        2. Then calculate with the imaginary parts (b)
+        3. Combine the results in the format: {"result": real_result} for real parts and {"result": imag_result} for imaginary parts
+        For example, to multiply (3 + 4i) * (2 - 3i):
+        1. Real part: (3 * 2) - (4 * -3) = 6 + 12 = 18
+        2. Imaginary part: (3 * -3) + (4 * 2) = -9 + 8 = -1
+        Result: {"result": 18}; {"result": -1}
         Provide ONLY the numerical results without any explanation."""
     )
     calc_a_task_data = {
@@ -72,6 +89,14 @@ def test_complex_calculator_tree(client: TestClient):
         role="system",
         content="""You are a math expert that performs complex number calculations.
         Use the calculator API to perform the requested calculations.
+        For complex numbers like a + bi, split them into two numbers and use the calculator API twice:
+        1. First calculate with the real parts (a)
+        2. Then calculate with the imaginary parts (b)
+        3. Combine the results in the format: {"result": real_result} for real parts and {"result": imag_result} for imaginary parts
+        For example, to multiply (3 + 4i) * (2 - 3i):
+        1. Real part: (3 * 2) - (4 * -3) = 6 + 12 = 18
+        2. Imaginary part: (3 * -3) + (4 * 2) = -9 + 8 = -1
+        Result: {"result": 18}; {"result": -1}
         Provide ONLY the numerical results without any explanation."""
     )
     calc_b_task_data = {

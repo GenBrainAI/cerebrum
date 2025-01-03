@@ -29,6 +29,7 @@ from ..tools.sms_tool import SMSTool
 from ..models.toolset import Tool
 from .internal_file_tools import InternalFileTools
 from .internal_testing_tools import InternalTestingTools
+from .internal_proxy_tools import InternalProxyTools
 
 load_dotenv()
 
@@ -109,6 +110,16 @@ class ToolsCatalog:
 
     def _initialize_default_tools(self):
         """Initialize the catalog with the default tools."""
+        # Initialize internal tools first
+        internal_file_tools = InternalFileTools()
+        internal_testing_tools = InternalTestingTools()
+        internal_proxy_tools = InternalProxyTools()
+        
+        self.register_tool(internal_file_tools, "internal_file_tools")
+        self.register_tool(internal_testing_tools, "internal_testing_tools")
+        self.register_tool(internal_proxy_tools, "internal_proxy_tools")
+        
+        # Initialize other default tools
         self.DEFAULT_TOOLS = {
             "WebsiteSearchTool": WebsiteSearchTool(),
             "SerperDevTool": SerperDevTool(),
@@ -590,6 +601,19 @@ class ToolsCatalog:
 
         self._tools[tool_name] = metadata
         return tool_name
+
+    @classmethod
+    def reset(cls):
+        """Reset the catalog state. Should only be used in tests."""
+        if cls._instance is not None:
+            # Clear instance state
+            cls._instance._tools.clear()
+            cls._instance._instances.clear()
+            cls._instance._functions.clear()
+            cls._instance._classes.clear()
+            
+            # Re-initialize with internal tools
+            cls._instance._initialize_default_tools()
 
 
 # Create the global instance

@@ -3,8 +3,17 @@
 from fastapi.testclient import TestClient
 import pytest
 from src.server.main import app
+import pytest_asyncio
+from src.server.tools.tools_catalog import tools_catalog
 
 client = TestClient(app)
+
+@pytest.fixture(autouse=True)
+def cleanup_tools():
+    """Cleanup fixture that runs automatically before and after each test."""
+    tools_catalog.reset()
+    yield
+    tools_catalog.reset()
 
 @pytest.mark.unit
 def test_create_agents_and_tasks():

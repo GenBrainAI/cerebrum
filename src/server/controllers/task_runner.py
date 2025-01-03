@@ -6,7 +6,8 @@ import asyncio
 from ..models.message import Message
 from ..models.tasks_manager import TasksManager
 from ..models.task import Task
-from ..controllers.operator import ToolsOperator
+from ..controllers.tools_operator import ToolsOperator
+from ..controllers.operator import ToolsOperator as APIOperator
 from ..controllers.curried_proxy import CurriedProxy
 from ..controllers.crew_runner import run_crew_task
 from ..context.context_provider import ContextProvider
@@ -67,6 +68,7 @@ class TaskRunner:
         """Initialize TaskRunner with persistence model."""
         self.persistence_model = persistence_model
         self.tools_operator = ToolsOperator()
+        self.operator = APIOperator()
         self.observability_managers: Dict[str, TaskObservabilityManager] = {}
         self.context_provider = ContextProvider(persistence_model)
         self.context_analytics = ContextAnalytics()
@@ -85,7 +87,7 @@ class TaskRunner:
             if not hasattr(self, 'operator') or not self.operator:
                 print("⚙️ Initializing ToolsOperator")
                 # Initialize with default OpenAI provider
-                self.operator = ToolsOperator(api_provider="openai")
+                self.operator = APIOperator(api_provider="openai")
                 print("✅ ToolsOperator initialized")
             
             # Initialize context provider if needed

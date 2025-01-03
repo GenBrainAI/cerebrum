@@ -26,105 +26,102 @@ class CurriedProxy(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tool_names: List[str] = Field(default_factory=list)
     catalog: ToolsCatalog = Field(default_factory=lambda: tools_catalog)
+    name_counter: Dict[str, int] = {}
     
     class Config:
         arbitrary_types_allowed = True
 
     def to_info(self) -> CurriedProxyInfo:
-        """Convert current CurriedProxy to CurriedProxyInfo"""
+        """Convert CurriedProxy to CurriedProxyInfo for serialization."""
         tools = []
-        for name in self.tool_names:
-            tool_metadata = self.catalog.get_tool(name)
+        for tool_name in self.tool_names:
+            tool_metadata = self.catalog.get_tool(tool_name)
             if not tool_metadata:
                 continue
-                
+
             if tool_metadata.tool_type == ToolType.OPENAPI_TOOL:
-                tool_info = ToolInfo(
-                    name=name,
-                    type='tool',
-                    tool_data=tool_metadata.original_obj.dict() if hasattr(tool_metadata.original_obj, 'dict') else {}
-                )
+                # Handle OpenAPI tools
+                tool = self.catalog.get_tool_instance(tool_name)
+                if not tool:
+                    continue
+                tools.append(ToolInfo(
+                    name=tool_name,
+                    type="tool",
+                    tool_data=tool.model_dump()
+                ))
             elif tool_metadata.tool_type == ToolType.CREWAI_TOOL:
-                # Handle CrewAI tools using their name attribute
-                tool_info = ToolInfo(
-                    name=name,
-                    type='crewai',
-                    tool_data={
-                        'name': name,
-                        'description': tool_metadata.description,
-                        'function_name': getattr(tool_metadata.original_obj, 'name', name)
-                    }
-                )
+                # Handle CrewAI tools
+                tools.append(ToolInfo(
+                    name=tool_name,
+                    type="crewai",
+                    tool_data={"name": tool_name}
+                ))
             else:
-                # Handle Python functions and methods
-                if tool_metadata.class_name:
-                    # This is a class method
-                    tool_info = ToolInfo(
-                        name=name,
-                        type='function',
+                # Handle Python functions/methods
+                if tool_metadata.tool_type == ToolType.CLASS_METHOD:
+                    # For class methods, store class name and method name
+                    class_name, method_name = tool_name.split(".")
+                    tools.append(ToolInfo(
+                        name=tool_name,
+                        type="function",
                         tool_data={
-                            'name': name,
-                            'description': tool_metadata.description,
-                            'function_module': tool_metadata.original_obj.__module__,
-                            'function_name': tool_metadata.method_name,
-                            'class_name': tool_metadata.class_name,
-                            'is_method': True
+                            "function_module": tool_metadata.original_obj.__module__,
+                            "class_name": class_name,
+                            "method_name": method_name,
+                            "is_method": True
                         }
-                    )
+                    ))
                 else:
-                    # Regular function
-                    tool_info = ToolInfo(
-                        name=name,
-                        type='function',
-                        tool_data={
-                            'name': name,
-                            'description': tool_metadata.description,
-                            'function_module': tool_metadata.original_obj.__module__,
-                            'function_name': tool_metadata.original_obj.__name__,
-                            'is_method': False
-                        }
-                    )
-            tools.append(tool_info)
-        
+                    # For regular functions
+                    if "." in tool_name:
+                        # Handle module.function_name format
+                        module_name, func_name = tool_name.split(".")
+                        tools.append(ToolInfo(
+                            name=tool_name,
+                            type="function",
+                            tool_data={
+                                "function_module": tool_metadata.original_obj.__module__,
+                                "module_name": module_name,
+                                "function_name": func_name,
+                                "is_method": False
+                            }
+                        ))
+                    else:
+                        tools.append(ToolInfo(
+                            name=tool_name,
+                            type="function",
+                            tool_data={
+                                "function_module": tool_metadata.original_obj.__module__,
+                                "function_name": tool_name,
+                                "is_method": False
+                            }
+                        ))
+
         return CurriedProxyInfo(
             id=self.id,
             tools=tools,
-            name_counter={}  # Maintain compatibility with old format
+            name_counter=self.name_counter
         )
 
     @classmethod
     def from_info(cls, info: CurriedProxyInfo) -> 'CurriedProxy':
-        """Construct CurriedProxy from CurriedProxyInfo"""
-        from importlib import import_module
+        """Construct CurriedProxy from CurriedProxyInfo.
         
+        Since tools are loaded in the tools_catalog at startup, we only need to:
+        1. Restore the proxy's ID
+        2. Restore the tool names list for lookup
+        3. Restore the name counter
+        4. Use the existing tools_catalog instance
+        """
         proxy = cls(id=info.id)
         
+        # Restore tool names from the serialized info
         for tool_info in info.tools:
-            if tool_info.type == 'tool':
-                # Reconstruct Tool instance
-                tool = Tool(**tool_info.tool_data)
-                proxy.catalog.register_openapi_tool(tool, tool_info.name)
-                proxy.tool_names.append(tool_info.name)
-            else:
-                # Reconstruct function/method
-                module = import_module(tool_info.tool_data['function_module'])
-                
-                # For SMSTool and similar class-based tools, always create an instance
-                if 'class_name' in tool_info.tool_data:
-                    class_ = getattr(module, tool_info.tool_data['class_name'])
-                    instance = class_()
-                    # Register the whole instance if this is the first method from this class
-                    class_name = tool_info.tool_data['class_name']
-                    if not any(name.startswith(f"{class_name}.") for name in proxy.tool_names):
-                        proxy.catalog.register_class(instance.__class__, class_name)
-                    proxy.tool_names.append(tool_info.name)
-                elif 'function_name' in tool_info.tool_data:
-                    # Regular function
-                    function = getattr(module, tool_info.tool_data['function_name'])
-                    proxy.catalog.register_function(function, tool_info.name)
-                    proxy.tool_names.append(tool_info.name)              
-                else:
-                    raise ValueError(f"No function_name or class_name found in tool_data for {tool_info.name}")       
+            proxy.tool_names.append(tool_info.name)
+            
+        # Restore name counter
+        proxy.name_counter = info.name_counter
+        
         return proxy
 
     async def multiset_proxy(self, name: str, arguments: Dict[str, Any]) -> Any:

@@ -35,6 +35,7 @@ from src.server.controllers.agents_controller import create_crew
 from src.server.models.persistence_models import StorageLocation, StorageType
 from src.server.controllers.persistence_controller import save_to_storage
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.tools.github_tool import GitHubTool
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -128,6 +129,7 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel)
         tools_catalog.register_class("internal_testing_tools", InternalTestingTools)
         tools_catalog.register_class("internal_proxy_tools", InternalProxyTools)
         tools_catalog.register_class("url_tools", URLTools)
+        tools_catalog.register_class("GitHubTool", GitHubTool)  # Register GitHubTool class directly
         print("🛠️ Registered tools in catalog")
 
         # Initialize context database with proper configuration

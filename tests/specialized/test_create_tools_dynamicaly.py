@@ -14,13 +14,41 @@ from src.server.tools.tools_catalog import tools_catalog
 
 logger = logging.getLogger(__name__)
 
+class ConfiguredTool:
+    """A pre-configured tool."""
+    def __init__(self, config):
+        self.config = config
+        
+    def get_config(self):
+        """Get the configuration."""
+        return self.config
+
+@pytest.fixture(autouse=True)
+def cleanup_tools():
+    """Cleanup fixture that runs automatically before and after each test."""
+    # Initial reset to start clean
+    tools_catalog.reset()
+    yield
+    # Final reset after test
+    tools_catalog.reset()
+
 @pytest_asyncio.fixture
-async def setup_state() -> Dict[str, Any]:
+async def setup_test_tools():
+    """Setup test tools in the catalog."""
+    # Create and register test tools
+    configured_tool = ConfiguredTool({"key": "value"})
+    tools_catalog.register_tool(configured_tool, "ConfiguredTool")
+    yield configured_tool
+
+@pytest_asyncio.fixture
+async def setup_state(setup_test_tools) -> Dict[str, Any]:
     """Setup initial state by running dynamic_tools.py"""
     logger.info("Setting up initial state...")
     # Reset persistence model to ensure clean state
     PersistenceModelFactory.reset()
     persistence_model = PersistenceModelFactory.persistence_model()
+    
+    # Don't reset tools_catalog here since setup_test_tools has already set it up
     state = await setup_dynamic_tools_state(persistence_model)
     assert state is not None, "Failed to generate initial state"
     return state
@@ -138,19 +166,19 @@ async def test_task_context_accessibility(persistence_model: InMemoryPersistence
         
         # Check for knowledge context
         knowledge_context = next(
-            (ctx for ctx in contexts if ctx.type == "knowledge"),
+            (ctx for ctx in contexts if ctx["type"] == "knowledge"),
             None
         )
         assert knowledge_context is not None, "Task missing knowledge context"
-        assert knowledge_context.metadata.get("name") == "langchain_tools_docs", "Task has incorrect knowledge context"
+        assert knowledge_context["metadata"].get("name") == "langchain_tools_docs", "Task has incorrect knowledge context"
         
         # Check for system context
         system_context = next(
-            (ctx for ctx in contexts if ctx.type == "system"),
+            (ctx for ctx in contexts if ctx["type"] == "system"),
             None
         )
         assert system_context is not None, "Task missing system context"
-        assert system_context.metadata.get("category") == "general", "Task has incorrect system context"
+        assert system_context["metadata"].get("category") == "general", "Task has incorrect system context"
         
         logger.info("✅ Task context accessibility verified")
         
