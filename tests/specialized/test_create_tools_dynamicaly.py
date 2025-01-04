@@ -10,9 +10,12 @@ from src.server.controllers.task_runner import TaskRunner
 from src.server.context.unified_context import UnifiedContextState
 from src.state_setup.dynamic_tools import setup_dynamic_tools_state
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
-from src.server.tools.tools_catalog import tools_catalog
+from src.server.models.tools_catalog import ToolsCatalog
 
 logger = logging.getLogger(__name__)
+
+# Create the global instance
+tools_catalog = ToolsCatalog()
 
 class ConfiguredTool:
     """A pre-configured tool."""
@@ -26,10 +29,9 @@ class ConfiguredTool:
 @pytest.fixture(autouse=True)
 def cleanup_tools():
     """Cleanup fixture that runs automatically before and after each test."""
-    # Initial reset to start clean
-    tools_catalog.reset()
+    # Don't reset before test since setup_dynamic_tools_state needs to register tools
     yield
-    # Final reset after test
+    # Reset after test
     tools_catalog.reset()
 
 @pytest_asyncio.fixture
@@ -98,6 +100,7 @@ async def test_dynamic_tools_state_loaded(persistence_model: InMemoryPersistence
         # Validate tools_catalog has tools
         catalog_tools = tools_catalog.list_tools()
         logger.info(f"Found {len(catalog_tools)} tools in catalog")
+        logger.info(f"Tool names: {catalog_tools}")
         assert len(catalog_tools) > 0, "No tools found in catalog"
         
         # Validate internal tools are present
@@ -109,6 +112,7 @@ async def test_dynamic_tools_state_loaded(persistence_model: InMemoryPersistence
                 "internal_proxy_tools"
             ])
         ]
+        logger.info(f"Found internal tools: {internal_tools}")
         assert len(internal_tools) > 0, "No internal tools found"
         logger.info(f"Found {len(internal_tools)} internal tools")
         
@@ -120,7 +124,7 @@ async def test_dynamic_tools_state_loaded(persistence_model: InMemoryPersistence
             None
         )
         assert dynamic_tools_manager is not None, "Dynamic tools manager not found"
-        assert dynamic_tools_manager.model == "gpt-4", "Task manager has incorrect model"
+        assert dynamic_tools_manager.model == "gpt-4o-mini", "Task manager has incorrect model"
         logger.info(f"Found dynamic tools manager: {dynamic_tools_manager.id}")
         
         # Validate task exists and is properly linked
@@ -211,6 +215,95 @@ async def test_dynamic_tool_generation(persistence_model: InMemoryPersistenceMod
         assert len(proxy.tool_names) > 0, "CurriedProxy has no tools"
         
         logger.info("✅ Dynamic tool generation capability verified")
+        
+    except Exception as e:
+        logger.error(f"Test failed: {str(e)}", exc_info=True)
+        raise
+
+@pytest.mark.asyncio
+async def test_tool_execution_metrics(persistence_model: InMemoryPersistenceModel, task_runner: TaskRunner, setup_state):
+    """Test that tool execution metrics are properly tracked."""
+    try:
+        logger.info("Testing tool execution metrics...")
+        
+        # Create a test tool
+        async def test_tool(input_text: str, repeat: int = 1) -> str:
+            """A test tool that repeats text."""
+            return input_text * repeat
+        
+        # Register the tool
+        tools_catalog.register_tool(test_tool, "test_tool")
+        
+        # Execute the tool
+        result = await tools_catalog.execute_tool("test_tool", {"input_text": "test", "repeat": 2})
+        assert result == "testtest"
+        
+        # Get metrics for the tool
+        metrics = tools_catalog.get_tool_metrics()
+        assert metrics is not None, "No metrics found"
+        assert len(metrics) > 0, "No tool executions tracked"
+        
+        # Check metrics for specific tools
+        for tool_name, tool_metrics in metrics.items():
+            assert "total_executions" in tool_metrics
+            assert "successful_executions" in tool_metrics
+            assert "average_duration" in tool_metrics
+            if tool_metrics["total_executions"] > 0:
+                assert "last_execution" in tool_metrics
+                last_execution = tool_metrics["last_execution"]
+                assert "start_time" in last_execution
+                assert "end_time" in last_execution
+                assert "duration" in last_execution
+                assert "success" in last_execution
+                assert "input_params" in last_execution
+                assert "output" in last_execution
+        
+        logger.info("✅ Tool execution metrics verified")
+        
+    except Exception as e:
+        logger.error(f"Test failed: {str(e)}", exc_info=True)
+        raise
+
+@pytest.mark.asyncio
+async def test_tool_validation(persistence_model: InMemoryPersistenceModel):
+    """Test that tool validation works correctly."""
+    try:
+        logger.info("Testing tool validation...")
+        
+        # Test registering invalid tools
+        
+        # Tool without docstring
+        def invalid_tool(x: int) -> int:
+            return x + 1
+            
+        with pytest.raises(ValueError) as exc_info:
+            tools_catalog.register_tool(invalid_tool, "invalid_tool")
+        assert "failed validation" in str(exc_info.value)
+        
+        # Empty class tool
+        class EmptyTool:
+            pass
+            
+        with pytest.raises(ValueError) as exc_info:
+            tools_catalog.register_tool(EmptyTool, "empty_tool")
+        assert "failed validation" in str(exc_info.value)
+        
+        # Valid tool
+        def valid_tool(x: int) -> int:
+            """A valid tool with docstring.
+            
+            Args:
+                x: Input number
+                
+            Returns:
+                Incremented number
+            """
+            return x + 1
+            
+        tool_name = tools_catalog.register_tool(valid_tool, "valid_tool")
+        assert tool_name == "valid_tool"
+        
+        logger.info("✅ Tool validation verified")
         
     except Exception as e:
         logger.error(f"Test failed: {str(e)}", exc_info=True)

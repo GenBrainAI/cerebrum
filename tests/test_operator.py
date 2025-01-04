@@ -59,7 +59,7 @@ async def test_openai_completion():
         tasksmanager_id="test_id",
         task_id="test_task",
         messages=messages,
-        model="gpt-3.5-turbo",
+        model="gpt-4o-mini",
         curried_proxy=curried_proxy
     )
     assert "Hello, World!" in response
@@ -131,7 +131,7 @@ async def test_langchain_completion():
         tasksmanager_id="test_id",
         task_id="test_task",
         messages=messages,
-        model="gpt-3.5-turbo",  # LangChain will use OpenAI's model
+        model="gpt-4o-mini",  # LangChain will use OpenAI's model
         curried_proxy=curried_proxy
     )
     assert "Hello, World!" in response

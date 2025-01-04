@@ -1,10 +1,11 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Union, Type
+from typing import Any, Dict, List, Optional, Union, Type, get_type_hints, Callable
 from pydantic import BaseModel
 import logging
 import inspect
 import docstring_parser
 from enum import Enum
+from datetime import datetime, timedelta
 from ..models.schema import ResolvedSchema, ParameterSchema
 from ..models.tools_descriptors import (
     ToolType,
@@ -30,9 +31,33 @@ from ..models.toolset import Tool
 from .internal_file_tools import InternalFileTools
 from .internal_testing_tools import InternalTestingTools
 from .internal_proxy_tools import InternalProxyTools
+import time
 
 load_dotenv()
 
+class ToolExecutionMetrics:
+    """Tracks execution metrics for a tool."""
+    
+    def __init__(self):
+        self.start_time: Optional[datetime] = None
+        self.end_time: Optional[datetime] = None
+        self.success: bool = False
+        self.error: Optional[str] = None
+        self.input_params: Dict[str, Any] = {}
+        self.output: Optional[Any] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert metrics to dictionary format."""
+        return {
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "duration": (self.end_time - self.start_time).total_seconds() 
+                      if self.start_time and self.end_time else None,
+            "success": self.success,
+            "error": self.error,
+            "input_params": self.input_params,
+            "output": str(self.output) if self.output is not None else None
+        }
 
 class ToolsCatalog:
     """Singleton catalog for all available tools."""
@@ -51,50 +76,185 @@ class ToolsCatalog:
             self._instances: Dict[str, Any] = {}
             self._functions: Dict[str, Any] = {}  # Store functions
             self._classes: Dict[str, Type] = {}   # Store classes
+            self._execution_metrics: Dict[str, List[ToolExecutionMetrics]] = {}
+            self._logger = logging.getLogger(__name__)
             self._initialize_default_tools()
             ToolsCatalog._initialized = True
 
     def register_tool(self, tool: Any, name: Optional[str] = None) -> str:
-        """Register a tool (object, function, or class) into the catalog.
-        
-        Args:
-            tool: The tool to register
-            name: Optional custom name for the tool
-            
-        Returns:
-            The registered tool name
-            
-        Raises:
-            ValueError: If tool type is not supported
-        """
+        """Register a tool with enhanced logging and validation."""
         tool_name = name or getattr(tool, '__name__', str(tool))
         
         try:
-            if inspect.isfunction(tool):
-                # Register function
-                self._functions[tool_name] = tool
-                self.register_function(tool, tool_name)
-                
-            elif inspect.isclass(tool):
-                # Register class
-                self._classes[tool_name] = tool
-                self.register_class(tool, tool_name)
-                
-            elif isinstance(tool, (object,)) and not isinstance(tool, type):
-                # Register instance
+            self._logger.info(f"Registering tool: {tool_name}")
+            self._logger.debug(f"Tool type: {type(tool)}")
+            
+            # Handle CrewAI tools
+            if isinstance(tool, CrewAITool):
+                metadata = self._create_crewai_tool_metadata(tool, tool_name)
+                self._tools[tool_name] = metadata
+                self._instances[tool_name] = create_crewai_tool(tool_name, metadata, self._proxy, self)
+                return tool_name
+            
+            # Handle LangChain tools
+            if isinstance(tool, LangChainTool):
+                metadata = self._create_langchain_tool_metadata(tool, tool_name)
+                self._tools[tool_name] = metadata
+                self._instances[tool_name] = create_crewai_tool(tool_name, metadata, self._proxy, self)
+                return tool_name
+            
+            # Handle class instances
+            if not inspect.isclass(tool) and not inspect.isfunction(tool):
+                metadata = self._create_class_instance_metadata(tool, tool_name)
+                self._tools[tool_name] = metadata
                 self._instances[tool_name] = tool
-                if hasattr(tool, '__class__'):
-                    self.register_class(tool.__class__, tool_name)
-                
-            else:
-                raise ValueError(f"Unsupported tool type: {type(tool)}")
-                
-            print(f"Registered tool: {tool_name} (type: {type(tool).__name__})")
+                return tool_name
+            
+            # Handle classes
+            if inspect.isclass(tool):
+                metadata = self._create_class_metadata(tool, tool_name)
+                self._tools[tool_name] = metadata
+                self._instances[tool_name] = tool()
+                self._classes[tool_name] = tool  # Add class to _classes dictionary
+                self.register_class(tool, tool_name)  # Register class methods
+                return tool_name
+            
+            # Handle functions
+            metadata = self._create_function_metadata(tool, tool_name)
+            self._tools[tool_name] = metadata
+            self._instances[tool_name] = tool
+            self._functions[tool_name] = tool  # Add function to _functions dictionary
             return tool_name
             
         except Exception as e:
-            print(f"Error registering tool {tool_name}: {str(e)}")
+            self._logger.error(f"Failed to register tool {tool_name}: {str(e)}")
             raise
+
+    def _validate_tool(self, tool: Any) -> bool:
+        """Validate tool meets minimum requirements."""
+        try:
+            # Check for required attributes/methods based on tool type
+            if inspect.isfunction(tool):
+                # Function tools should have docstring and type hints
+                if not tool.__doc__:
+                    self._logger.warning(f"Tool function missing docstring")
+                    return False
+                    
+            elif inspect.isclass(tool):
+                # Class tools should have at least one public method
+                methods = [m for m in dir(tool) if not m.startswith('_')]
+                if not methods:
+                    self._logger.warning(f"Tool class has no public methods")
+                    return False
+                    
+            elif isinstance(tool, (CrewAITool, LangChainTool)):
+                # AI tools should have name and description
+                if not hasattr(tool, 'name') or not hasattr(tool, 'description'):
+                    self._logger.warning(f"AI tool missing name or description")
+                    return False
+                    
+            return True
+            
+        except Exception as e:
+            self._logger.error(f"Tool validation failed: {str(e)}")
+            return False
+
+    async def execute_tool(self, tool_name: str, kwargs: Dict[str, Any]) -> Any:
+        """Execute a tool with the given name and arguments."""
+        try:
+            # Get tool instance
+            tool_instance = self.get_tool_instance(tool_name)
+            if not tool_instance:
+                raise ValueError(f"Tool {tool_name} not found")
+
+            # Track tool execution start
+            start_time = time.time()
+            
+            try:
+                # Execute tool
+                result = await tool_instance(**kwargs)
+                
+                # Track successful execution
+                execution_time = time.time() - start_time
+                self._track_tool_execution(
+                    tool_name=tool_name,
+                    execution_time=execution_time,
+                    success=True,
+                    error=None,
+                    input_params=kwargs,
+                    output=result
+                )
+                
+                return result
+                
+            except Exception as e:
+                # Track failed execution
+                execution_time = time.time() - start_time
+                self._track_tool_execution(
+                    tool_name=tool_name,
+                    execution_time=execution_time,
+                    success=False,
+                    error=str(e),
+                    input_params=kwargs,
+                    output=None
+                )
+                raise
+
+        except Exception as e:
+            error_msg = f"Error executing tool {tool_name}: {str(e)}"
+            print(f"❌ {error_msg}")
+            raise
+
+    def _track_tool_execution(
+        self,
+        tool_name: str,
+        execution_time: float,
+        success: bool,
+        error: Optional[str] = None,
+        input_params: Optional[Dict[str, Any]] = None,
+        output: Any = None
+    ) -> None:
+        """Track tool execution metrics."""
+        if tool_name not in self._execution_metrics:
+            self._execution_metrics[tool_name] = {
+                "total_executions": 0,
+                "successful_executions": 0,
+                "failed_executions": 0,
+                "average_duration": 0.0,
+                "last_execution": None
+            }
+        
+        metrics = self._execution_metrics[tool_name]
+        metrics["total_executions"] += 1
+        
+        if success:
+            metrics["successful_executions"] += 1
+        else:
+            metrics["failed_executions"] += 1
+        
+        # Update average duration
+        old_avg = metrics["average_duration"]
+        metrics["average_duration"] = (old_avg * (metrics["total_executions"] - 1) + execution_time) / metrics["total_executions"]
+        
+        # Store last execution details
+        metrics["last_execution"] = {
+            "start_time": datetime.now() - timedelta(seconds=execution_time),
+            "end_time": datetime.now(),
+            "duration": execution_time,
+            "success": success,
+            "error": error if error else None,
+            "input_params": input_params or {},
+            "output": str(output) if output is not None else None
+        }
+
+    def get_tool_metrics(self, tool_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get execution metrics for one or all tools."""
+        if tool_name:
+            if tool_name not in self._execution_metrics:
+                return {}
+            return self._execution_metrics[tool_name]
+        
+        return self._execution_metrics
 
     def list_tools_by_type(self) -> Dict[str, List[str]]:
         """List all registered tools grouped by type.
@@ -127,10 +287,6 @@ class ToolsCatalog:
                 file_path='job_description_example.md',
                 description='A tool to read the job description example file.'
             ),
-            "GitHubTool": GitHubTool(
-                access_token=getenv("GITHUB_ACCESS_TOKEN"),
-                repo_name=getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
-            ),
             "save_file": FileTool(),
             "microservices_tool": MicroservicesTool(),
             "SMSTool": SMSTool(),
@@ -142,6 +298,14 @@ class ToolsCatalog:
                 self.register_ai_tool(tool, name)
             else:
                 self.register_tool(tool, name)
+
+        # Register GitHubTool separately since it needs special initialization
+        self.register_class(GitHubTool, "GitHubTool")
+        # Create instance with required parameters
+        self._instances["GitHubTool"] = GitHubTool(
+            access_token=getenv("GITHUB_ACCESS_TOKEN"),
+            repo_name=getenv("GITHUB_REPO_NAME", "GenBrainAI/cerebrum")
+        )
 
     def _extract_docstring_info(self, obj: Any) -> tuple[str, List[ParameterInfo], ReturnInfo]:
         """Extract docstring information from an object.
@@ -614,6 +778,152 @@ class ToolsCatalog:
             
             # Re-initialize with internal tools
             cls._instance._initialize_default_tools()
+
+    def _create_crewai_tool_metadata(self, tool: CrewAITool, tool_name: str) -> ToolMetadata:
+        """Create metadata for a CrewAI tool."""
+        return ToolMetadata(
+            name=tool_name,
+            description=tool.description,
+            tool_type=ToolType.CREWAI_TOOL,
+            parameters=self._extract_parameters(tool),
+            returns=ReturnInfo(type_hint='Any', description=''),
+            original_obj=tool
+        )
+
+    def _create_langchain_tool_metadata(self, tool: LangChainTool, tool_name: str) -> ToolMetadata:
+        """Create metadata for a LangChain tool."""
+        return ToolMetadata(
+            name=tool_name,
+            description=tool.description,
+            tool_type=ToolType.LANGCHAIN_TOOL,
+            parameters=self._extract_parameters(tool),
+            returns=ReturnInfo(type_hint='Any', description=''),
+            original_obj=tool
+        )
+
+    def _create_class_instance_metadata(self, tool: Any, tool_name: str) -> ToolMetadata:
+        """Create metadata for a class instance."""
+        return ToolMetadata(
+            name=tool_name,
+            description=getattr(tool, '__doc__', '') or '',
+            tool_type=ToolType.CLASS_METHOD,
+            parameters=self._extract_parameters(tool),
+            returns=ReturnInfo(type_hint='Any', description=''),
+            original_obj=tool
+        )
+
+    def _create_class_metadata(self, tool: Type, tool_name: str) -> ToolMetadata:
+        """Create metadata for a class."""
+        return ToolMetadata(
+            name=tool_name,
+            description=tool.__doc__ or '',
+            tool_type=ToolType.CLASS_METHOD,
+            parameters=self._extract_parameters(tool),
+            returns=ReturnInfo(type_hint='Any', description=''),
+            original_obj=tool
+        )
+
+    def _create_function_metadata(self, tool: Callable, tool_name: str) -> ToolMetadata:
+        """Create metadata for a function."""
+        return ToolMetadata(
+            name=tool_name,
+            description=tool.__doc__ or '',
+            tool_type=ToolType.PYTHON_FUNCTION,
+            parameters=self._extract_parameters(tool),
+            returns=ReturnInfo(type_hint='Any', description=''),
+            original_obj=tool
+        )
+
+    def _extract_parameters(self, tool: Any) -> List[ParameterInfo]:
+        """Extract parameter information from a tool."""
+        params = []
+        
+        try:
+            if inspect.isclass(tool):
+                # For classes, get signature of __init__
+                sig = inspect.signature(tool.__init__)
+            elif inspect.isfunction(tool) or inspect.ismethod(tool):
+                # For functions and methods
+                sig = inspect.signature(tool)
+            elif hasattr(tool, '__call__'):
+                # For callable objects
+                sig = inspect.signature(tool.__call__)
+            else:
+                # For class instances, get all public methods
+                methods = [m for m in dir(tool) if not m.startswith('_') and callable(getattr(tool, m))]
+                for method_name in methods:
+                    method = getattr(tool, method_name)
+                    try:
+                        method_sig = inspect.signature(method)
+                        for name, param in method_sig.parameters.items():
+                            if name == 'self':
+                                continue
+                            params.append(ParameterInfo(
+                                name=f"{method_name}.{name}",
+                                type_hint=str(param.annotation) if param.annotation != inspect.Parameter.empty else None,
+                                description='',
+                                default=param.default if param.default != inspect.Parameter.empty else None,
+                                required=param.default == inspect.Parameter.empty
+                            ))
+                    except (ValueError, TypeError):
+                        continue
+                return params
+            
+            # Process signature for callable objects
+            for name, param in sig.parameters.items():
+                if name == 'self':
+                    continue
+                params.append(ParameterInfo(
+                    name=name,
+                    type_hint=str(param.annotation) if param.annotation != inspect.Parameter.empty else None,
+                    description='',
+                    default=param.default if param.default != inspect.Parameter.empty else None,
+                    required=param.default == inspect.Parameter.empty
+                ))
+            
+        except (ValueError, TypeError) as e:
+            self._logger.warning(f"Could not extract parameters from {tool}: {str(e)}")
+        
+        return params
+
+    def _register_class_methods(self, cls: Type, class_name: str) -> None:
+        """Register all public methods of a class as individual tools."""
+        for method_name, method in inspect.getmembers(cls, predicate=inspect.isfunction):
+            if not method_name.startswith('_'):  # Only register public methods
+                full_name = f"{class_name}.{method_name}"
+                metadata = ToolMetadata(
+                    tool_type=ToolType.CLASS_METHOD,
+                    name=full_name,
+                    description=method.__doc__ or "",
+                    class_name=class_name,
+                    method_name=method_name,
+                    parameters=self._get_method_parameters(method),
+                    return_info=self._get_method_return_info(method)
+                )
+                self._tools[full_name] = metadata
+
+    def _get_method_parameters(self, method) -> List[ParameterInfo]:
+        """Extract parameter information from a method."""
+        params = []
+        signature = inspect.signature(method)
+        docstring = docstring_parser.parse(method.__doc__ or "")
+        type_hints = get_type_hints(method)
+        
+        for name, param in signature.parameters.items():
+            if name == 'self':
+                continue
+            param_type = type_hints.get(name, Any).__name__ if name in type_hints else 'Any'
+            description = next((p.description for p in docstring.params if p.arg_name == name), "")
+            params.append(ParameterInfo(name=name, type=param_type, description=description))
+        
+        return params
+
+    def _get_method_return_info(self, method) -> ReturnInfo:
+        """Extract return information from a method."""
+        docstring = docstring_parser.parse(method.__doc__ or "")
+        return_type = get_type_hints(method).get('return', Any).__name__
+        description = docstring.returns.description if docstring.returns else ""
+        return ReturnInfo(type=return_type, description=description)
 
 
 # Create the global instance

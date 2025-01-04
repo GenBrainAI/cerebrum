@@ -59,18 +59,31 @@ class CurriedProxy(BaseModel):
             else:
                 # Handle Python functions/methods
                 if tool_metadata.tool_type == ToolType.CLASS_METHOD:
-                    # For class methods, store class name and method name
-                    class_name, method_name = tool_name.split(".")
-                    tools.append(ToolInfo(
-                        name=tool_name,
-                        type="function",
-                        tool_data={
-                            "function_module": tool_metadata.original_obj.__module__,
-                            "class_name": class_name,
-                            "method_name": method_name,
-                            "is_method": True
-                        }
-                    ))
+                    # For class methods, check if there's a dot in the name
+                    if "." in tool_name:
+                        class_name, method_name = tool_name.split(".")
+                        tools.append(ToolInfo(
+                            name=tool_name,
+                            type="function",
+                            tool_data={
+                                "function_module": tool_metadata.original_obj.__module__,
+                                "class_name": class_name,
+                                "method_name": method_name,
+                                "is_method": True
+                            }
+                        ))
+                    else:
+                        # Handle class methods without dots
+                        tools.append(ToolInfo(
+                            name=tool_name,
+                            type="function",
+                            tool_data={
+                                "function_module": tool_metadata.original_obj.__module__,
+                                "class_name": tool_name,
+                                "method_name": None,
+                                "is_method": True
+                            }
+                        ))
                 else:
                     # For regular functions
                     if "." in tool_name:
@@ -674,19 +687,23 @@ def parse_input_arguments(kwargs: Dict[str, Any], tool_name: str) -> Dict[str, A
 
 class CerebrumToolWrapper:
     """Wrapper class to hold the tool's execution context."""
-    def __init__(self, proxy: Any, metadata: ToolMetadata):
+    def __init__(self, proxy: Any, metadata: ToolMetadata, catalog: Any = None):
         self.proxy = proxy
         self.metadata = metadata
         self.args_schema = create_argument_schema(metadata)
+        self.catalog = catalog
 
 class CerebrumCrewAITool(CrewAITool):
-    """Enhanced CrewAI tool with improved argument handling and async support."""
-    def __init__(self, name: str, description: str, proxy: Any, metadata: ToolMetadata, **kwargs):
-        super().__init__(name=name, description=description, **kwargs)
-        self._context = CerebrumToolWrapper(proxy, metadata)
+    """CrewAI tool wrapper for Cerebrum tools."""
+    def __init__(self, name: str, context: CerebrumToolWrapper):
+        description = context.metadata.description
+        super().__init__(name=name, description=description)
+        self._context = context
+        self.name = name
+        self.args_schema = context.args_schema
 
-        if metadata.returns and metadata.returns.description:
-            self.description = f"{self.description}\nReturns: {metadata.returns.description}"
+        if context.metadata.returns and context.metadata.returns.description:
+            self.description = f"{self.description}\nReturns: {context.metadata.returns.description}"
 
         # Add parameter information to description
         param_desc = self._build_parameter_description()
@@ -723,10 +740,19 @@ class CerebrumCrewAITool(CrewAITool):
 
     async def _arun(self, **kwargs: Any) -> Any:
         """Async execution of the tool."""
+        metrics = self._context.catalog._execution_metrics.setdefault(self.name, [])
+        current_metrics = ToolExecutionMetrics()
+        metrics.append(current_metrics)
+        
         try:
             # Parse and normalize input arguments
-            parsed_args = parse_input_arguments(kwargs, self.name)
+            parsed_args = kwargs.get('kwargs', {})
+            logger.debug(f"[{self.name}] Initial arguments: {kwargs}")
             logger.debug(f"[{self.name}] Using arguments: {parsed_args}")
+            
+            # Set metrics start time and input params
+            current_metrics.start_time = datetime.now()
+            current_metrics.input_params = parsed_args
             
             # Validate arguments using schema
             try:
@@ -734,22 +760,26 @@ class CerebrumCrewAITool(CrewAITool):
                 logger.debug(f"[{self.name}] Arguments validated successfully")
             except Exception as e:
                 logger.error(f"[{self.name}] Validation error: {str(e)}")
+                current_metrics.error = str(e)
                 raise
 
             # Execute tool
-            start_time = datetime.now()
             try:
-                result = await self._context.proxy.curried_proxy(self.name)(validated_args.dict())
-                execution_time = (datetime.now() - start_time).total_seconds()
-                logger.debug(f"[{self.name}] Execution completed in {execution_time:.2f}s")
+                result = await self._context.proxy.curried_proxy(self.name)(validated_args.model_dump())
+                current_metrics.success = True
+                current_metrics.output = result
+                logger.debug(f"[{self.name}] Execution completed successfully")
                 return result
             except Exception as e:
                 logger.error(f"[{self.name}] Execution error: {str(e)}")
+                current_metrics.error = str(e)
                 raise
             
         except Exception as e:
             logger.error(f"[{self.name}] Tool execution failed: {str(e)}")
             raise
+        finally:
+            current_metrics.end_time = datetime.now()
 
     def _run(self, **kwargs: Any) -> Any:
         """Synchronous wrapper for async execution."""
@@ -761,11 +791,7 @@ class CerebrumCrewAITool(CrewAITool):
         
         return loop.run_until_complete(self._arun(**kwargs))
 
-def create_crewai_tool(name: str, metadata: ToolMetadata, proxy: Any) -> CrewAITool:
+def create_crewai_tool(name: str, metadata: ToolMetadata, proxy: Any, catalog: Any = None) -> CrewAITool:
     """Factory function to create a CrewAI tool from metadata."""
-    return CerebrumCrewAITool(
-        name=name,
-        description=metadata.description,
-        proxy=proxy,
-        metadata=metadata
-    )
+    context = CerebrumToolWrapper(proxy, metadata, catalog)
+    return CerebrumCrewAITool(name=name, context=context)

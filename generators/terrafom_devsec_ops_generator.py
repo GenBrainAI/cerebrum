@@ -44,7 +44,7 @@ class TerrafomDevSecOpsGenerator:
         # Create tasksmanager
         tasksmanager_data = {
             "name": "DevOps Automation Manager",
-            "model": "gpt-4",
+            "model": "gpt-4o-mini",
             "description": "TasksManager for DevOps automation tasks",
         }
         tasksmanager_response = requests.post(f"{self.base_url}/tasksmanager", json=tasksmanager_data)

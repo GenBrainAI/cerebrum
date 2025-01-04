@@ -24,7 +24,7 @@ def test_scenario(client: TestClient):
     # Create tasksmanager
     tasksmanager_data = {
         "name": "Astronomy Expert",
-        "model": "gpt-4",
+        "model": "gpt-4o-mini",
         "description": "TasksManager for astronomy research",
     }
     tasksmanager_response = client.post("/tasksmanager", json=tasksmanager_data)

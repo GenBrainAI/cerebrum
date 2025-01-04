@@ -272,7 +272,7 @@ def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None
     # Create new ones
     tasksmanager = TasksManager(
         name=chat_name,
-        model="gpt-4",  # You might want to make this configurable
+        model="gpt-4o-mini",  # You might want to make this configurable
         description="Chat session TasksManager"
     )
     persistence_model = st.session_state.persistence_model

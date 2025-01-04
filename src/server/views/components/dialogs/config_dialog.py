@@ -67,7 +67,7 @@ class ConfigDialog:
                 role_description = st.text_area("Description", key=f"role_desc_{i}")
                 role_model = st.selectbox(
                     "Model",
-                    ["gpt-4", "gpt-3.5-turbo", "claude-3"],
+                    ["gpt-4o-mini", "gpt-3.5-turbo", "claude-3"],
                     key=f"role_model_{i}"
                 )
                 

@@ -114,7 +114,7 @@ class CerebrumIntegrationLayer:
             # Create a new session if it doesn't exist or has expired
             tasksmanager = self.persistence_model.tasksmanagers.create({
                 "name": f"Session for user {user_id}",
-                "model": "gpt-4",  # Or whichever model you prefer
+                "model": "gpt-4o-mini",  # Or whichever model you prefer
                 "description": f"TasksManager for user {user_id}'s session"
             })
 
@@ -134,7 +134,7 @@ class CerebrumIntegrationLayer:
                 user_id=user_id,
                 tasksmanager_id=tasksmanager.id,
                 task_id=task.id,
-                model="gpt-4"  # Or whichever model you prefer
+                model="gpt-4o-mini"  # Or whichever model you prefer
             )
             new_session.messages = task.messages
             self.user_sessions[user_id] = new_session

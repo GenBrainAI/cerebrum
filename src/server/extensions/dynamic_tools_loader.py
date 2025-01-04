@@ -4,11 +4,14 @@ import sys
 import inspect
 import importlib.util
 from typing import Any, Dict, List, Optional, Type, Union
-from ..tools.tools_catalog import tools_catalog
+from ..tools.tools_catalog import ToolsCatalog, tools_catalog
 from pathlib import Path
 import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+# Create singleton instance of ToolsCatalog
+tools_catalog = ToolsCatalog()
 
 class ToolsDirectoryHandler(FileSystemEventHandler):
     """Handler for file system events in the tools directory."""
