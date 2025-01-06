@@ -3,6 +3,7 @@ import asyncio
 import json
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..controllers.curried_proxy import CurriedProxy
+from datetime import datetime
 
 def format_response(response: Union[str, Dict[str, Any], Any]) -> str:
     """Format the crew response into a string."""
@@ -81,12 +82,34 @@ async def run_crew_task(
         from .agents_controller import create_crew
         crew = await create_crew(crewai_config.create_crew, curried_proxy)
         
+        # Initialize execution logs if not present
+        if task.execution_logs is None:
+            task.execution_logs = []
+        
+        # Add start log
+        task.execution_logs.append({
+            "timestamp": str(datetime.now()),
+            "type": "info",
+            "content": "Starting CrewAI task execution"
+        })
+        
         # Execute the crew with the provided input using run_in_executor
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, crew.kickoff, task_input or {})
         
         # Format the result into a string response
         formatted_result = format_response(result)
+        
+        # Add completion log
+        task.execution_logs.append({
+            "timestamp": str(datetime.now()),
+            "type": "info",
+            "content": "CrewAI task execution completed",
+            "result": formatted_result
+        })
+        
+        # Save the updated task
+        persistence_model.tasks.update(task_id, task)
         
         return {
             "response": formatted_result,
@@ -95,7 +118,19 @@ async def run_crew_task(
     except Exception as e:
         error_msg = f"run_crew_task failed with error: {str(e)}"
         print(f"❌ {error_msg}")
+        
+        # Add error log if task exists
+        if 'task' in locals():
+            if task.execution_logs is None:
+                task.execution_logs = []
+            task.execution_logs.append({
+                "timestamp": str(datetime.now()),
+                "type": "error",
+                "content": error_msg
+            })
+            persistence_model.tasks.update(task_id, task)
+        
         return {
-            "response": f"run_crew_task failed with error: {str(e)}",
+            "response": error_msg,
             "status": "error"
         }

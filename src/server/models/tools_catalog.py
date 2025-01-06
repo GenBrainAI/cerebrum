@@ -332,6 +332,31 @@ class ToolsCatalog:
         
         return params
 
+    def unregister_tool(self, name: str) -> None:
+        """Unregister a tool from the catalog.
+        
+        Args:
+            name: Name of the tool to unregister
+        """
+        if name in self._tools:
+            del self._tools[name]
+        if name in self._instances:
+            del self._instances[name]
+        if name in self._functions:
+            del self._functions[name]
+        if name in self._classes:
+            del self._classes[name]
+        if name in self._execution_metrics:
+            del self._execution_metrics[name]
+            
+    def reset(self) -> None:
+        """Reset the catalog to its initial state."""
+        self._tools = {}
+        self._instances = {}
+        self._functions = {}
+        self._classes = {}
+        self._execution_metrics = {}
+
     @classmethod
     def reset(cls):
         """Reset the catalog state. Should only be used in tests."""

@@ -520,6 +520,27 @@ class CurriedProxy(BaseModel):
         except Exception as e:
             return {"error": f"Request failed: {str(e)}"}
 
+    def register_tool(self, name: str, tool: Any) -> None:
+        """Register a tool with this proxy.
+        
+        Args:
+            name: The name of the tool
+            tool: The tool instance
+        """
+        self.add_tool(name, tool)
+
+    async def execute(self, tool_name: str, args: Dict[str, Any]) -> Any:
+        """Execute a tool by name with given arguments.
+        
+        Args:
+            tool_name: The name of the tool to execute
+            args: The arguments to pass to the tool
+            
+        Returns:
+            The result of the tool execution
+        """
+        return await self.multiset_proxy(tool_name, args)
+
 
 # CreaAI specific export functions
 
