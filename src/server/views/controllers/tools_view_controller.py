@@ -8,7 +8,7 @@ from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
 from datetime import datetime
 from ...models.exceptions import StateError, StateNotFoundError, StateValidationError
-from ...models.function import Tool
+from ...models.toolset import Tool
 from ..models.view_state import ViewState
 from ..models.view_types import ViewType
 from ...models.specialized_state import StateType, ToolManagementState, StateMetadata

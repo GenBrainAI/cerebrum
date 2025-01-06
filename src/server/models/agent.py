@@ -54,6 +54,76 @@ class CreateCrewRequest(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+@dataclass
+class Role:
+    """Represents a role with associated capabilities and permissions."""
+    name: str
+    description: str
+    capabilities: List[str] = field(default_factory=list)
+    permissions: List[str] = field(default_factory=list)
+
+@dataclass
+class Agentic:
+    """
+    Represents an agentic entity with defined roles, capabilities, and configurations.
+    An agentic is an agent with specific roles and responsibilities.
+    """
+    name: str
+    description: str
+    id: UUID = field(default_factory=uuid4)
+    role: Optional[Role] = None
+    config: Dict[str, Any] = field(default_factory=dict)
+
+    def set_role(self, name: str, description: str, capabilities: List[str], permissions: List[str]) -> None:
+        """Set or update the role of the agentic."""
+        self.role = Role(
+            name=name,
+            description=description,
+            capabilities=capabilities,
+            permissions=permissions
+        )
+
+    def update_config(self, config: Dict[str, Any]) -> None:
+        """Update the configuration dictionary."""
+        self.config.update(config)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the agentic to a dictionary representation."""
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "description": self.description,
+            "role": {
+                "name": self.role.name,
+                "description": self.role.description,
+                "capabilities": self.role.capabilities,
+                "permissions": self.role.permissions
+            } if self.role else None,
+            "config": self.config
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'Agentic':
+        """Create an Agentic instance from a dictionary."""
+        agentic = cls(
+            name=data["name"],
+            description=data["description"],
+        )
+        agentic.id = UUID(data["id"]) if isinstance(data["id"], str) else data["id"]
+        
+        if data.get("role"):
+            agentic.set_role(
+                name=data["role"]["name"],
+                description=data["role"]["description"],
+                capabilities=data["role"]["capabilities"],
+                permissions=data["role"]["permissions"]
+            )
+        
+        if data.get("config"):
+            agentic.config = data["config"]
+            
+        return agentic
+
 class CrewAIConfig(BaseModel):
     id: Optional[str] = Field(alias="id", default=None)
     create_crew: Optional[CreateCrewRequest] = Field(alias="create_crew", default=None)

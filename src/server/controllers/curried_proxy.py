@@ -20,6 +20,7 @@ from ..models.curried_proxy_info import CurriedProxyInfo, ToolInfo
 from crewai_tools import BaseTool as CrewAITool
 
 
+
 logger = logging.getLogger(__name__)
 
 class CurriedProxy(BaseModel):

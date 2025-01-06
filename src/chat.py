@@ -50,8 +50,11 @@ def save_current_state(state_name: str) -> str:
         print(f"\n🔍 Context state to save:")
         print(f"  Content: {context_state}")
         
+        # Get persistence model from session state
+        persistence_model = st.session_state.persistence_model
+        
         # Save state with context
-        result = save_to_storage(location, context_state=context_state)
+        result = save_to_storage(persistence_model, location)
         print(f"  Save result: {result}")
         
         # Save metadata about last used state
