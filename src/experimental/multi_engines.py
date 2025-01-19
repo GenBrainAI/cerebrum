@@ -5,7 +5,7 @@ import requests
 def run_prompt(context, system_message, user_message, engine):
     if engine == "openai":
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": context + "\n" + user_message}

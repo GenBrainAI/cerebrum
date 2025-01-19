@@ -80,6 +80,8 @@ class Task(BaseModel):
     use_context: bool = Field(default=True)
     inherit_manager_context: bool = Field(default=True)
     contexts: List[Dict] = Field(default_factory=list, description="Context references for the task")
+    execution_logs: Optional[List[Dict[str, Any]]] = Field(default=None, description="Logs from task execution")
+    input_data: Optional[Dict[str, Any]] = Field(default=None, description="Input data for task execution")
 
     def create_session(self, name: Optional[str] = None) -> str:
         """Create a new chat session"""

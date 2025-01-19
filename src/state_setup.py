@@ -91,7 +91,7 @@ async def setup_application_state():
     # Create TasksManager
     tasksmanager = TasksManager(
         name="Application Response Handler",
-        model="gpt-4o",
+        model="gpt-4o-mini",
         description="Handles job application email responses and sends notifications",
         messages=[
             Message(

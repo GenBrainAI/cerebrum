@@ -1,6 +1,6 @@
 from enum import Enum
-from typing import Any, List, Optional, Dict
-from pydantic import BaseModel
+from typing import Any, List, Optional, Dict, Union
+from pydantic import BaseModel, Field
 
 class ToolType(Enum):
     PYTHON_FUNCTION = "python_function"
@@ -8,6 +8,7 @@ class ToolType(Enum):
     CREWAI_TOOL = "crewai_tool"
     LANGCHAIN_TOOL = "langchain_tool"
     OPENAPI_TOOL = "openapi_tool"
+    AI_TOOL = "ai_tool"
 
 class ParameterInfo(BaseModel):
     """Information about a tool parameter."""
@@ -41,3 +42,8 @@ class ToolMetadata(BaseModel):
     class_name: Optional[str] = None
     method_name: Optional[str] = None
     async_tool: bool = False
+
+class ToolContext(BaseModel):
+    """Context for tool execution."""
+    metadata: ToolMetadata
+    proxy: Any

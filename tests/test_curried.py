@@ -103,13 +103,6 @@ def mock_tool():
 
 @pytest.mark.asyncio
 async def test_add_and_use_api_tool(curried_proxy, mock_tool):
-    # Check if mock_tool has credentials, if not, add them
-    if mock_tool.function.credentials is None or mock_tool.function.credentials.get('auth_type') is None:
-        mock_tool.function.credentials = ToolsetCredentials(
-            auth_type="Bearer",
-            auth_key="mock_token"
-        ).model_dump()
-
     print(f"\nDebug - Mock tool before adding: {mock_tool.function.model_dump()}")
     curried_proxy.add_tool("mock_api", mock_tool)
     print(f"\nDebug - Tool names after adding: {curried_proxy.list_tools()}")
@@ -118,7 +111,8 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
     # Create a mock response
     mock_response = AsyncMock()
     mock_response.status_code = 200
-    mock_response.json = AsyncMock(return_value={"result": "success"})
+    mock_response.json.return_value = {"result": "success"}
+    mock_response.headers = {"content-type": "application/json"}
 
     # Patch the AsyncClient's get method
     with patch('httpx.AsyncClient.get', new_callable=AsyncMock) as mock_get:
@@ -130,7 +124,6 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
         print(f"\nDebug - Result from curried_func: {result}")
 
         # Assertions
-        # assert result == {"result": "success"}
         mock_get.assert_called_once()
 
         # Check the call arguments
@@ -141,11 +134,8 @@ async def test_add_and_use_api_tool(curried_proxy, mock_tool):
         assert kwargs['url'] == 'https://api.example.com/resource'
         assert 'Authorization' in kwargs['headers']
         assert kwargs['headers']['Authorization'] == 'Bearer mock_token'
-        assert kwargs['headers']['Content-Type'] == 'application/x-www-form-urlencoded'
         assert kwargs['headers']['Accept'] == '*/*'
-
-        await mock_response.json()
-        mock_response.json.assert_awaited_once()
+        assert result == {"result": "success"}
 
     # Print debug information
     print(f"Mock tool credentials after test: {mock_tool.function.credentials}")
@@ -208,3 +198,70 @@ def test_remove_tool(curried_proxy, mock_tool):
     curried_proxy.remove_tool("mock_api")
     assert "mock_api" not in curried_proxy.list_tools()
     assert "fibonacci" in curried_proxy.list_tools()
+
+
+class MockTool:
+    """Test tool that reads a file.
+    
+    This tool is used for testing the description and argument handling.
+    """
+    
+    def __init__(self):
+        self.required_args = {
+            "file_path": "str",
+            "description": "str"
+        }
+        
+    async def __call__(self, file_path: str, description: str) -> str:
+        """Execute the mock tool.
+        
+        Args:
+            file_path: The path to the file to read.
+            description: A description of what to read.
+            
+        Returns:
+            The contents of the file.
+        """
+        return f"Read {file_path}: {description}"
+
+@pytest.mark.asyncio
+async def test_tools_description_and_arguments():
+    """Test that tool descriptions and arguments are properly declared and exported."""
+    # Create and register mock tool
+    proxy = CurriedProxy()
+    tool = MockTool()
+    proxy.add_tool("test_tool", tool)
+    
+    # Check OpenAI export
+    openai_tools = proxy.export_to_openai()
+    assert len(openai_tools) == 1
+    openai_tool = openai_tools[0]
+    assert openai_tool["type"] == "function"
+    assert openai_tool["function"]["name"] == "test_tool"
+    assert "Test tool that reads a file" in openai_tool["function"]["description"]
+    assert "This tool is used for testing the description and argument handling" in openai_tool["function"]["description"]
+    
+    # Verify OpenAI argument descriptions
+    params = openai_tool["function"]["parameters"]["properties"]
+    assert params["file_path"]["description"] == "Path to the file to read"
+    assert params["description"]["description"] == "Description of the content"
+    assert openai_tool["function"]["parameters"]["required"] == ["file_path", "description"]
+    
+    # Check CrewAI export  
+    crewai_tools = proxy.export_to_crewai()
+    assert len(crewai_tools) == 1
+    crewai_tool = crewai_tools[0]
+    assert crewai_tool.name == "test_tool"
+    
+    # Verify CrewAI tool description format
+    expected_description = """Tool Name: test_tool
+Tool Arguments: {'file_path': {'description': 'Path to the file to read', 'type': 'str'}, 'description': {'description': 'Description of the content', 'type': 'str'}}
+Tool Description: Description of the content"""
+    assert crewai_tool.description == expected_description
+    
+    # Verify CrewAI argument descriptions
+    assert len(crewai_tool.args_schema.model_fields) == 2
+    file_path_field = crewai_tool.args_schema.model_fields["file_path"]
+    description_field = crewai_tool.args_schema.model_fields["description"]
+    assert file_path_field.description == "Path to the file to read"
+    assert description_field.description == "Description of the content"

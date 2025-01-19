@@ -50,8 +50,11 @@ def save_current_state(state_name: str) -> str:
         print(f"\n🔍 Context state to save:")
         print(f"  Content: {context_state}")
         
+        # Get persistence model from session state
+        persistence_model = st.session_state.persistence_model
+        
         # Save state with context
-        result = save_to_storage(location, context_state=context_state)
+        result = save_to_storage(persistence_model, location)
         print(f"  Save result: {result}")
         
         # Save metadata about last used state
@@ -272,7 +275,7 @@ def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None
     # Create new ones
     tasksmanager = TasksManager(
         name=chat_name,
-        model="gpt-4",  # You might want to make this configurable
+        model="gpt-4o-mini",  # You might want to make this configurable
         description="Chat session TasksManager"
     )
     persistence_model = st.session_state.persistence_model

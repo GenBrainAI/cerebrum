@@ -14,8 +14,8 @@ os.environ["HUGGINGFACEHUB_API_TOKEN"] = "your_huggingface_api_token"
 
 # Define the list of LLMs to use
 llms = [
-    OpenAI(model_name="gpt-4-0613"),
-    OpenAI(model_name="gpt-4-32k-0613"),
+    OpenAI(model_name="gpt-4o"),
+    OpenAI(model_name="gpt-4o"),
     Anthropic(model="claude-v1"),
     HuggingFaceHub(repo_id="stabilityai/stable-diffusion-3-medium", model_kwargs={"temperature": 0.7}),
 ]
@@ -116,7 +116,7 @@ def run_thinking_process(token_budget, context, left_brain_llm, right_brain_llm)
 
     # Finalization process
     print("Token budget exhausted. Finalizing the thinking process...")
-    finalization_llm = OpenAI(model_name="gpt-4-32k-0613")
+    finalization_llm = OpenAI(model_name="gpt-4o")
     finalization_prompt = "Finalize the thinking process and provide the user with the most significant insights and ideas generated."
     finalization_response = finalization_llm(finalization_prompt, stop=None, max_tokens=100000)
     print(f"Final Insights:\n{finalization_response}")

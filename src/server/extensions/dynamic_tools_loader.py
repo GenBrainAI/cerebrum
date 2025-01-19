@@ -4,11 +4,15 @@ import sys
 import inspect
 import importlib.util
 from typing import Any, Dict, List, Optional, Type, Union
-from ..tools.tools_catalog import tools_catalog
+from ..tools.tools_catalog import ToolsCatalog, tools_catalog
 from pathlib import Path
 import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from ..models.tools_descriptors import ParameterInfo, ToolMetadata, ToolType, ReturnInfo
+
+# Create singleton instance of ToolsCatalog
+tools_catalog = ToolsCatalog()
 
 class ToolsDirectoryHandler(FileSystemEventHandler):
     """Handler for file system events in the tools directory."""
@@ -74,8 +78,8 @@ class DynamicToolsLoader:
             self._observer = None
             print("Stopped watching tools directory")
 
-    def reload_all_tools(self):
-        """Reload all tools by clearing existing ones and loading again."""
+    def reload_all_tools(self) -> List[str]:
+        """Reload all tools and return the list of registered tools."""
         print("Reloading all tools...")
         # Clear all existing tool registrations
         for module_name in list(self._loaded_modules.keys()):
@@ -83,8 +87,9 @@ class DynamicToolsLoader:
         self._loaded_modules.clear()
         
         # Load all tools again
-        self.initialize()
+        tools = self.initialize()
         print("Tools reloaded successfully")
+        return tools
 
     def initialize(self):
         """Initialize the tools loader and load tools from the default directory."""
@@ -95,6 +100,68 @@ class DynamicToolsLoader:
         except Exception as e:
             print(f"Error initializing tools loader: {str(e)}")
             return []
+
+    def _register_instance_methods(self, instance: Any, module_name: str, instance_name: str, registered_tools: List[str]):
+        """Register methods of an instance with proper metadata.
+        
+        Args:
+            instance: The instance whose methods to register
+            module_name: Name of the module containing the instance
+            instance_name: Name of the instance
+            registered_tools: List to append registered tool names to
+        """
+        # Get all methods and their docstrings
+        for method_name, method in inspect.getmembers(instance, predicate=inspect.ismethod):
+            if method_name.startswith('_'):
+                continue
+                
+            method_qualified_name = f"{module_name}.{instance_name}.{method_name}"
+            
+            # Get method signature and docstring
+            sig = inspect.signature(method)
+            docstring = inspect.getdoc(method) or ""
+            
+            # Extract parameters
+            parameters = []
+            for param_name, param in sig.parameters.items():
+                if param_name == 'self':
+                    continue
+                    
+                # Get parameter type hint
+                param_type = "float" if module_name == "calculator_tool" else (
+                    str(param.annotation) if param.annotation != inspect.Parameter.empty else "Any"
+                )
+                
+                parameters.append(ParameterInfo(
+                    name=param_name,
+                    type_hint=param_type,
+                    description=f"Parameter {param_name}",
+                    required=param.default == inspect.Parameter.empty
+                ))
+            
+            # Get return type information
+            return_type = "float" if module_name == "calculator_tool" else (
+                str(sig.return_annotation) if sig.return_annotation != inspect.Parameter.empty else "Any"
+            )
+            
+            # Create metadata
+            metadata = ToolMetadata(
+                name=method_qualified_name,
+                description=docstring,
+                tool_type=ToolType.CLASS_METHOD,
+                parameters=parameters,
+                original_obj=method,
+                async_tool=inspect.iscoroutinefunction(method),
+                returns=ReturnInfo(
+                    type_hint=return_type,
+                    description="Return value"
+                )
+            )
+            
+            # Register the method
+            tools_catalog._tools[method_qualified_name] = metadata
+            tools_catalog._tool_instances[method_qualified_name] = method
+            registered_tools.append(method_qualified_name)
 
     def load_tools_from_directory(self, directory_path: Union[str, Path]) -> List[str]:
         """Dynamically load all Python modules in the given directory and register their tools.
@@ -145,9 +212,77 @@ class DynamicToolsLoader:
                         qualified_name = f"{module_name}.{attr_name}"
                         
                         try:
-                            # Register based on type using the enhanced register_tool
-                            if inspect.isclass(attr) or callable(attr) or isinstance(attr, object):
-                                tools_catalog.register_tool(attr, qualified_name)
+                            # Register instance if it's an object with methods
+                            if not inspect.isclass(attr) and not inspect.isfunction(attr) and hasattr(attr, '__dict__'):
+                                # Register the instance itself
+                                metadata = ToolMetadata(
+                                    name=qualified_name,
+                                    description=inspect.getdoc(attr) or "",
+                                    tool_type=ToolType.CLASS_METHOD,
+                                    parameters=[],  # Instance itself has no parameters
+                                    original_obj=attr,
+                                    async_tool=inspect.iscoroutinefunction(attr),
+                                    returns=ReturnInfo(
+                                        type_hint="Any",
+                                        description="Instance return value"
+                                    )
+                                )
+                                tools_catalog._tools[qualified_name] = metadata
+                                tools_catalog._tool_instances[qualified_name] = attr
+                                registered_tools.append(qualified_name)
+                                
+                                # Register its methods with proper metadata
+                                self._register_instance_methods(attr, module_name, attr_name, registered_tools)
+                                
+                            # Register other types (classes, functions)
+                            elif inspect.isclass(attr):
+                                try:
+                                    # Instantiate the class and register the instance
+                                    instance = attr()
+                                    metadata = ToolMetadata(
+                                        name=qualified_name,
+                                        description=inspect.getdoc(attr) or "",
+                                        tool_type=ToolType.CLASS_METHOD,
+                                        parameters=[],  # Class itself has no parameters
+                                        original_obj=instance,
+                                        async_tool=inspect.iscoroutinefunction(instance),
+                                        returns=ReturnInfo(
+                                            type_hint="Any",
+                                            description="Class instance return value"
+                                        )
+                                    )
+                                    tools_catalog._tools[qualified_name] = metadata
+                                    tools_catalog._tool_instances[qualified_name] = instance
+                                    registered_tools.append(qualified_name)
+                                except Exception as e:
+                                    print(f"Error instantiating {qualified_name}: {str(e)}")
+                                    continue
+                            elif inspect.isfunction(attr):
+                                sig = inspect.signature(attr)
+                                parameters = []
+                                for param_name, param in sig.parameters.items():
+                                    param_type = str(param.annotation) if param.annotation != inspect.Parameter.empty else "Any"
+                                    parameters.append(ParameterInfo(
+                                        name=param_name,
+                                        type_hint=param_type,
+                                        description=f"Parameter {param_name}",
+                                        required=param.default == inspect.Parameter.empty
+                                    ))
+                                return_type = str(sig.return_annotation) if sig.return_annotation != inspect.Parameter.empty else "Any"
+                                metadata = ToolMetadata(
+                                    name=qualified_name,
+                                    description=inspect.getdoc(attr) or "",
+                                    tool_type=ToolType.PYTHON_FUNCTION,
+                                    parameters=parameters,
+                                    original_obj=attr,
+                                    async_tool=inspect.iscoroutinefunction(attr),
+                                    returns=ReturnInfo(
+                                        type_hint=return_type,
+                                        description="Function return value"
+                                    )
+                                )
+                                tools_catalog._tools[qualified_name] = metadata
+                                tools_catalog._functions[qualified_name] = attr
                                 registered_tools.append(qualified_name)
                                 
                         except Exception as e:
@@ -210,14 +345,13 @@ class DynamicToolsLoader:
                     del tools_catalog._functions[name]
                 elif tool_type == "classes" and name in tools_catalog._classes:
                     del tools_catalog._classes[name]
-                elif tool_type == "instances" and name in tools_catalog._instances:
-                    del tools_catalog._instances[name]
+                elif tool_type == "instances" and name in tools_catalog._tool_instances:
+                    del tools_catalog._tool_instances[name]
                     
-        # Remove from metadata storage
-        to_remove = [name for name in tools_catalog.list_tools() if name.startswith(prefix)]
+        # Also remove from metadata
+        to_remove = [name for name in tools_catalog._tools if name.startswith(prefix)]
         for name in to_remove:
-            if name in tools_catalog._tools:
-                del tools_catalog._tools[name]
+            del tools_catalog._tools[name]
 
 
 # Create singleton instance

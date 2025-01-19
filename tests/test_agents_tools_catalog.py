@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch, PropertyMock
-
 from fastapi import HTTPException
+from crewai_tools import WebsiteSearchTool, SerperDevTool, FileReadTool
 
 from src.server.apis.agents_api import initialize_agent_tools
 from src.server.models.agent import AgentModel, ToolModel, CreateCrewRequest, TaskModel
@@ -11,8 +11,27 @@ from src.server.tools.tools_catalog import (
     ToolMetadata,
     ToolType,
     ReturnInfo,
+    tools_catalog
 )
 from src.server.apis.agents_api import create_crewai
+
+@pytest.fixture(autouse=True)
+def cleanup_tools():
+    """Cleanup fixture that runs automatically before and after each test."""
+    tools_catalog.reset()
+    yield
+    tools_catalog.reset()
+
+@pytest.fixture(autouse=True)
+def register_crewai_tools():
+    """Register CrewAI tools before running tests."""
+    website_tool = WebsiteSearchTool()
+    serper_tool = SerperDevTool()
+    file_read_tool = FileReadTool()
+    tools_catalog.register_ai_tool(website_tool, "WebsiteSearchTool")
+    tools_catalog.register_ai_tool(serper_tool, "SerperDevTool")
+    tools_catalog.register_ai_tool(file_read_tool, "FileReadTool")
+    yield
 
 @pytest.fixture
 def mock_tools_catalog():

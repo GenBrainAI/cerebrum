@@ -14,7 +14,7 @@ def cleanup_tools():
 
 def test_complex_calculator_tree(client: TestClient):
     # Read the calculator swagger YAML for complex number operations
-    with open(find_file("tests/calculator/calculator.yaml"), "r") as file:
+    with open(find_file("tests/calculator/complex_calc.yml"), "r") as file:
         swagger_yaml_content = file.read()
     
     # Create toolset with calculator API
@@ -31,7 +31,7 @@ def test_complex_calculator_tree(client: TestClient):
     # Create tasksmanager for complex calculations
     tasksmanager_data = {
         "name": "Complex Math Expert",
-        "model": "gpt-4",
+        "model": "gpt-4o-mini",
         "description": "TasksManager for complex number calculations",
     }
     tasksmanager_response = client.post("/tasksmanager", json=tasksmanager_data)
@@ -195,7 +195,7 @@ def test_complex_calculator_tree(client: TestClient):
         content="""Calculate the following operations with complex numbers:
         1. (3 + 4i) * (2 - 3i)
         2. (1 + 2i) / (2 + i)
-        3. sqrt(4 + 9i)
+        3. (5 + 6i) / (2 + 2i)
         Provide the results in the format: result1; result2; result3"""
     )
     

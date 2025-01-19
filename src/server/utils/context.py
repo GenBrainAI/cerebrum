@@ -1,12 +1,9 @@
 
 
-#  gpt-3.5-turbo-0613
-#  gpt-3.5-turbo-1106
-#  gpt-4-0613
-# 'gpt-4-turbo-preview'
+
 def prepare_context(chat_prompt, prompt, message_history, use_functions):
     # todo make it configurable
-    model = 'gpt-4-turbo-preview' if use_functions else 'gpt-4-turbo-preview'
+    model = 'gpt-4o-mini' if use_functions else 'gpt-4o-mini'
     tokens = calc_tokens(chat_prompt, message_history, model, prompt)
     if tokens > max_tokens(model):
         raise HTTPException(status_code=500,
@@ -38,6 +35,8 @@ def max_tokens(model):
     elif model == 'gpt-4-turbo-preview':
         return 128000
     elif model == 'gpt-4':
+        return 8192
+    elif model == 'gpt-4o':
         return 8192
 
 

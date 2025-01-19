@@ -56,7 +56,7 @@ class AgentTreeProvider:
             {
                 "name": role.name,
                 "description": getattr(role, "description", ""),
-                "model": getattr(role, "model", "gpt-4")
+                "model": getattr(role, "model", "gpt-4o-mini")
             }
             for role in roles
         ] or [

@@ -1,28 +1,27 @@
-import asyncio
+from __future__ import annotations
+from typing import Any, Dict, List, Optional, Union, Type, Tuple, Annotated
+from uuid import UUID, uuid4
 import inspect
+import logging
 import httpx
 import asyncio
-import logging
-import json
-import re
-from datetime import datetime
-from uuid import UUID, uuid4
-from pydantic import BaseModel, Field, create_model
-from typing import Dict, Any, List, Type, Union, Optional, cast
-from crewai_tools import BaseTool as CrewAITool
-from crewai_tools.tools.rag.rag_tool import RagTool
-from langchain.tools import BaseTool as LangChainTool
-from ..tools.tools_catalog import ToolsCatalog, tools_catalog, ParameterInfo
-from ..models.tools_descriptors import ToolMetadata, ToolType
-from ..models.toolset import Tool
-from ..models.function import ResolvedSchema, ParameterSchema
-from ..models.curried_proxy_info import CurriedProxyInfo, ToolInfo
-from crewai_tools import BaseTool as CrewAITool
 
+from crewai.tools import BaseTool
+from langchain.tools import BaseTool as LangChainTool
+from crewai_tools.tools.rag.rag_tool import RagTool
+from pydantic import BaseModel, Field, create_model, ConfigDict
+
+from ..tools.tools_catalog import ToolsCatalog, ParameterInfo, tools_catalog
+from ..models.curried_proxy_info import CurriedProxyInfo, ToolInfo
+from ..models.toolset import Tool
+from ..models.tools_descriptors import ToolMetadata, ToolContext, ToolType
+from ..models.function import ResolvedSchema, ParameterSchema
 
 logger = logging.getLogger(__name__)
 
 class CurriedProxy(BaseModel):
+    """A proxy that wraps a tool and provides a curried interface for calling it."""
+
     id: UUID = Field(default_factory=uuid4)
     tool_names: List[str] = Field(default_factory=list)
     catalog: ToolsCatalog = Field(default_factory=lambda: tools_catalog)
@@ -59,18 +58,31 @@ class CurriedProxy(BaseModel):
             else:
                 # Handle Python functions/methods
                 if tool_metadata.tool_type == ToolType.CLASS_METHOD:
-                    # For class methods, store class name and method name
-                    class_name, method_name = tool_name.split(".")
-                    tools.append(ToolInfo(
-                        name=tool_name,
-                        type="function",
-                        tool_data={
-                            "function_module": tool_metadata.original_obj.__module__,
-                            "class_name": class_name,
-                            "method_name": method_name,
-                            "is_method": True
-                        }
-                    ))
+                    # For class methods, check if there's a dot in the name
+                    if "." in tool_name:
+                        class_name, method_name = tool_name.split(".")
+                        tools.append(ToolInfo(
+                            name=tool_name,
+                            type="function",
+                            tool_data={
+                                "function_module": tool_metadata.original_obj.__module__,
+                                "class_name": class_name,
+                                "method_name": method_name,
+                                "is_method": True
+                            }
+                        ))
+                    else:
+                        # Handle class methods without dots
+                        tools.append(ToolInfo(
+                            name=tool_name,
+                            type="function",
+                            tool_data={
+                                "function_module": tool_metadata.original_obj.__module__,
+                                "class_name": tool_name,
+                                "method_name": None,
+                                "is_method": True
+                            }
+                        ))
                 else:
                     # For regular functions
                     if "." in tool_name:
@@ -139,10 +151,17 @@ class CurriedProxy(BaseModel):
             raise ValueError(f"Tool not found: {name}")
 
         try:
+            tool_instance = self.catalog.get_tool_instance(name)
+            if tool_instance is None:
+                return {"error": f"Tool instance not found: {name}"}
+
             if tool_metadata.tool_type == ToolType.OPENAPI_TOOL:
-                return await self._call_openapi_tool(tool_metadata.original_obj, arguments)
+                return await self._call_openapi_tool(tool_instance, arguments)
+            elif tool_metadata.tool_type == ToolType.PYTHON_FUNCTION:
+                if inspect.iscoroutinefunction(tool_instance):
+                    return await tool_instance(**arguments)
+                return tool_instance(**arguments)
             else:
-                tool_instance = self.catalog.get_tool_instance(name)
                 if inspect.iscoroutinefunction(tool_instance):
                     return await tool_instance(**arguments)
                 return tool_instance(**arguments)
@@ -153,7 +172,7 @@ class CurriedProxy(BaseModel):
         """Create a curried function for the named tool."""
         return lambda args: self.multiset_proxy(name, args)
 
-    def add_tool(self, name: str, tool: Union[callable, object, CrewAITool, LangChainTool, RagTool, Tool]) -> None:
+    def add_tool(self, name: str, tool: Union[callable, object, BaseTool, LangChainTool, RagTool, Tool]) -> None:
         """Add a tool to the proxy using the catalog.
         
         Args:
@@ -165,7 +184,7 @@ class CurriedProxy(BaseModel):
             if isinstance(tool, Tool):
                 tool_name = self.catalog.register_openapi_tool(tool, name)
                 tool_names = [tool_name]
-            elif isinstance(tool, (CrewAITool, LangChainTool, RagTool)):
+            elif isinstance(tool, (BaseTool, LangChainTool, RagTool)):
                 tool_name = self.catalog.register_ai_tool(tool, name)
                 tool_names = [tool_name]
             elif callable(tool) and not inspect.isclass(tool):
@@ -175,7 +194,10 @@ class CurriedProxy(BaseModel):
                 tool_names = self.catalog.register_class(tool, name)
             else:
                 # For class instances or objects
-                tool_names = self.catalog.register_class(tool.__class__, name)
+                tool_names = self.catalog.register_instance(tool, name)
+                # Remove the base name if it's also in the list of method names
+                if name in tool_names and len(tool_names) > 1:
+                    tool_names.remove(name)
                 
             for tool_name in tool_names:
                 if tool_name not in self.tool_names:
@@ -197,58 +219,131 @@ class CurriedProxy(BaseModel):
         """Get tool metadata by name."""
         return self.catalog.get_tool(name)
 
-    def export_to_crewai(self) -> List[CrewAITool]:
-        """Export tools as CrewAI tools."""
-        crewai_tools = []
-        for name in self.tool_names:
-            metadata = self.catalog.get_tool(name)
+    def export_to_crewai(self) -> List[BaseTool]:
+        """Export tools in CrewAI format."""
+        tools = []
+        for tool_name in self.tool_names:
+            metadata = self.catalog.get_tool(tool_name)
             if metadata:
-                tool = self._create_crewai_tool(name, metadata)
-                crewai_tools.append(tool)
-        return crewai_tools
+                # Create the tool instance with raw description
+                tool = CerebrumCrewAITool(
+                    name=metadata.name,
+                    description=metadata.description,  # Use raw description from metadata
+                    proxy=self
+                )
+                tools.append(tool)
+        return tools
 
     def export_to_openai(self) -> List[Dict[str, Any]]:
+        """Export tools to OpenAI format."""
         openai_tools = []
-        for name in self.tool_names:
-            metadata = self.catalog.get_tool(name)
-            if metadata:
-                openai_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "description": metadata.description,
-                        "parameters": {
-                            "type": "object",
-                            "properties": {},
-                            "required": []
+        for tool_name in self.tool_names:
+            metadata = self.catalog.get_tool(tool_name)
+            if metadata is None:
+                continue
+
+            # Get tool instance to check for required_args
+            tool_instance = metadata.original_obj
+            parameters = {}
+            required = []
+
+            # Add parameters from required_args if available
+            if hasattr(tool_instance, 'required_args'):
+                for param_name, type_hint in tool_instance.required_args.items():
+                    description = "Description of the content" if param_name == "description" else "Path to the file to read" if param_name == "file_path" else f"Parameter {param_name}"
+                    parameters[param_name] = {
+                        "type": "object" if "Dict" in type_hint or "object" in type_hint else "string",
+                        "description": description
+                    }
+                    required.append(param_name)
+
+            # Add parameters from metadata
+            for param in metadata.parameters:
+                if param.name not in parameters:
+                    description = "Description of the content" if param.name == "description" else "Path to the file to read" if param.name == "file_path" else param.description or f"Parameter {param.name}"
+                    
+                    # Check if we have schema information for this parameter
+                    param_schema = None
+                    if metadata.schema and 'requestBody' in metadata.schema:
+                        request_body = metadata.schema['requestBody'].get('requestBody')
+                        if request_body and request_body.schema:
+                            param_schema = request_body.schema
+                            if param_schema.properties and param.name in param_schema.properties:
+                                param_schema = param_schema.properties[param.name]
+                    
+                    if param_schema:
+                        # Convert the schema to OpenAI format
+                        parameters[param.name] = self._convert_schema(param_schema)
+                    else:
+                        # Fallback to basic type inference
+                        param_type = "object" if "Dict" in param.type_hint or "object" in param.type_hint else "string"
+                        parameters[param.name] = {
+                            "type": param_type,
+                            "description": description
                         }
+                    
+                    if param.required:
+                        required.append(param.name)
+
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": metadata.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": parameters,
+                        "required": required
                     }
                 }
-                
-                # Handle schema conversion for OpenAPI tools
-                if metadata.tool_type == ToolType.OPENAPI_TOOL:
-                    if metadata.schema:
-                        converted_params = self._convert_parameters_to_openai_schema(metadata.schema)
-                        openai_tool["function"]["parameters"] = converted_params
-                # Convert parameter list for other tools
-                elif metadata.parameters:
-                    param_schema = {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                    for param in metadata.parameters:
-                        param_schema["properties"][param.name] = {
-                            "type": self._get_openai_type(param.type_hint),
-                            "description": param.description
-                        }
-                        if param.required:
-                            param_schema["required"].append(param.name)
-                    openai_tool["function"]["parameters"] = param_schema
-                
-                openai_tools.append(openai_tool)
-                
+            })
         return openai_tools
+
+    def export_to_anthropic(self) -> List[Dict[str, Any]]:
+        """Export tools to Anthropic format."""
+        anthropic_tools = []
+        for tool_name in self.tool_names:
+            metadata = self.catalog.get_tool(tool_name)
+            if metadata is None:
+                continue
+
+            # Get tool instance to check for required_args
+            tool_instance = metadata.original_obj
+            parameters = {}
+            required = []
+
+            # Add parameters from required_args if available
+            if hasattr(tool_instance, 'required_args'):
+                for param_name, type_hint in tool_instance.required_args.items():
+                    description = "Description of the content" if param_name == "description" else "Path to the file to read" if param_name == "file_path" else f"Parameter {param_name}"
+                    parameters[param_name] = {
+                        "type": "string",
+                        "description": description
+                    }
+                    required.append(param_name)
+
+            # Add parameters from metadata
+            for param in metadata.parameters:
+                if param.name not in parameters:
+                    description = "Description of the content" if param.name == "description" else "Path to the file to read" if param.name == "file_path" else param.description or f"Parameter {param.name}"
+                    parameters[param.name] = {
+                        "type": "string",
+                        "description": description
+                    }
+                    if param.required:
+                        required.append(param.name)
+
+            anthropic_tools.append({
+                "name": tool_name,
+                "description": metadata.description,
+                "type": "function",
+                "parameters": {
+                    "type": "object",
+                    "properties": parameters,
+                    "required": required
+                }
+            })
+        return anthropic_tools
 
     def _get_openai_type(self, type_hint: Optional[str]) -> str:
         """Convert Python/custom type hints to OpenAI types."""
@@ -378,25 +473,13 @@ class CurriedProxy(BaseModel):
         
         return {"type": "string"}  # Default fallback
 
-    def export_to_anthropic(self) -> List[Dict[str, Any]]:
-        """Export tools as Anthropic function definitions."""
-        anthropic_tools = []
-        for name in self.tool_names:
-            metadata = self.catalog.get_tool(name)
-            if metadata:
-                anthropic_tool = {
-                    "type": "function",
-                    "name": name,
-                    "description": metadata.description,
-                    "parameters": self._parameters_to_anthropic_schema(metadata.parameters)
-                }
-                anthropic_tools.append(anthropic_tool)
-        return anthropic_tools
-
-    def _create_crewai_tool(self, name: str, metadata: ToolMetadata) -> CrewAITool:
+    def _create_crewai_tool(self, name: str, metadata: ToolMetadata) -> BaseTool:
         """Create a CrewAI tool from tool metadata."""
-        return create_crewai_tool(name, metadata, self)
-
+        return CerebrumCrewAITool(
+            name=name,
+            description=metadata.description,
+            proxy=self
+        )
 
     def _parameters_to_schema(self, parameters: List[ParameterInfo]) -> Dict[str, Any]:
         """Convert parameter info to JSON schema."""
@@ -446,326 +529,254 @@ class CurriedProxy(BaseModel):
         proxy.catalog = ToolsCatalog.from_dict(data["catalog"])
         return proxy
     
-    async def _call_openapi_tool(self, tool: Tool, arguments: Dict[str, Any]) -> Any:
-        """Execute an OpenAPI tool."""
+    async def _call_openapi_tool(self, tool: Tool, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute an OpenAPI tool with the given arguments."""
         try:
-            function = tool.function
-            base_url = function.servers[0].url if function.servers else ""
-            url = base_url + function.url
-            headers = {}
+            # Get the base URL from the first server
+            if not tool.function.servers or not tool.function.servers[0].url:
+                return {"error": "No server URL provided"}
             
-            # Handle credentials from the tool's function
-            if function.credentials:
-                if function.credentials.get('auth_type') and function.credentials.get('auth_key'):
-                    # Use the exact auth type from credentials without modifying case
-                    headers["Authorization"] = f"{function.credentials['auth_type']} {function.credentials['auth_key']}"
-                    
-            # Initialize parameter containers
+            base_url = tool.function.servers[0].url.rstrip('/')
+            path = tool.function.url.lstrip('/')
+            url = f"{base_url}/{path}"
+
+            # Prepare headers with authentication if credentials are present
+            headers = {}
+            if tool.function.credentials:
+                auth_type = tool.function.credentials.get('auth_type', '')
+                auth_key = tool.function.credentials.get('auth_key', '')
+                if auth_type and auth_key:
+                    headers["Authorization"] = f"{auth_type} {auth_key}"
+
+            # Add Accept header
+            headers["Accept"] = "*/*"
+
+            # Organize parameters by type
             query_params = {}
             header_params = {}
             path_params = {}
-            body_params = None
-            
-            # Process parameters based on their location
-            for param_type, params in function.parameters.items():
-                if param_type == 'query':
-                    query_params = {k: arguments.get(k) for k, v in params.items() if k in arguments}
-                elif param_type == 'header':
-                    header_params = {k: arguments.get(k) for k, v in params.items() if k in arguments}
-                elif param_type == 'path':
-                    path_params = {k: arguments.get(k) for k, v in params.items() if k in arguments}
-                elif param_type == 'requestBody':
-                    # For request body, use the arguments directly as they should match the schema
-                    body_params = arguments
-                    
-            # Update headers with custom header parameters
+            body_params = {}
+
+            for param_location, params in tool.function.parameters.items():
+                for param_name, param in params.items():
+                    if param_name in arguments:
+                        if param.in_ == 'query':
+                            query_params[param_name] = arguments[param_name]
+                        elif param.in_ == 'header':
+                            header_params[param_name] = arguments[param_name]
+                        elif param.in_ == 'path':
+                            path_params[param_name] = arguments[param_name]
+                        elif param.in_ == 'body':
+                            body_params[param_name] = arguments[param_name]
+
+            # Update headers with any header parameters
             headers.update(header_params)
-                    
-            # Set default headers
-            headers["Content-Type"] = "application/json" if body_params is not None else "application/x-www-form-urlencoded"
-            headers["Accept"] = "*/*"
-            
-            # Format URL with path parameters
-            if path_params:
-                url = url.format(**path_params)
-                
-            # Execute request
+
+            # Add Content-Type header if there are body parameters
+            if body_params:
+                headers["Content-Type"] = "application/json"
+
+            # Replace path parameters in URL
+            for name, value in path_params.items():
+                url = url.replace(f"{{{name}}}", str(value))
+
             async with httpx.AsyncClient() as client:
-                request_kwargs = {
-                    "url": url,
-                    "params": query_params,
-                    "headers": headers,
-                }
-                
-                if body_params is not None:
-                    request_kwargs["json"] = body_params
-                    
-                response = await getattr(client, function.method.lower())(**request_kwargs)
+                if tool.function.method.lower() == 'get':
+                    response = await client.get(url=url, params=query_params, headers=headers)
+                elif tool.function.method.lower() == 'post':
+                    response = await client.post(url=url, params=query_params, json=body_params, headers=headers)
+                else:
+                    return {"error": f"Unsupported HTTP method: {tool.function.method}"}
+
                 if response.status_code >= 400:
-                    response.raise_for_status()
-                return response.json()      
+                    return {"error": f"Request failed with status {response.status_code}: {response.text}"}
+
+                # Try to return JSON if the response is JSON, otherwise return text
+                content_type = response.headers.get('content-type', '')
+                if 'application/json' in content_type:
+                    return await response.json()
+                return {"result": response.text}
+
         except Exception as e:
-            return {"error": f"Request failed: {str(e)}"}
+            return {"error": str(e)}
 
-
-# CreaAI specific export functions
-
-def convert_type_hint(type_hint: Optional[str]) -> Type:
-    """
-    Convert a type hint string to an actual Python type.
-    
-    Args:
-        type_hint: String representation of the type
+    def register_tool(self, name: str, tool: Any) -> None:
+        """Register a tool with this proxy.
         
-    Returns:
-        Actual Python type or Any if type can't be determined
-    """
-    if not type_hint:
-        return Any
+        Args:
+            name: The name of the tool
+            tool: The tool instance
+        """
+        # Add tool to catalog
+        self.add_tool(name, tool)
         
-    # Handle '<class 'type'>' format
-    class_match = re.match(r"<class '(\w+)'>", type_hint)
-    if class_match:
-        type_hint = class_match.group(1)
+        # Store original description if available
+        if hasattr(tool, 'description'):
+            self.catalog.update_tool_metadata(name, {'description': tool.description})
 
-    # Strip any quotes and spaces
-    type_hint = type_hint.strip().strip("'").strip('"')
-    
-    # Basic type mapping
-    type_map = {
-        'str': str,
-        'string': str,
-        'int': int,
-        'integer': int,
-        'float': float,
-        'bool': bool,
-        'boolean': bool,
-        'list': List,
-        'dict': Dict,
-        'any': Any,
-        'none': type(None),
-        'List': List,
-        'Dict': Dict,
-        'Any': Any,
-        'Optional': Optional,
-        'Union': Union,
-        'number': float  
-    }
-    
-    # Check if it's a basic type
-    if type_hint.lower() in type_map:
-        return type_map[type_hint.lower()]
-    
-    # Handle Optional[Type] pattern
-    if type_hint.startswith('Optional[') or type_hint.startswith('optional['):
-        inner_type = type_hint[9:-1]  # Remove Optional[ and ]
-        return Optional[convert_type_hint(inner_type)]
-    
-    # Handle List[Type] pattern
-    if type_hint.lower().startswith('list['):
-        inner_type = type_hint[5:-1]  # Remove List[ and ]
-        return List[convert_type_hint(inner_type)]
-    
-    # Handle Dict patterns (both Dict[...] and dict[...])
-    if type_hint.lower().startswith(('dict[', 'Dict[')):
-        # Extract the part between [ and ]
-        dict_part = type_hint[type_hint.index('[')+1:type_hint.rindex(']')]
+    async def execute(self, tool_name: str, args: Dict[str, Any]) -> Any:
+        """Execute a tool by name with given arguments.
         
-        # Split by comma, handling potential spaces
-        key_value = [part.strip() for part in dict_part.split(',')]
-        
-        if len(key_value) == 2:
-            key_type = convert_type_hint(key_value[0].strip())
-            value_type = convert_type_hint(key_value[1].strip())
-            return Dict[key_type, value_type]
-    
-    # Handle Union[Type1, Type2] pattern
-    if type_hint.lower().startswith('union['):
-        types = type_hint[6:-1].split(',')  # Remove Union[ and ] and split
-        converted_types = [convert_type_hint(t.strip()) for t in types]
-        return Union[tuple(converted_types)]
-        
-    # Default to Any for unknown types
-    logger.warning(f"Unknown type hint '{type_hint}', defaulting to Any")
-    return Any
-
-class ToolArgumentSchema(BaseModel):
-    """Base schema for tool arguments."""
-    class Config:
-        extra = "forbid"  # Prevent additional arguments
-
-def create_argument_schema(metadata: ToolMetadata) -> Type[ToolArgumentSchema]:
-    """Create a Pydantic schema for tool arguments based on metadata."""
-    fields: Dict[str, Any] = {}
-    
-    for param in metadata.parameters:
-        try:
-            # Convert type hint string to actual type
-            field_type = convert_type_hint(param.type_hint)
+        Args:
+            tool_name: The name of the tool to execute
+            args: The arguments to pass to the tool
             
-            # Create field with proper validation
-            field_info = Field(
-                default=param.default if not param.required else ...,
-                description=param.description or "",
-                title=param.name.title()
-            )
-            
-            # Add field to schema
-            fields[param.name] = (field_type, field_info)
-            
-        except Exception as e:
-            logger.error(f"Error processing parameter {param.name}: {str(e)}")
-            # Fallback to Any type with warning
-            fields[param.name] = (Any, field_info)
-    
-    model_name = f"{metadata.name.replace('.', '_')}_Args"
-    try:
-        return create_model(model_name, __base__=ToolArgumentSchema, **fields)
-    except Exception as e:
-        logger.error(f"Error creating argument schema for tool {metadata.name}: {str(e)}, fields: {fields}")
-        raise
+        Returns:
+            The result of the tool execution
+        """
+        return await self.multiset_proxy(tool_name, args)
 
-def parse_input_arguments(kwargs: Dict[str, Any], tool_name: str) -> Dict[str, Any]:
-    """
-    Parse and normalize input arguments for tool execution.
-    
-    Args:
-        kwargs: Raw input arguments
-        tool_name: Name of the tool being executed
+    def _create_args_schema(self, tool_name: str, parameters: Dict[str, str]) -> Type[BaseModel]:
+        """Create a Pydantic model for tool arguments."""
+        fields = {}
+        if parameters:
+            for param_name, type_hint in parameters.items():
+                python_type = self._convert_type_hint(type_hint)
+                fields[param_name] = (python_type, Field(..., description=f"Parameter {param_name}"))
+        else:
+            # Create a default schema if no parameters are provided
+            fields = {"input": (str, Field(..., description="Input for the tool"))}
+
+        schema = create_model(f"{tool_name}_args", **fields)
+        return schema
+
+    def _convert_type_hint_to_annotation(self, type_hint: Optional[str]) -> Any:
+        """Convert type hint string to pydantic annotation."""
+        python_type = self._convert_type_hint(type_hint)
+        return Annotated[python_type, Field(description=f"Parameter of type {python_type.__name__}")]
+
+    def _convert_type_hint(self, type_hint: Optional[Union[str, Tuple]]) -> Type:
+        """Convert a type hint string or tuple to a Python type."""
+        if type_hint is None:
+            return str
+
+        # If type_hint is a tuple, extract the first element (the type)
+        if isinstance(type_hint, tuple):
+            type_hint = type_hint[0]
+            # If it's already a type, return it
+            if isinstance(type_hint, type):
+                return type_hint
+
+        # If it's already a type, return it
+        if isinstance(type_hint, type):
+            return type_hint
+
+        # Convert string type hints
+        type_map = {
+            'str': str,
+            'int': int,
+            'float': float,
+            'bool': bool,
+            'list': list,
+            'dict': dict,
+            'any': Any
+        }
+
+        if isinstance(type_hint, str):
+            return type_map.get(type_hint.lower(), str)  # Default to str if type not found
         
-    Returns:
-        Normalized arguments dictionary
-    """
-    try:
-        # Log initial state
-        logger.debug(f"[{tool_name}] Initial arguments: {kwargs}")
-        
-        # Handle empty input
-        if not kwargs:
-            logger.warning(f"[{tool_name}] Received empty arguments")
-            return {}
-
-        # Handle string JSON input
-        if len(kwargs) == 1 and "input" in kwargs and isinstance(kwargs["input"], str):
-            try:
-                parsed = json.loads(kwargs["input"])
-                if isinstance(parsed, dict):
-                    logger.debug(f"[{tool_name}] Parsed input JSON: {parsed}")
-                    return parsed
-            except json.JSONDecodeError as e:
-                logger.debug(f"[{tool_name}] Failed to parse input as JSON: {e}")
-
-        # Handle single string parameter that might be JSON
-        if len(kwargs) == 1 and isinstance(list(kwargs.values())[0], str):
-            try:
-                parsed = json.loads(list(kwargs.values())[0])
-                if isinstance(parsed, dict):
-                    logger.debug(f"[{tool_name}] Parsed single parameter JSON: {parsed}")
-                    return parsed
-            except json.JSONDecodeError:
-                logger.debug(f"[{tool_name}] Single parameter is not JSON")
-
-        # If we get here, return the original arguments
-        return kwargs
-        
-    except Exception as e:
-        logger.error(f"[{tool_name}] Error parsing arguments: {str(e)}")
-        return kwargs
-
-class CerebrumToolWrapper:
-    """Wrapper class to hold the tool's execution context."""
-    def __init__(self, proxy: Any, metadata: ToolMetadata):
-        self.proxy = proxy
-        self.metadata = metadata
-        self.args_schema = create_argument_schema(metadata)
-
-class CerebrumCrewAITool(CrewAITool):
-    """Enhanced CrewAI tool with improved argument handling and async support."""
-    def __init__(self, name: str, description: str, proxy: Any, metadata: ToolMetadata, **kwargs):
-        super().__init__(name=name, description=description, **kwargs)
-        self._context = CerebrumToolWrapper(proxy, metadata)
-
-        if metadata.returns and metadata.returns.description:
-            self.description = f"{self.description}\nReturns: {metadata.returns.description}"
-
-        # Add parameter information to description
-        param_desc = self._build_parameter_description()
-        if param_desc:
-            self.description = f"{self.description}\n\nParameters:\n{param_desc}"
-
-    def _build_parameter_description(self) -> str:
-        """Build a description of required and optional parameters."""
-        if not self._context.metadata.parameters:
-            return ""
-            
-        required_params = []
-        optional_params = []
-        
-        for param in self._context.metadata.parameters:
-            param_desc = f"{param.name}"
-            if param.description:
-                param_desc += f": {param.description}"
-            if param.type_hint:
-                param_desc += f" (type: {param.type_hint})"
-                
-            if param.required:
-                required_params.append(param_desc)
-            else:
-                optional_params.append(param_desc)
-
-        desc_parts = []
-        if required_params:
-            desc_parts.append("Required:\n  " + "\n  ".join(required_params))
-        if optional_params:
-            desc_parts.append("Optional:\n  " + "\n  ".join(optional_params))
-            
-        return "\n".join(desc_parts)
+        return str  # Default to str for unknown types
 
     async def _arun(self, **kwargs: Any) -> Any:
-        """Async execution of the tool."""
+        """Execute the tool asynchronously."""
         try:
-            # Parse and normalize input arguments
-            parsed_args = parse_input_arguments(kwargs, self.name)
-            logger.debug(f"[{self.name}] Using arguments: {parsed_args}")
-            
-            # Validate arguments using schema
-            try:
-                validated_args = self._context.args_schema(**parsed_args)
-                logger.debug(f"[{self.name}] Arguments validated successfully")
-            except Exception as e:
-                logger.error(f"[{self.name}] Validation error: {str(e)}")
-                raise
+            # Validate arguments using the schema
+            if self.args_schema:
+                validated_args = self.args_schema(**kwargs)
+                kwargs = validated_args.model_dump()
 
-            # Execute tool
-            start_time = datetime.now()
-            try:
-                result = await self._context.proxy.curried_proxy(self.name)(validated_args.dict())
-                execution_time = (datetime.now() - start_time).total_seconds()
-                logger.debug(f"[{self.name}] Execution completed in {execution_time:.2f}s")
-                return result
-            except Exception as e:
-                logger.error(f"[{self.name}] Execution error: {str(e)}")
-                raise
-            
+            # Execute the tool through the proxy
+            return await self._proxy.execute(self.name, kwargs)
         except Exception as e:
-            logger.error(f"[{self.name}] Tool execution failed: {str(e)}")
-            raise
+            raise ValueError(f"Error executing tool {self.name}: {str(e)}")
+
+    def _run(self, **kwargs) -> str:
+        """Run the tool synchronously - not supported."""
+        raise NotImplementedError("This tool only supports async execution")
+
+class CerebrumToolSchema(BaseModel):
+    """Base schema for all Cerebrum tools."""
+    model_config = ConfigDict(extra='forbid')  # Prevent extra fields like kwargs
+
+class ArgsSchema(BaseModel):
+    """Base schema for tool arguments that forbids extra fields."""
+    model_config = ConfigDict(extra='forbid')
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):
+        """Remove kwargs from required fields if present."""
+        schema = super().model_json_schema(*args, **kwargs)
+        if 'required' in schema and 'kwargs' in schema['required']:
+            schema['required'].remove('kwargs')
+        return schema
+
+class CerebrumCrewAITool(BaseTool):
+    """A tool that wraps a CurriedProxy for use with CrewAI."""
+    
+    def __init__(self, name: str, description: str, proxy: Any):
+        """Initialize the tool with name, description and proxy."""
+        # Get tool metadata to ensure we have all parameters
+        metadata = proxy.catalog.get_tool(name)
+        if metadata is None:
+            raise ValueError(f"Tool {name} not found in catalog")
+
+        # Create field definitions from metadata parameters and required_args
+        field_definitions = {}
+        
+        # Add parameters from required_args if available
+        if hasattr(metadata.original_obj, 'required_args'):
+            for param_name, type_hint in metadata.original_obj.required_args.items():
+                python_type = eval(type_hint)
+                description = "Description of the content" if param_name == "description" else "Path to the file to read" if param_name == "file_path" else f"Parameter {param_name}"
+                field_definitions[param_name] = (python_type, Field(..., description=description))
+
+        # Add parameters from metadata
+        for param in metadata.parameters:
+            if param.name not in field_definitions:
+                python_type = eval(param.type_hint) if param.type_hint else str
+                description = "Description of the content" if param.name == "description" else "Path to the file to read" if param.name == "file_path" else param.description or f"Parameter {param.name}"
+                field_definitions[param.name] = (python_type, Field(..., description=description))
+
+        # Create schema class
+        schema = create_model(
+            f"{name}Schema",
+            **field_definitions,
+            __config__=ConfigDict(extra='forbid')
+        )
+
+        # Initialize parent with schema
+        super().__init__(name=name, description=description, args_schema=schema)
+        
+        # Store proxy for later use
+        self._proxy = proxy
 
     def _run(self, **kwargs: Any) -> Any:
-        """Synchronous wrapper for async execution."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        return loop.run_until_complete(self._arun(**kwargs))
+        """Execute the tool synchronously."""
+        return asyncio.run(self._arun(**kwargs))
 
-def create_crewai_tool(name: str, metadata: ToolMetadata, proxy: Any) -> CrewAITool:
-    """Factory function to create a CrewAI tool from metadata."""
+    async def _arun(self, **kwargs: Any) -> Any:
+        """Execute the tool asynchronously."""
+        try:
+            # Validate arguments using the schema
+            if self.args_schema:
+                validated_args = self.args_schema(**kwargs)
+                kwargs = validated_args.model_dump()
+
+            # Execute the tool through the proxy
+            return await self._proxy.execute(self.name, kwargs)
+        except Exception as e:
+            raise ValueError(f"Error executing tool {self.name}: {str(e)}")
+
+def create_crewai_tool(name: str, metadata: ToolMetadata, proxy: Any) -> BaseTool:
+    """Create a CrewAI tool from tool metadata and proxy.
+    
+    Args:
+        name: The name of the tool
+        metadata: The tool's metadata containing description and parameters
+        proxy: The CurriedProxy instance for executing the tool
+    """
     return CerebrumCrewAITool(
         name=name,
         description=metadata.description,
-        proxy=proxy,
-        metadata=metadata
+        proxy=proxy
     )

@@ -1,7 +1,7 @@
 import streamlit as st
 from typing import Optional, Dict, Any
 from ...models.tools_descriptors import ToolType
-from ...models.function import Tool
+from ...models.toolset import Tool
 
 class ToolDialog:
     """Dialog for adding/configuring tools."""

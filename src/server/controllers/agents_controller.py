@@ -7,7 +7,7 @@ from langchain.tools import BaseTool as LangChainBaseTool
 from langchain_ollama.llms import OllamaLLM as Ollama
 from langchain_openai import ChatOpenAI
 from langchain_openai import AzureChatOpenAI
-from typing import Optional
+from typing import Optional, Dict, Any
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
 from ..tools.file_tool import FileTool
@@ -43,8 +43,7 @@ TOOLS = {
 class CrewLLM:
     """LLM configuration for CrewAI agents."""
     def __init__(self):
-        self.OpenAIGPT35 = ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0.7)
-        self.OpenAIGPT4 = ChatOpenAI(model_name="gpt-4", temperature=0.7)
+        self.OpenAIGPT4 = ChatOpenAI(model_name="gpt-4o", temperature=0.7)
         self.Ollama = Ollama(model="llama3.2:latest")
 
 async def create_crew(
@@ -142,4 +141,61 @@ async def enhance_crew_with_context(
         # Don't raise an exception - if context enhancement fails,
         # return the original crew
         return crew
+
+async def execute_task(task_id: str, persistence_model) -> Dict[str, Any]:
+    """Execute a task using CrewAI.
+    
+    Args:
+        task_id: ID of the task to execute
+        persistence_model: Persistence model instance
+        
+    Returns:
+        Dictionary containing execution results
+        
+    Raises:
+        HTTPException: If task execution fails
+    """
+    try:
+        # Get task
+        task = persistence_model.tasks.read(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+            
+        # Get required configurations
+        crewai_config = persistence_model.crewai_config.read(task.crewai_config_id)
+        if not crewai_config:
+            raise HTTPException(status_code=404, detail="CrewAI configuration not found")
+            
+        curried_proxy = None
+        if task.curried_proxy_id:
+            curried_proxy = persistence_model.curried_proxies.read(task.curried_proxy_id)
+            if not curried_proxy:
+                raise HTTPException(status_code=404, detail="CurriedProxy not found")
+        
+        # Create crew
+        crew = await create_crew(crewai_config.create_crew, curried_proxy)
+        
+        # Enhance with context if needed
+        if task.use_context:
+            crew = await enhance_crew_with_context(crew, task_id)
+            
+        # Execute crew tasks
+        result = crew.kickoff()
+        
+        # Update task with execution logs
+        task.execution_logs = crew.process_outputs()
+        persistence_model.tasks.update(task)
+        
+        return {
+            "task_id": task_id,
+            "status": "completed",
+            "result": result,
+            "execution_logs": task.execution_logs
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error executing task: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 

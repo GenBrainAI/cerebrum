@@ -5,6 +5,7 @@ import pytest
 from src.server.main import app
 import pytest_asyncio
 from src.server.tools.tools_catalog import tools_catalog
+from crewai_tools import WebsiteSearchTool, SerperDevTool, FileReadTool
 
 client = TestClient(app)
 
@@ -14,6 +15,17 @@ def cleanup_tools():
     tools_catalog.reset()
     yield
     tools_catalog.reset()
+
+@pytest.fixture(autouse=True)
+def register_crewai_tools():
+    """Register CrewAI tools before running tests."""
+    website_tool = WebsiteSearchTool()
+    serper_tool = SerperDevTool()
+    file_read_tool = FileReadTool()
+    tools_catalog.register_ai_tool(website_tool, "WebsiteSearchTool")
+    tools_catalog.register_ai_tool(serper_tool, "SerperDevTool")
+    tools_catalog.register_ai_tool(file_read_tool, "FileReadTool")
+    yield
 
 @pytest.mark.unit
 def test_create_agents_and_tasks():

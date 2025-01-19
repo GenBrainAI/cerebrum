@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
-from src.server.tools.tools_catalog import tools_catalog
+from src.server.models.tools_catalog import ToolsCatalog
 from src.server.tools.internal_file_tools import InternalFileTools
 from src.server.tools.internal_credentials_tools import InternalCredentialsTools
 from src.server.tools.internal_testing_tools import InternalTestingTools
@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 
 # Disable Streamlit warnings
 logging.getLogger('streamlit').setLevel(logging.ERROR)
+
+# Get the global instance
+tools_catalog = ToolsCatalog()
 
 async def add_langchain_tools_docs_to_knowledge_base(persistence_model: InMemoryPersistenceModel) -> None:
     """Add Langchain tools documentation to the knowledge base."""
@@ -124,12 +127,12 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel)
     """Set up the dynamic tools state."""
     try:
         # Register tools in catalog
-        tools_catalog.register_class("internal_file_tools", InternalFileTools)
-        tools_catalog.register_class("internal_credentials_tools", InternalCredentialsTools)
-        tools_catalog.register_class("internal_testing_tools", InternalTestingTools)
-        tools_catalog.register_class("internal_proxy_tools", InternalProxyTools)
-        tools_catalog.register_class("url_tools", URLTools)
-        tools_catalog.register_class("GitHubTool", GitHubTool)  # Register GitHubTool class directly
+        tools_catalog.register_tool(InternalFileTools(), "internal_file_tools")
+        tools_catalog.register_tool(InternalCredentialsTools(), "internal_credentials_tools")
+        tools_catalog.register_tool(InternalTestingTools(), "internal_testing_tools")
+        tools_catalog.register_tool(InternalProxyTools(), "internal_proxy_tools")
+        tools_catalog.register_tool(URLTools(), "url_tools")
+        # Skip GitHubTool registration as it requires credentials
         print("🛠️ Registered tools in catalog")
 
         # Initialize context database with proper configuration
@@ -348,7 +351,7 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel)
         # Create TasksManager for dynamic tools
         tasksmanager = TasksManager(
             name="Dynamic Langchain Tools Generator",
-            model="gpt-4",
+            model="gpt-4o-mini",
             description="Manages the generation and integration of Langchain tools",
             messages=[
                 {
@@ -413,7 +416,7 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel)
             description="Generate and integrate a new Langchain tool",
             tasksmanager_id=tasksmanager.id,
             crewai_config_id=crewai_config.id,
-            curried_proxy_id=curried_proxy_id,
+            curried_proxy_id=str(curried_proxy_id),
             use_context=True,
             inherit_manager_context=True
         )
