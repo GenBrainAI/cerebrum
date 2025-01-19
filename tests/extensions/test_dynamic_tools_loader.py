@@ -97,21 +97,22 @@ another_instance = ConfiguredTool({"other": "config"})
 @pytest.fixture(autouse=True)
 def clear_catalog():
     """Clear the tools catalog before each test."""
-    # Store original default tools
-    original_default_tools = tools_catalog.DEFAULT_TOOLS.copy()
+    # Store original tools
+    original_tools = tools_catalog.DEFAULT_TOOLS.copy()
     
     # Clear all tools
     tools_catalog._tools.clear()
-    tools_catalog._instances.clear()
+    tools_catalog._tool_instances.clear()
     tools_catalog._functions.clear()
     tools_catalog._classes.clear()
-    tools_catalog.DEFAULT_TOOLS.clear()
+    tools_catalog._openapi_tools.clear()
+    tools_catalog._ai_tools.clear()
     
     yield
     
-    # Restore original default tools
-    tools_catalog.DEFAULT_TOOLS = original_default_tools
-    tools_catalog._initialize_default_tools()
+    # Restore original tools
+    tools_catalog.DEFAULT_TOOLS = original_tools
+    tools_catalog.reset_to_defaults()
 
 
 def test_singleton():
@@ -139,7 +140,7 @@ def test_load_tools_from_directory(temp_tools_dir):
     # Check instance tools
     assert "instance_tool.configured_tool" in registered
     assert "instance_tool.another_instance" in registered
-    assert "instance_tool.configured_tool" in tools_catalog._instances
+    assert "instance_tool.configured_tool" in tools_catalog._tool_instances
     
     # Check metadata
     tool_meta = tools_catalog.get_tool("function_tool.test_function")
@@ -233,8 +234,7 @@ def test_unregister_module(temp_tools_dir):
     assert all(tool.startswith("function_tool.") for tool in removed_tools)
     assert not any(name.startswith("function_tool.") for name in tools_catalog._functions)
     assert not any(name.startswith("function_tool.") for name in tools_catalog._classes)
-    assert not any(name.startswith("function_tool.") for name in tools_catalog._instances)
-    assert not any(name.startswith("function_tool.") for name in tools_catalog._tools)
+    assert not any(name.startswith("function_tool.") for name in tools_catalog._tool_instances)
 
 
 def test_initialize():

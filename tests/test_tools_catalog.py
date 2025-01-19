@@ -16,6 +16,7 @@ from src.server.tools.file_tool import FileTool
 from src.server.tools.github_tool import GitHubTool
 from src.server.tools.microservices_tool import MicroservicesTool
 from src.server.tools.sms_tool import SMSTool
+import base64
 
 # Test fixtures and helper functions
 _original_catalog = None
@@ -43,32 +44,44 @@ def create_mock_env():
     }
 
 @pytest.fixture
-def mock_github():
-    """Fixture to mock GitHub functionality."""
-    mock_repo = create_mock_repo()
-    
-    # Create patches
-    patches = [
-        patch('github.Github', return_value=MagicMock(spec=Github, get_repo=lambda _: mock_repo)),
-        patch('src.server.tools.github_tool.Github', return_value=MagicMock(spec=Github, get_repo=lambda _: mock_repo)),
-        patch('src.server.tools.github_tool.GitHubTool.get_file_contents', return_value={'content': 'mocked_content'})
-    ]
-    
-    # Apply all patches
-    for p in patches:
-        p.start()
-    
-    yield
-    
-    # Clean up all patches
-    for p in patches:
-        p.stop()
+def mock_github(monkeypatch):
+    """Mock GitHub environment and API."""
+    monkeypatch.setenv("GITHUB_TOKEN", "test_token")
+    monkeypatch.setenv("GITHUB_REPO", "test_repo")
+
+    # Create a mock repository that will have base64 encoded content
+    mock_repo = MagicMock()
+    mock_repo.full_name = "test_repo"
+    mock_content = MagicMock()
+    mock_content.content = base64.b64encode(b'mocked_content')
+    mock_content.path = "test/path"
+    mock_content.sha = "test_sha"
+    mock_repo.get_contents.return_value = mock_content
+
+    # Create a mock GitHub instance
+    mock_github = MagicMock()
+    mock_github.get_repo.return_value = mock_repo
+
+    # Create a mock GitHub class that returns our mock instance
+    mock_github_class = MagicMock(return_value=mock_github)
+
+    # Patch both potential import paths
+    patcher1 = patch('src.server.tools.github_tool.Github', mock_github_class)
+    patcher2 = patch('github.Github', mock_github_class)
+    patcher1.start()
+    patcher2.start()
+
+    yield mock_github
+
+    patcher1.stop()
+    patcher2.stop()
 
 @pytest.fixture
-def mock_environment(mock_github):
-    """Fixture to provide mock environment variables."""
-    with patch.dict(os.environ, create_mock_env()):
-        yield
+def mock_environment(monkeypatch):
+    """Mock environment variables for testing."""
+    monkeypatch.setenv("GITHUB_TOKEN", "test_token")
+    monkeypatch.setenv("GITHUB_REPO", "test_repo")
+    yield
 
 @pytest.fixture(autouse=True)
 def reset_catalog():
@@ -89,7 +102,7 @@ def reset_catalog():
     ToolsCatalog._initialized = _original_catalog is not None
 
 @pytest.mark.asyncio
-async def test_singleton_behavior(mock_environment):
+async def test_singleton_behavior(mock_github):
     """Test that ToolsCatalog behaves as a singleton."""
     catalog1 = ToolsCatalog()
     catalog2 = ToolsCatalog()
@@ -103,7 +116,7 @@ async def test_singleton_behavior(mock_environment):
     assert id(catalog1) == id(catalog3)
 
 @pytest.mark.asyncio
-async def test_default_tools_initialization(mock_environment):
+async def test_default_tools_initialization(mock_github):
     """Test that default tools are properly initialized."""
     catalog = ToolsCatalog()
     
@@ -114,8 +127,8 @@ async def test_default_tools_initialization(mock_environment):
         "SerperDevTool",
         "FileReadTool",
         "GitHubTool",
-        "save_file",
-        "microservices_tool",
+        "FileTool",
+        "MicroservicesTool",
         "SMSTool"
     ]
     
@@ -130,7 +143,7 @@ async def test_default_tools_initialization(mock_environment):
         assert isinstance(tool_metadata, ToolMetadata)
 
 @pytest.mark.asyncio
-async def test_tool_instances(mock_environment):
+async def test_tool_instances(mock_github):
     """Test that tool instances are properly managed."""
     catalog = ToolsCatalog()
     
@@ -138,25 +151,27 @@ async def test_tool_instances(mock_environment):
     website_tool = catalog.get_tool_instance("WebsiteSearchTool")
     assert isinstance(website_tool, WebsiteSearchTool)
     
-    file_tool = catalog.get_tool_instance("save_file")
+    file_tool = catalog.get_tool_instance("FileTool")
     assert isinstance(file_tool, FileTool)
     
     github_tool = catalog.get_tool_instance("GitHubTool")
     assert isinstance(github_tool, GitHubTool)
 
 @pytest.mark.asyncio
-async def test_tool_metadata(mock_environment):
+async def test_tool_metadata(mock_github):
     """Test that tool metadata is correctly captured."""
     catalog = ToolsCatalog()
     
     # Test CrewAI tool metadata
     websearch_metadata = catalog.get_tool("WebsiteSearchTool")
-    assert websearch_metadata.tool_type == ToolType.CREWAI_TOOL
+    assert websearch_metadata is not None
+    assert str(websearch_metadata.tool_type) == str(ToolType.CREWAI_TOOL)
     assert websearch_metadata.description
     
     # Test Python class method metadata - using one of the actual registered methods
     github_method_metadata = catalog.get_tool("GitHubTool.create_branch")  # or any other GitHub tool method
-    assert github_method_metadata.tool_type == ToolType.CLASS_METHOD
+    assert github_method_metadata is not None
+    assert str(github_method_metadata.tool_type) == str(ToolType.CLASS_METHOD)
     assert github_method_metadata.description
     assert github_method_metadata.class_name == "GitHubTool"
     assert github_method_metadata.method_name == "create_branch"
@@ -169,9 +184,8 @@ async def test_tool_metadata(mock_environment):
     for tool_name in github_tools:
         metadata = catalog.get_tool(tool_name)
         assert metadata is not None
-        assert metadata.tool_type == ToolType.CLASS_METHOD
+        assert metadata.tool_type.value == ToolType.CLASS_METHOD.value
         assert metadata.class_name == "GitHubTool"
-
 
 @pytest.mark.asyncio
 async def test_tool_execution(mock_github):
@@ -179,7 +193,7 @@ async def test_tool_execution(mock_github):
     catalog = ToolsCatalog()
     
     # Test file tool
-    file_tool = catalog.get_tool_instance("save_file")
+    file_tool = catalog.get_tool_instance("FileTool")
     test_content = "test content"
     test_file = "test.txt"
     
@@ -203,14 +217,14 @@ async def test_tool_execution(mock_github):
         
         # Check that the get_file_contents method returns the expected value
         content = github_tool.get_file_contents("test/path")
-        assert content == {'content': 'mocked_content'}
+        assert content == {'content': 'mocked_content', 'path': 'test/path', 'sha': 'test_sha'}
     finally:
         # Cleanup
         if os.path.exists(test_file):
             os.remove(test_file)
 
 @pytest.mark.asyncio
-async def test_tool_serialization(mock_environment):
+async def test_tool_serialization(mock_github):
     """Test that the catalog can be serialized and deserialized."""
     catalog = ToolsCatalog()
     
@@ -233,7 +247,7 @@ async def test_tool_serialization(mock_environment):
         assert len(new_metadata.parameters) == len(original_metadata.parameters)
 
 @pytest.mark.asyncio
-async def test_add_new_tool(mock_environment):
+async def test_add_new_tool(mock_github):
     """Test adding a new tool to the catalog."""
     catalog = ToolsCatalog()
     initial_tool_count = len(catalog.list_tools())
@@ -266,7 +280,7 @@ async def test_add_new_tool(mock_environment):
     assert metadata.parameters[1].name == "repeat"
 
 @pytest.mark.asyncio
-async def test_error_handling(mock_environment):
+async def test_error_handling(mock_github):
     """Test error handling in the catalog."""
     catalog = ToolsCatalog()
     

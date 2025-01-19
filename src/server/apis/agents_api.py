@@ -169,3 +169,4 @@ async def initialize_agent_tools(agent: AgentModel, curried_proxy: CurriedProxy)
                     status_code=400,
                     detail=f"Failed to initialize tool '{tool_model.name}': {str(e)}"
                 )
+

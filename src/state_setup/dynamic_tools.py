@@ -416,7 +416,7 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel)
             description="Generate and integrate a new Langchain tool",
             tasksmanager_id=tasksmanager.id,
             crewai_config_id=crewai_config.id,
-            curried_proxy_id=curried_proxy_id,
+            curried_proxy_id=str(curried_proxy_id),
             use_context=True,
             inherit_manager_context=True
         )

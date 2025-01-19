@@ -23,25 +23,41 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
 
     # T is pydantic model
     def create(self, item: T) -> T:
-        item_id = str(uuid4())
-        created_at = datetime.now()
-        try:
-            item.id = item_id
-        except Exception:
-            print("Failed to set id", item)
-            pass  
-        try:
-            item.created_at = created_at
-        except Exception:
-            pass  
+        """Create a new item or store an existing one.
+        
+        If the item already has an ID (e.g. during deserialization), that ID will be preserved.
+        Only generates a new ID for completely new items.
+        """
+        # First try to get ID from the item itself
+        item_id = getattr(item, 'id', None)
+        
+        if item_id is None:
+            # Only generate new ID if this is a completely new item
+            item_id = str(uuid4())
+            try:
+                item.id = item_id
+            except Exception:
+                print(f"Failed to set id on new item", item)
+                raise
+            
+            # Set created_at only for new items
+            if not hasattr(item, 'created_at'):
+                try:
+                    item.created_at = datetime.now()
+                except Exception:
+                    pass
 
-        self.storage[item_id] = item
+        # Store the item with its ID (either existing or new)
+        self.storage[str(item_id)] = item
         return item
 
     def to_json(self) -> str:
+        # Convert storage to use string keys instead of UUIDs
+        string_keyed_storage = {
+            str(k): v for k, v in self.storage.items()
+        }
         # Serialize the storage dictionary to JSON
-        return json.dumps(self.storage, default=pydantic_encoder)
-
+        return json.dumps(string_keyed_storage, default=pydantic_encoder)
 
     def from_json(self, data: str):
         """Deserialize JSON data to storage dictionary with validation."""
@@ -52,28 +68,30 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
             print(f"\n🔍 Loading {self._model_class.__name__} items:")
             for k, v in items.items():
                 try:
-                    # Log the item before parsing
                     print(f"  📝 Processing {k}:")
                     print(f"    Type before parsing: {type(v)}")
                     
-                    # Try to parse each item individually
+                    # Ensure ID is preserved during parsing
+                    if isinstance(v, dict) and 'id' not in v:
+                        v['id'] = k
+                    
                     parsed_item = self._model_class.parse_obj(v)
                     
-                    # Log the parsed item
                     print(f"    Type after parsing: {type(parsed_item)}")
                     print(f"    Is instance of {self._model_class.__name__}: {isinstance(parsed_item, self._model_class)}")
                     
+                    # Store with original key
                     new_storage[k] = parsed_item
                 except Exception as e:
                     print(f"❌ Failed to parse item {k}: {str(e)}")
                     print(f"   Raw item data: {v}")
-                    raise  # Re-raise to catch invalid items
+                    raise
                     
             self.storage = new_storage
             
         except Exception as e:
             print(f"❌ Error in from_json for {self._model_class.__name__}: {str(e)}")
-            print(f"   Raw data: {data[:200]}...")  # Print first 200 chars of raw data
+            print(f"   Raw data: {data[:200]}...")
             raise
 
     @property
@@ -174,7 +192,8 @@ class CurriedProxyCrud(InMemoryCrud[CurriedProxy]):
         """
         info_dict = {}
         for proxy_id, proxy in self.storage.items():
-            info_dict[proxy_id] = proxy.to_info().dict()
+            # Convert UUID to string for JSON serialization
+            info_dict[str(proxy_id)] = proxy.to_info().model_dump()
         return json.dumps(info_dict, default=pydantic_encoder)
 
     def from_json(self, json_str: str):
