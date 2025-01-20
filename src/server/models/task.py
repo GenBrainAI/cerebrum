@@ -77,6 +77,7 @@ class Task(BaseModel):
     crewai_config_id: Optional[str] = Field(default=None)
     autogen_config_id: Optional[str] = Field(default=None)
     agent_role: Optional[str] = Field(default=None, description="Role of the agent assigned to this task")
+    framework: Optional[str] = Field(default="crewai", description="Framework to use for task execution (e.g. crewai, autogen)")
     created_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
     config: Optional[Dict[str, Any]] = Field(default=None)
@@ -85,6 +86,7 @@ class Task(BaseModel):
     contexts: List[Dict] = Field(default_factory=list, description="Context references for the task")
     execution_logs: Optional[List[Dict[str, Any]]] = Field(default=None, description="Logs from task execution")
     input_data: Optional[Dict[str, Any]] = Field(default=None, description="Input data for task execution")
+    result: Optional[str] = Field(default=None, description="Result of task execution")
 
     def create_session(self, name: Optional[str] = None) -> str:
         """Create a new chat session"""

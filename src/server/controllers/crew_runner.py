@@ -58,18 +58,39 @@ async def run_crew_task(
             persistence_model = PersistenceModelFactory.persistence_model()
             print("🌍 Using global persistence model")
         else:
-            print(f"🔧 Using provided persistence model: {type(persistence_model)}")
+            print("🔄 Using existing persistence model from session state")
         
         # Debug task lookup
         print(f"\n🔍 Looking for task {task_id} in persistence model")
         task = persistence_model.tasks.read(task_id)
         if not task:
-            raise ValueError(f"Task {task_id} not found in persistence model")
+            error_msg = f"Task {task_id} not found in persistence model"
+            print(f"❌ {error_msg}")
+            return {
+                "response": error_msg,
+                "status": "failed",
+                "error": error_msg
+            }
         print(f"✅ Found task: {task.name}")
+        
+        # Initialize execution logs if not present
+        if task.execution_logs is None:
+            task.execution_logs = []
         
         crewai_config = persistence_model.crewai_config.read(task.crewai_config_id)
         if not crewai_config:
-            raise ValueError(f"CrewAI configuration {task.crewai_config_id} not found")
+            error_msg = f"CrewAI configuration {task.crewai_config_id} not found"
+            task.execution_logs.append({
+                "timestamp": str(datetime.now()),
+                "type": "error",
+                "content": error_msg
+            })
+            persistence_model.tasks.update(task_id, task)
+            return {
+                "response": error_msg,
+                "status": "failed",
+                "error": error_msg
+            }
         
         # Create or get the curried proxy
         curried_proxy = None
@@ -78,13 +99,26 @@ async def run_crew_task(
         else:
             curried_proxy = CurriedProxy()
         
+        # Validate agent role exists in crew configuration
+        if task.agent_role:
+            agent_roles = [agent.role for agent in crewai_config.create_crew.agents]
+            if task.agent_role not in agent_roles:
+                error_msg = f"Agent role '{task.agent_role}' not found in crew configuration. Available roles: {', '.join(agent_roles)}"
+                task.execution_logs.append({
+                    "timestamp": str(datetime.now()),
+                    "type": "error",
+                    "content": error_msg
+                })
+                persistence_model.tasks.update(task_id, task)
+                return {
+                    "response": error_msg,
+                    "status": "failed",
+                    "error": error_msg
+                }
+        
         # Create and execute the crew
         from .agents_controller import create_crew
         crew = await create_crew(crewai_config.create_crew, curried_proxy)
-        
-        # Initialize execution logs if not present
-        if task.execution_logs is None:
-            task.execution_logs = []
         
         # Add start log
         task.execution_logs.append({
@@ -92,6 +126,7 @@ async def run_crew_task(
             "type": "info",
             "content": "Starting CrewAI task execution"
         })
+        persistence_model.tasks.update(task_id, task)
         
         # Execute the crew with the provided input using run_in_executor
         loop = asyncio.get_event_loop()
@@ -99,6 +134,11 @@ async def run_crew_task(
         
         # Format the result into a string response
         formatted_result = format_response(result)
+        
+        # Extract tool information from input data
+        tool_info = None
+        if task.input_data and 'tool_request' in task.input_data:
+            tool_info = task.input_data['tool_request']
         
         # Add completion log
         task.execution_logs.append({
@@ -113,14 +153,15 @@ async def run_crew_task(
         
         return {
             "response": formatted_result,
-            "status": "success"
+            "status": "success",
+            "generated_tool": tool_info
         }
     except Exception as e:
-        error_msg = f"run_crew_task failed with error: {str(e)}"
+        error_msg = f"Error in CrewAI task execution: {str(e)}"
         print(f"❌ {error_msg}")
         
         # Add error log if task exists
-        if 'task' in locals():
+        if 'task' in locals() and task:
             if task.execution_logs is None:
                 task.execution_logs = []
             task.execution_logs.append({
@@ -132,5 +173,6 @@ async def run_crew_task(
         
         return {
             "response": error_msg,
-            "status": "error"
+            "status": "failed",
+            "error": error_msg
         }

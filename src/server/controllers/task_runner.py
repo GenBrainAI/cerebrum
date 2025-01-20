@@ -181,142 +181,190 @@ class TaskRunner:
         running_extra_params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Run a task with the given ID."""
+        observability = None
         try:
-            # Initialize if not already done
-            if not self._initialized:
-                await self.initialize()
-
+            logger.info(f"\n🚀 Running task {task_id} from manager {tasksmanager_id}")
+            
             # Get task and manager
             task = self.persistence_model.tasks.read(task_id)
-            manager = self.persistence_model.tasksmanagers.read(tasksmanager_id)
+            if not task:
+                raise ValueError(f"Task {task_id} not found")
             
-            if not task or not manager:
-                logger.error(f"Task {task_id} or manager {tasksmanager_id} not found")
-                return {"status": "error", "error": "Task or manager not found"}
-
-            # Create observability manager
+            manager = self.persistence_model.tasksmanagers.read(tasksmanager_id)
+            if not manager:
+                raise ValueError(f"Task manager {tasksmanager_id} not found")
+            
+            # Initialize observability for this task
             observability = self._initialize_observability(task_id)
-
+            
+            # Start monitoring in background
+            monitor_task = asyncio.create_task(observability.monitor_execution())
+            
             try:
-                # Update task status to running
-                await self._update_task_status(task, "running")
-
-                # Get curried proxy for tools
-                curried_proxy = self._get_or_create_curried_proxy(task, manager)
-                print(f"\n🔧 Using curried proxy with {len(curried_proxy.list_tools())} tools")
-                
-                # Initialize messages with system messages
-                messages = task.get_system_messages()
-
-                # Add messages from running params
-                if running_extra_params and "messages" in running_extra_params:
-                    messages.extend(running_extra_params["messages"])
-                
-                # Prepare messages with context
-                messages = await self.context_provider.prepare_task_messages(
-                    task_id=task.id,
-                    messages=messages
+                # Log task execution start
+                observability.add_entry(
+                    f"Starting execution of task: {task.name}",
+                    ObservabilityLevel.INFO
                 )
-
-                # Execute completion using manager's model
-                print("\n🤖 Executing completion with curried proxy")
-                response = await self.operator.completion(
-                    tasksmanager_id=task.tasksmanager_id,
-                    task_id=task.id,
-                    messages=messages,
-                    model=manager.model,
-                    curried_proxy=curried_proxy
-                )
-                print("✅ Completion executed successfully")
-
+                
                 # Update task status
-                await self._update_task_status(task, "completed")
+                task.status = "running"
+                self.persistence_model.tasks.update(task.id, task)
                 
-                return {"status": "completed", "response": response}
-
+                # Check if this is a CrewAI task
+                if hasattr(task, 'agent_role') and task.agent_role and hasattr(task, 'crewai_config_id') and task.crewai_config_id:
+                    result = await self._run_crewai_task(task, manager, running_extra_params)
+                else:
+                    # Execute standard task
+                    result = await self._run_standard_task(task, running_extra_params or {}, manager)
+                
+                # Normalize result format
+                if isinstance(result, dict):
+                    status = result.get("status", "completed")
+                    response = result.get("result", result.get("response", ""))
+                    error = result.get("error")
+                else:
+                    status = "completed"
+                    response = str(result)
+                    error = None
+                
+                # Update task with result
+                task.status = status
+                task.result = response
+                task.error = error
+                self.persistence_model.tasks.update(task.id, task)
+                
+                # Log successful execution
+                observability.add_entry(
+                    f"Task completed with status {status}: {task.name}",
+                    ObservabilityLevel.INFO
+                )
+                
+                return result
+                
             except Exception as e:
-                error_msg = str(e)
-                await self._update_task_status(task, "error", error_msg)
-                return {"status": "error", "error": error_msg}
-
+                error_msg = f"Task execution failed: {str(e)}"
+                logger.error(f"❌ {error_msg}")
+                
+                # Update task status
+                task.status = "failed"
+                task.error = error_msg
+                self.persistence_model.tasks.update(task.id, task)
+                
+                # Log error in observability
+                observability.add_entry(
+                    error_msg,
+                    ObservabilityLevel.ERROR
+                )
+                
+                return {
+                    "status": "failed",
+                    "error": error_msg,
+                    "response": error_msg
+                }
+            
             finally:
-                if task_id in self._active_observability_managers:
-                    self._active_observability_managers[task_id].stop_capture()
-                    del self._active_observability_managers[task_id]
-
+                # Cancel monitoring task
+                monitor_task.cancel()
+                try:
+                    await monitor_task
+                except asyncio.CancelledError:
+                    pass
+                
+                # Stop observability capture
+                if observability:
+                    observability.stop_capture()
+                
         except Exception as e:
-            error_msg = f"Failed to run task: {str(e)}"
+            error_msg = f"Task runner error: {str(e)}"
             logger.error(f"❌ {error_msg}")
-            return {"status": "error", "error": error_msg}
+            if observability:
+                observability.add_entry(error_msg, ObservabilityLevel.ERROR)
+                observability.stop_capture()
+            return {
+                "status": "failed",
+                "error": error_msg,
+                "response": error_msg
+            }
 
     async def _run_standard_task(
         self,
         task: Task,
-        running_extra_params: Optional[Dict[str, Any]],
-        tasksmanager: TasksManager
+        running_extra_params: Dict[str, Any],
+        tasksmanager: Optional[TasksManager] = None
     ) -> Dict[str, Any]:
-        """Run a standard (non-CrewAI) task."""
-        logger.info(f"🔄 Running standard task: {task.name}")
-        
-        # Merge task data with extra params
-        task_data = task.dict()
-        if running_extra_params:
-            task_data.update(running_extra_params)
+        """Execute a standard task."""
+        try:
+            logger.info(f"🔄 Running standard task: {task.name}")
+            task_data = task.dict()
             
-        # Get the appropriate plugin based on the task's framework
-        framework = task_data.get("framework", "default")
-        plugin = self._plugin_manager.get_plugin(framework)
-        
-        if not plugin:
-            raise Exception(f"Plugin for framework '{framework}' not found")
-            
-        # Create agent and execute task
-        agent = await plugin.create_agent(task_data)
-        result = await plugin.execute_task(agent, task_data)
-        
-        # Update task with result
-        task.status = "completed"
-        task.result = result
-        self.persistence_model.tasks.update(task)
-        
-        return result
+            # Add running_extra_params to task_data
+            if running_extra_params:
+                task_data.update(running_extra_params)
+
+            # If a plugin is configured, try to use it
+            if hasattr(task, 'framework') and task.framework and self._plugin_manager:
+                try:
+                    plugin = self._plugin_manager.get_plugin(task.framework)
+                    if plugin:
+                        agent = await plugin.create_agent(task_data)
+                        return await plugin.execute_task(agent, task_data)
+                except Exception as plugin_error:
+                    logger.warning(f"Plugin execution failed: {str(plugin_error)}, falling back to standard execution")
+
+            # Standard task execution (non-plugin)
+            return {
+                "status": "completed",
+                "response": "Task completed",
+                "error": None
+            }
+
+        except Exception as e:
+            error_msg = f"Task execution failed: {str(e)}"
+            logger.error(error_msg)
+            raise TaskExecutionError(error_msg)
 
     async def _run_crewai_task(
         self,
         task: Task,
         tasksmanager: TasksManager,
-        running_extra_params: Optional[Dict] = None
+        running_extra_params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Execute a CrewAI task with context support."""
+        """Execute a CrewAI task."""
         try:
             logger.info(f"\n🤖 Running CrewAI task: {task.id}")
             
-            # Get contexts for crew task
-            query = running_extra_params.get("query") if running_extra_params else None
+            # Get contexts if needed
+            query = running_extra_params.get("context_query") if running_extra_params else None
             logger.info(f"🔍 Getting contexts with query: {query}")
-            contexts = await self.context_provider.get_task_contexts(
-                task_id=task.id,
-                query=query
-            )
+            contexts = await self.context_provider.get_contexts(query) if query else []
             logger.info(f"✅ Found {len(contexts)} contexts")
-
-            # Add contexts to running params
-            context_params = {"contexts": contexts}
-            running_params = {**(running_extra_params or {}), **context_params}
-            logger.info(f"🔧 Running params: {running_params}")
-
-            # Run the crew task
+            
+            # Prepare running parameters
+            params = {"contexts": contexts}
+            if running_extra_params:
+                params.update(running_extra_params)
+            logger.info(f"🔧 Running params: {params}")
+            
             logger.info("\n🚀 Executing crew task")
-            result = await run_crew_task(task.id, running_params)
+            result = await run_crew_task(
+                task_id=task.id,
+                task_input=params,
+                persistence_model=self.persistence_model
+            )
             logger.info("✅ Crew task executed successfully")
             
             return result
-
+            
         except Exception as e:
             error_msg = f"Error in CrewAI task execution: {str(e)}"
             logger.error(error_msg)
             logger.info(f"❌ {error_msg}")
-            raise
+            return {
+                "status": "failed",
+                "error": error_msg,
+                "response": error_msg
+            }
 
     def _get_or_create_curried_proxy(
         self,

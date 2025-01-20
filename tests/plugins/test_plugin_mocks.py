@@ -12,6 +12,7 @@ from src.server.plugins.base_plugin import AgentConfig, AgentOutput, AgentRole
 # Mock responses for different frameworks
 MOCK_CREWAI_RESPONSE = {
     "content": "Created job posting for Software Engineer position...",
+    "status": "completed",
     "metadata": {
         "framework": "crewai",
         "agent_role": "writer",

@@ -118,13 +118,14 @@ async def test_crewai_plugin_loading(plugin_manager, crewai_plugin_config):
         assert plugin.is_initialized, "Plugin should be initialized"
         
         # Verify CrewAI specific configuration
-        assert plugin.config.model == "gpt-4", "Incorrect model configuration"
-        assert plugin.config.temperature == 0.7, "Incorrect temperature configuration"
+        assert plugin.config.settings.get('model') == "gpt-4", "Incorrect model configuration"
+        assert plugin.config.settings.get('temperature') == 0.7, "Incorrect temperature configuration"
         
         # Verify capabilities
         capabilities = plugin.get_capabilities()
-        assert "Multi-agent collaboration" in capabilities, "Missing capability"
-        assert "Tool integration" in capabilities, "Missing capability"
+        assert "agent_creation" in capabilities, "Missing capability"
+        assert "task_execution" in capabilities, "Missing capability"
+        assert "llm_integration" in capabilities, "Missing capability"
         
         logger.info("✅ CrewAI plugin loading test passed")
         
