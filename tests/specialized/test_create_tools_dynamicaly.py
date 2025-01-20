@@ -34,6 +34,7 @@ from crewai.tools import BaseTool as CrewAITool
 from pydantic import BaseModel, Field, create_model, ConfigDict
 from src.server.models.agent import CrewAIConfig, CreateCrewRequest
 import asyncio
+from src.server.context.context_provider import ContextProvider
 
 logger = logging.getLogger(__name__)
 
@@ -202,16 +203,15 @@ class MockInternalTool:
         self.description = description
         self.required_args = required_args or {}
         self._execution_metrics = ToolExecutionMetrics()
+        self._context_content = {}  # Store context content
         
     def __call__(self, **kwargs) -> Dict[str, Any]:
         """Make the tool callable."""
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # If we're in a running event loop, create a new task
                 return loop.create_task(self._arun(**kwargs))
             else:
-                # If no event loop is running, we can use asyncio.run
                 return asyncio.run(self._arun(**kwargs))
         except Exception as e:
             return {"error": str(e)}
@@ -222,11 +222,66 @@ class MockInternalTool:
             self._execution_metrics.start_time = datetime.now()
             
             if self.name == "internal_file_tools.read_documentation":
-                result = {"content": "# Test Documentation\n\nThis is test documentation content."}
+                # Check if we have context content for this file path
+                file_path = kwargs.get('file_path', '')
+                if "langchain_tools_guide" in file_path:
+                    return {"content": """# Langchain Tool Creation Guide
+                    Tools in Langchain must:
+                    1. Implement _run and _arun methods
+                    2. Include proper type hints
+                    3. Handle errors appropriately
+                    4. Support async operations
+                    5. Include comprehensive documentation
+                    """}
+                elif "tool_example" in file_path:
+                    return {"content": """
+                    from langchain.tools import BaseTool
+                    from pydantic import BaseModel, Field
+                    
+                    class CalculatorInput(BaseModel):
+                        operation: str = Field(description="The math operation to perform")
+                        numbers: List[float] = Field(description="Numbers to operate on")
+                        
+                    class CalculatorTool(BaseTool):
+                        name = "calculator"
+                        description = "Perform mathematical calculations"
+                        args_schema = CalculatorInput
+                        
+                        def _run(self, operation: str, numbers: List[float]) -> float:
+                            if operation == "add":
+                                return sum(numbers)
+                            elif operation == "multiply":
+                                return math.prod(numbers)
+                            raise ValueError(f"Unknown operation: {operation}")
+                            
+                        async def _arun(self, operation: str, numbers: List[float]) -> float:
+                            return self._run(operation, numbers)
+                    """}
+                else:
+                    return {"content": "# No documentation found for this path"}
+                    
             elif self.name == "internal_credentials_tools.load_credentials":
                 result = {"credentials": {"API_KEY": "test_key", "DATABASE_URL": "test_url"}}
+                
             elif self.name == "internal_file_tools.save_implementation":
-                result = {"path": f"/tmp/{kwargs.get('tool_name', 'test')}.py"}
+                code = kwargs.get('code', '')
+                tool_name = kwargs.get('tool_name', 'test')
+                file_path = f"/tmp/{tool_name}.py"
+                
+                logger.info(f"Mock save_implementation called with tool_name={tool_name}")
+                logger.info(f"Attempting to save to {file_path}")
+                
+                try:
+                    # Actually save the file
+                    with open(file_path, 'w') as f:
+                        f.write(code)
+                    logger.info(f"Successfully saved implementation to {file_path}")
+                except Exception as e:
+                    logger.error(f"Failed to save implementation: {str(e)}")
+                    raise
+                
+                result = {"path": file_path}
+                
             else:
                 result = {"result": "success"}
                 
@@ -241,6 +296,10 @@ class MockInternalTool:
         finally:
             self._execution_metrics.end_time = datetime.now()
             self._execution_metrics.input_params = kwargs
+
+    def add_context(self, file_path: str, content: str):
+        """Add context content for a specific file path."""
+        self._context_content[file_path] = content
 
 class CrewAIToolWrapper(CrewAITool):
     """A wrapper for CrewAI tools."""
@@ -809,6 +868,156 @@ async def test_crewai_invocation(test_state):
         assert result['status'] in ["completed", "success"], f"Task execution failed with status: {result['status']}"
         
         logger.info("✅ CrewAI execution completed successfully")
+        return test_state
+        
+    except Exception as e:
+        logger.error(f"Test failed: {str(e)}", exc_info=True)
+        raise
+
+@pytest.mark.order(5.5)
+@pytest.mark.asyncio
+async def test_crewai_invocation_with_context(test_state):
+    """Test step 5.5: Invoke CrewAI execution with proper context management."""
+    try:
+        logger.info("Step 5.5: Invoking CrewAI execution with context...")
+        
+        # Initialize persistence model and context provider
+        persistence_model = InMemoryPersistenceModel()
+        context_provider = ContextProvider(persistence_model)
+        await context_provider.initialize()
+        
+        # Create curried proxy with tools
+        curried_proxy = CurriedProxy()
+        for name, tool in MOCK_TOOLS.items():
+            curried_proxy.add_tool(name, tool)
+        curried_proxy = persistence_model.curried_proxies.create(curried_proxy)
+        
+        # Create CrewAI config using the predefined CREWAI_CONFIG
+        crewai_config = CrewAIConfig(
+            create_crew=CreateCrewRequest(**CREWAI_CONFIG),
+            model_config={
+                "model": "gpt-4",
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+        )
+        crewai_config = persistence_model.crewai_config.create(crewai_config)
+        
+        # Create task manager with context
+        task_manager = TasksManager(
+            name="Dynamic Tools Manager with Context",
+            description="Manager for dynamic tools generation tasks with context",
+            crewai_config_id=crewai_config.id,
+            use_context=True  # Enable context usage
+        )
+        task_manager = persistence_model.tasksmanagers.create(task_manager)
+        
+        # Create task with context enabled
+        tool_request = TOOL_GENERATION_REQUESTS[0]
+        task = Task(
+            name=f"Generate {tool_request['name']} with Context",
+            description=f"Generate a tool: {tool_request['name']}",
+            tasksmanager_id=task_manager.id,
+            crewai_config_id=crewai_config.id,
+            curried_proxy_id=str(curried_proxy.id),
+            agent_role="Senior Software Architect",
+            use_context=True,  # Enable context usage
+            inherit_manager_context=True,  # Inherit context from manager
+            input_data={
+                "tool_request": tool_request,
+                "use_langchain_patterns": True,
+                "required_capabilities": [
+                    "Mathematical operations",
+                    "Error handling",
+                    "Type hints",
+                    "Documentation"
+                ],
+                "implementation_requirements": [
+                    "Must use numpy for computations",
+                    "Must validate input types",
+                    "Must include proper error messages",
+                    "Must be well-documented"
+                ]
+            }
+        )
+        task = persistence_model.tasks.create(task)
+        
+        # Add Langchain documentation context
+        docs_content = """# Langchain Tool Creation Guide
+        Tools in Langchain must:
+        1. Implement _run and _arun methods
+        2. Include proper type hints
+        3. Handle errors appropriately
+        4. Support async operations
+        5. Include comprehensive documentation
+        """
+        
+        await context_provider.add_system_context(
+            task_id=task.id,
+            name="langchain_tools_guide",
+            content=docs_content,
+            description="Guide for creating Langchain tools",
+            tags=["langchain", "tools", "guide"],
+            priority=90
+        )
+        
+        # Add tool implementation example context
+        example_content = """
+        from langchain.tools import BaseTool
+        from pydantic import BaseModel, Field
+        
+        class CalculatorInput(BaseModel):
+            operation: str = Field(description="The math operation to perform")
+            numbers: List[float] = Field(description="Numbers to operate on")
+            
+        class CalculatorTool(BaseTool):
+            name = "calculator"
+            description = "Perform mathematical calculations"
+            args_schema = CalculatorInput
+            
+            def _run(self, operation: str, numbers: List[float]) -> float:
+                if operation == "add":
+                    return sum(numbers)
+                elif operation == "multiply":
+                    return math.prod(numbers)
+                raise ValueError(f"Unknown operation: {operation}")
+                
+            async def _arun(self, operation: str, numbers: List[float]) -> float:
+                return self._run(operation, numbers)
+        """
+        
+        await context_provider.add_system_context(
+            task_id=task.id,
+            name="tool_example",
+            content=example_content,
+            description="Example Langchain tool implementation",
+            tags=["langchain", "tools", "example"],
+            priority=80
+        )
+        
+        # Initialize TaskRunner with context-aware persistence model
+        runner = TaskRunner(persistence_model)
+        
+        # Execute the task
+        result = await runner.run_task(
+            tasksmanager_id=task_manager.id,
+            task_id=task.id
+        )
+        
+        # Store state for verification
+        test_state['context_task_result'] = result
+        test_state['context_task_runner'] = runner
+        test_state['context_persistence_model'] = persistence_model
+        test_state['context_task'] = task
+        test_state['context_provider'] = context_provider
+        
+        # Verify execution was successful
+        assert result is not None, "Task execution result is None"
+        assert isinstance(result, dict), "Task execution result is not a dictionary"
+        assert 'status' in result, "Task execution result missing status field"
+        assert result['status'] in ["completed", "success"], f"Task execution failed with status: {result['status']}"
+        
+        logger.info("✅ CrewAI execution with context completed successfully")
         return test_state
         
     except Exception as e:

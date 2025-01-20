@@ -49,36 +49,89 @@ tools_catalog = ToolsCatalog()
 
 async def add_langchain_tools_docs_to_knowledge_base(persistence_model: InMemoryPersistenceModel) -> None:
     """Add Langchain tools documentation to the knowledge base."""
-    # Load documentation from file
+    # Get URL tools instance
+    url_tools = tools_catalog.get_tool_instance("url_tools")
+    if not url_tools:
+        print("🔴 URL tools not available")
+        return
+        
+    # Load local documentation from file
     docs_path = Path("docs/langchain_tools/langchain_tools.md")
     if not docs_path.exists():
         print(f"🔴 Langchain tools documentation not found at {docs_path}")
         return
-
+        
     with open(docs_path, 'r', encoding='utf-8') as f:
-        langchain_docs = f.read()
-    print(f"📚 Loaded Langchain tools documentation from {docs_path}")
-
+        local_docs = f.read()
+    print(f"📚 Loaded local Langchain tools documentation from {docs_path}")
+    
+    # Create documentation links for navigation
+    langchain_docs = {
+        "Tool Creation Guide": "https://python.langchain.com/docs/modules/agents/tools/custom_tools",
+        "Tool Concepts": "https://python.langchain.com/docs/modules/agents/tools/",
+        "Tool Examples": "https://python.langchain.com/docs/integrations/tools",
+        "Agent Tools": "https://python.langchain.com/docs/modules/agents/tools/",
+        "Structured Tools": "https://python.langchain.com/docs/modules/agents/tools/structured"
+    }
+    
+    # Fetch documentation from URLs
+    print("🌐 Fetching documentation from URLs...")
+    docs_content = []
+    
+    for title, url in langchain_docs.items():
+        try:
+            print(f"  📥 Fetching {title} from {url}")
+            doc_result = await url_tools.get_documentation(url)
+            docs_content.append({
+                'title': title,
+                'url': url,
+                'content': doc_result['content'],
+                'code_blocks': doc_result['code_blocks']
+            })
+            print(f"  ✅ Successfully fetched {title}")
+        except Exception as e:
+            print(f"  ❌ Error fetching {title}: {str(e)}")
+            
+    # Combine all documentation
+    combined_docs = f"{local_docs}\n\n"
+    for doc in docs_content:
+        combined_docs += f"\n# {doc['title']}\n"
+        combined_docs += f"Source: {doc['url']}\n\n"
+        combined_docs += doc['content']
+        
+        if doc['code_blocks']:
+            combined_docs += "\n\n## Code Examples\n"
+            for block in doc['code_blocks']:
+                combined_docs += f"\n```{block['language']}\n{block['code']}\n```\n"
+    
     # Add to knowledge base
-    knowledge_id = "knowledge_53_4863043375099098577"  # Fixed ID for testing
-    print("🔍 Found existing Langchain tools documentation in knowledge base")
-
-    # Add knowledge base context
-    context = ContextReference(
-        type="knowledge",
-        source_id=f"knowledge_{knowledge_id}",
+    knowledge_id = await knowledge_base.add_knowledge(
+        content=combined_docs,
+        domain="langchain",
         metadata={
-            "name": "langchain_tools_docs",
-            "description": "Official Langchain tools documentation",
-            "tags_str": "langchain,tools,documentation",
-            "source": "docs/langchain_tools/langchain_tools.md"
-        },
-        priority=100
+            "type": "documentation",
+            "category": "tools",
+            "tags": ["tools", "documentation", "langchain"],
+            "sources": list(langchain_docs.values())
+        }
     )
-    task = persistence_model.tasks.get(task_id)
-    task.contexts = [context]
-    persistence_model.tasks.update(task)
-    print("🔗 Added knowledge base context to task")
+    print(f"📚 Added combined Langchain documentation to knowledge base: {knowledge_id}")
+    
+    # Add documentation links to knowledge base
+    docs_links = "# Langchain Tools Documentation Links\n\n"
+    for title, url in langchain_docs.items():
+        docs_links += f"- [{title}]({url})\n"
+        
+    await knowledge_base.add_knowledge(
+        content=docs_links,
+        domain="langchain",
+        metadata={
+            "type": "documentation_links",
+            "category": "tools",
+            "tags": ["tools", "documentation", "navigation"]
+        }
+    )
+    print("🔗 Added documentation links to knowledge base")
 
 async def add_tool_creation_guide_context(persistence_model: InMemoryPersistenceModel, task_id: str) -> None:
     """Add tool creation guide context to the task."""

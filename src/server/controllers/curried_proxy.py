@@ -711,8 +711,10 @@ class ArgsSchema(BaseModel):
         return schema
 
 class CerebrumCrewAITool(BaseTool):
-    """A tool that wraps a CurriedProxy for use with CrewAI."""
-    
+    """A CrewAI tool that wraps a Cerebrum tool."""
+
+    model_config = {"arbitrary_types_allowed": True}
+
     def __init__(self, name: str, description: str, proxy: Any):
         """Initialize the tool with name, description and proxy."""
         # Get tool metadata to ensure we have all parameters
@@ -741,7 +743,7 @@ class CerebrumCrewAITool(BaseTool):
         schema = create_model(
             f"{name}Schema",
             **field_definitions,
-            __config__=ConfigDict(extra='forbid')
+            __config__=ConfigDict(extra='forbid', arbitrary_types_allowed=True)
         )
 
         # Initialize parent with schema

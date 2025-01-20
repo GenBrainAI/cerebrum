@@ -1,0 +1,36 @@
+{
+    "name": "job_posting",
+    "version": "1.0.0",
+    "description": "CrewAI-based job posting generation plugin",
+    "entry_point": "plugin.JobPostingPlugin",
+    "framework": "crewai",
+    "capabilities": [
+        "job_posting_generation",
+        "role_analysis",
+        "market_research",
+        "content_writing",
+        "multi_agent_collaboration"
+    ],
+    "supported_roles": [
+        "researcher",
+        "writer",
+        "reviewer"
+    ],
+    "config_schema": {
+        "type": "object",
+        "properties": {
+            "company_domain": {"type": "string"},
+            "company_description": {"type": "string"},
+            "hiring_needs": {"type": "string"},
+            "specific_benefits": {"type": "string"}
+        },
+        "required": [
+            "company_description",
+            "hiring_needs"
+        ]
+    },
+    "dependencies": {
+        "crewai": "^0.1.0",
+        "openai": "^1.0.0"
+    }
+} 
