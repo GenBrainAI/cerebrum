@@ -20,6 +20,7 @@ from ..models.toolset import Tool
 from ..models.function import ResolvedSchema
 import logging
 from enum import Enum
+from src.server.tools.url_tools import URLTools
 
 load_dotenv()
 
@@ -585,6 +586,10 @@ class ToolsCatalog:
                 if github_token and repo_name:
                     github_tool = GitHubTool(github_token, repo_name)
                     self.register_instance(github_tool, "GitHubTool")
+                
+                # Register URL tools
+                url_tools = URLTools()
+                self.register_instance(url_tools, "URLTools")
                 
                 # Store current tools as defaults
                 self.DEFAULT_TOOLS = {

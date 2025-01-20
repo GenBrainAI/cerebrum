@@ -253,6 +253,7 @@ class DynamicToolsLoader:
                                     )
                                     tools_catalog._tools[qualified_name] = metadata
                                     tools_catalog._tool_instances[qualified_name] = instance
+                                    tools_catalog._classes[qualified_name] = attr
                                     registered_tools.append(qualified_name)
                                 except Exception as e:
                                     print(f"Error instantiating {qualified_name}: {str(e)}")
@@ -266,7 +267,8 @@ class DynamicToolsLoader:
                                         name=param_name,
                                         type_hint=param_type,
                                         description=f"Parameter {param_name}",
-                                        required=param.default == inspect.Parameter.empty
+                                        required=param.default == inspect.Parameter.empty,
+                                        default=param.default if param.default != inspect.Parameter.empty else None
                                     ))
                                 return_type = str(sig.return_annotation) if sig.return_annotation != inspect.Parameter.empty else "Any"
                                 metadata = ToolMetadata(

@@ -55,3 +55,7 @@ streamlit-tree-select
 coverage
 watchdog
 graphviz
+playwright>=1.40.0
+beautifulsoup4>=4.12.0
+aiohttp>=3.9.0
+ratelimit>=2.2.1

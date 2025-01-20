@@ -1,0 +1,40 @@
+{
+    "name": "rag_assistant",
+    "version": "1.0.0",
+    "description": "SmolAgents-based RAG (Retrieval Augmented Generation) plugin",
+    "entry_point": "plugin.RAGPlugin",
+    "framework": "smolagents",
+    "capabilities": [
+        "document_retrieval",
+        "context_augmentation",
+        "question_answering",
+        "code_generation",
+        "tool_calling"
+    ],
+    "supported_roles": [
+        "code_agent",
+        "tool_agent"
+    ],
+    "config_schema": {
+        "type": "object",
+        "properties": {
+            "document_store": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["chroma", "faiss", "elasticsearch"]},
+                    "connection_string": {"type": "string"}
+                },
+                "required": ["type"]
+            },
+            "embedding_model": {"type": "string"},
+            "chunk_size": {"type": "integer", "default": 1000},
+            "chunk_overlap": {"type": "integer", "default": 200}
+        },
+        "required": ["document_store"]
+    },
+    "dependencies": {
+        "smolagents": "^0.1.0",
+        "chromadb": "^0.4.0",
+        "sentence-transformers": "^2.2.0"
+    }
+} 
