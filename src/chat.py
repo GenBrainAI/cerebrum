@@ -127,6 +127,7 @@ def render_view_specific_chat():
 
 def render_state_management():
     """Render the state management section in the sidebar."""
+    print("\n🔄 Starting render_state_management")
     persistence_model = st.session_state.persistence_model
     
     with st.sidebar:
@@ -134,6 +135,7 @@ def render_state_management():
         
         # Initialize session state variables if not already present
         if 'selected_state_file' not in st.session_state:
+            print("\n🔄 Initializing selected_state_file")
             # Try to get the last used state from metadata
             metadata = get_last_used_state()
             st.session_state.selected_state_file = metadata.get("last_used_state", "")
@@ -152,10 +154,19 @@ def render_state_management():
             
             # Handle selection change
             def on_state_select():
+                print("\n🔄 State selection changed")
                 selected = st.session_state.state_selector
                 if selected != st.session_state.selected_state_file:
                     st.session_state.selected_state_file = selected
                     st.session_state.state_loaded = False
+                    if selected:  # Auto-load when a state is selected
+                        try:
+                            state_to_load = str(get_state_dir() / selected)
+                            result = load_state(state_to_load)
+                            st.session_state.state_loaded = True
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error loading state: {str(e)}")
             
             # Use the last used state as the default index if available
             default_index = 0
@@ -169,17 +180,6 @@ def render_state_management():
                 key="state_selector",
                 on_change=on_state_select
             )
-            
-            # Auto-load the last used state if not already loaded
-            if (not st.session_state.state_loaded and 
-                st.session_state.selected_state_file and 
-                st.session_state.selected_state_file in file_names):
-                try:
-                    state_to_load = str(get_state_dir() / st.session_state.selected_state_file)
-                    result = load_state(state_to_load)
-                    st.session_state.state_loaded = True
-                except Exception as e:
-                    st.error(f"Error loading state: {str(e)}")
         
         # Manual path input
         manual_state_path = st.text_input("Or enter state file path")
@@ -297,9 +297,12 @@ def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None
 
 def initialize_session_state():
     """Initialize session state variables."""
+    print("\n🔄 Initializing session state")
     # Persistence and task runner
     if 'persistence_model' not in st.session_state:
+        print("\n🆕 Creating new persistence model")
         st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+        print("✅ Stored new persistence model in session state")
     
     if 'task_runner' not in st.session_state:
         st.session_state.task_runner = TaskRunner(st.session_state.persistence_model)
@@ -492,6 +495,7 @@ def render_logo(width=150):
 
 def render_chat_management_sidebar():
     """Render the chat management section in the sidebar."""
+    print("\n🔄 Starting render_chat_management_sidebar")
     # Get persistence model from session state
     persistence_model = st.session_state.persistence_model
     
@@ -602,6 +606,7 @@ def render_chat_management_sidebar():
                 
                 if selected_task:
                     selected_task_id = task_options[selected_task]
+                    print(f"\n🔄 Selected task changed to: {selected_task_id}")
                     
                     if (selected_tm_id != st.session_state.current_tasksmanager_id or 
                         selected_task_id != st.session_state.current_task_id):
@@ -621,6 +626,7 @@ async def render_main_chat():
     """Render the main chat interface with context information."""
     from server.models.task import Task  # Add this import at the top
     
+    print("\n🔄 Starting render_main_chat")
     persistence_model = st.session_state.persistence_model
     
     tasksmanagers = get_available_tasksmanagers()
@@ -635,6 +641,7 @@ async def render_main_chat():
         st.title(current_tm.name)
     
     # Get current task
+    print(f"\n📋 Current task_id: {st.session_state.current_task_id}")
     current_task: Optional[Task] = None
     if st.session_state.current_task_id:
         task_data = persistence_model.tasks.read(st.session_state.current_task_id)
@@ -645,6 +652,7 @@ async def render_main_chat():
 
     # Load chat messages for current session
     if st.session_state.current_task_id and st.session_state.current_session_id:
+        print(f"\n💬 Loading messages for session: {st.session_state.current_session_id}")
         if not st.session_state.messages:  # Only load if messages are empty
             st.session_state.messages = load_chat_messages(st.session_state.current_task_id)
     
@@ -986,8 +994,51 @@ def cleanup_session_files():
             except Exception as e:
                 print(f"Error removing session file {file}: {e}")
 
+def initialize_state():
+    """Initialize application state from saved state if available."""
+    print("\n🔄 Initializing application state")
+    
+    if 'state_initialized' in st.session_state:
+        print("✅ State already initialized")
+        return
+        
+    metadata = get_last_used_state()
+    last_used_state = metadata.get("last_used_state")
+    
+    if last_used_state:
+        try:
+            state_path = str(get_state_dir() / last_used_state)
+            print(f"📥 Loading last used state: {state_path}")
+            result = load_state(state_path)
+            
+            # Set state flags
+            st.session_state.state_loaded = True
+            st.session_state.default_state_loaded = True
+            st.session_state.state_initialized = True
+            st.session_state.selected_state_file = last_used_state
+            
+            # Restore last used TM and Task
+            st.session_state.current_tasksmanager_id = metadata.get("last_tm_id")
+            st.session_state.current_task_id = metadata.get("last_task_id")
+            
+            print("✅ State loaded successfully")
+        except Exception as e:
+            print(f"❌ Error loading state: {str(e)}")
+            # Reset state flags on error
+            st.session_state.state_loaded = False
+            st.session_state.default_state_loaded = False
+            st.session_state.selected_state_file = ""
+    else:
+        print("ℹ️ No last used state found")
+        st.session_state.state_loaded = False
+        st.session_state.default_state_loaded = False
+        st.session_state.selected_state_file = ""
+    
+    st.session_state.state_initialized = True
+
 def main():
     """Main application entry point."""
+    print("\n🔄 Starting main application")
     st.set_page_config(
         page_title="Cerebrum Chat",
         layout="wide",
@@ -1000,23 +1051,15 @@ def main():
     # Initialize basic session state
     initialize_session_state()
     
+    # Initialize state (single point of state loading)
+    initialize_state()
+    
     # Generate session ID
     session_id = generate_session_id()
+    print(f"\n🔑 Generated session ID: {session_id}")
     
     # Load anonymous session if it exists
     load_local_session()
-    
-    # Load last used state if available
-    if not st.session_state.default_state_loaded:
-        metadata = get_last_used_state()
-        if metadata.get("last_used_state"):
-            state_path = str(get_state_dir() / metadata["last_used_state"])
-            load_state(state_path)
-            st.session_state.default_state_loaded = True
-            
-            # Restore last used TM and Task
-            st.session_state.current_tasksmanager_id = metadata.get("last_tm_id")
-            st.session_state.current_task_id = metadata.get("last_task_id")
     
     # Render UI
     with st.sidebar:

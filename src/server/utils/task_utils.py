@@ -38,11 +38,11 @@ def generate_tools_by_ids(persistence_model, toolsets_ids):
             continue
         for tid in toolset.tool_ids:
             tool = persistence_model.tools.read(tid)
-            if tool['type'] != 'function':
+            if tool.type != 'function':
                 continue
-            function = tool['function']
-            fname = f"fn{index}_{function['name']}"
-            functions_dict[fname] = function
+            function = tool.function
+            fname = f"fn{index}_{function.name}"
+            functions_dict[fname] = function.model_dump()
             functions_dict[fname]["tool_id"] = tid
     if len(functions_dict) > 0:
         tools = transform_functions_for_openai(functions_dict)

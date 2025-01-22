@@ -312,10 +312,42 @@ class TaskRunner:
                 except Exception as plugin_error:
                     logger.warning(f"Plugin execution failed: {str(plugin_error)}, falling back to standard execution")
 
-            # Standard task execution (non-plugin)
+            # Get or create curried proxy for standard execution
+            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager) if tasksmanager else None
+
+            # Standard task execution using operator for completions
+            messages = running_extra_params.get('messages', [])
+            if not messages and task.messages:
+                messages = [msg.dict() if hasattr(msg, 'dict') else msg for msg in task.messages]
+
+            if not messages:
+                return {
+                    "status": "failed",
+                    "response": "No messages found for task execution",
+                    "error": "Missing messages"
+                }
+
+            # Get model from tasksmanager or use default
+            model = None
+            if tasksmanager and hasattr(tasksmanager, 'model'):
+                model = tasksmanager.model
+            if not model and hasattr(task, 'model'):
+                model = task.model
+            if not model:
+                model = "gpt-4"  # Default model if none specified
+
+            # Execute completion with curried proxy
+            response = await self.completion(
+                tasksmanager_id=task.tasksmanager_id,
+                task_id=task.id,
+                messages=messages,
+                model=model,
+                curried_proxy=curried_proxy
+            )
+
             return {
                 "status": "completed",
-                "response": "Task completed",
+                "response": response,
                 "error": None
             }
 

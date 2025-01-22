@@ -6,24 +6,91 @@ from src.server.controllers.tasks_tree_controller import (
     ExecutionStrategy, ExecutionConfig, TaskExecutionError
 )
 from src.server.models.task import Task
+from src.server.models.message import Message
+from src.server.controllers.task_runner import TaskRunner
+from src.server.persistence.persistence_model import PersistenceModelBase
+from src.server.persistence.in_memory_crud import InMemoryCrud
 
 class MockTask:
-    def __init__(self, task: Task):
+    def __init__(self, task):
+        self.task = task
         self.id = task.id
         self.name = task.name
-        self.description = task.description
-        self.tasksmanager_id = task.tasksmanager_id
-        self.messages = task.messages
-        self.chat_sessions = task.chat_sessions
-        self.toolsets = task.toolsets
-        self.created_at = task.created_at
-        self.updated_at = task.updated_at
-        self.config = task.config
-        self.use_context = task.use_context
-        self.contexts = task.contexts
-
+        
     async def run(self, context):
-        return "Default mock result"
+        # Default implementation that can be overridden in tests
+        return f"Result from {self.id}"
+
+class MockPersistenceModel(PersistenceModelBase):
+    def __init__(self):
+        self._tasks = {}
+        self._tasksmanagers = {}
+        self._tools = {}
+        self._toolsets = {}
+        self._messages = {}
+        self._crewai_configs = {}
+        self._curried_proxies = {}
+        
+    def create(self, item):
+        return item
+        
+    def read(self, id):
+        return self._tasks.get(id) or self._tasksmanagers.get(id)
+        
+    def update(self, id, item):
+        if hasattr(item, 'tasksmanager_id'):
+            self._tasks[id] = item
+        else:
+            self._tasksmanagers[id] = item
+        return item
+        
+    def delete(self, id):
+        self._tasks.pop(id, None)
+        self._tasksmanagers.pop(id, None)
+
+    def to_json(self) -> str:
+        return "{}"  # Mock implementation
+
+    def from_json(self, json_str: str):
+        pass  # Mock implementation
+
+    @property
+    def tools(self):
+        return InMemoryCrud()
+
+    @property
+    def toolsets(self):
+        return InMemoryCrud()
+
+    @property
+    def tasksmanagers(self):
+        return InMemoryCrud()
+
+    @property
+    def tasks(self):
+        return InMemoryCrud()
+
+    @property
+    def messages(self):
+        return InMemoryCrud()
+
+    @property
+    def crewai_config(self):
+        return InMemoryCrud()
+
+    @property
+    def curried_proxies(self):
+        return InMemoryCrud()
+
+class MockOperator:
+    async def completion(self, tasksmanager_id, task_id, messages, model=None, curried_proxy=None):
+        # Simulate AI responses based on the question
+        last_message = messages[-1]['content'].lower()
+        if "capital of france" in last_message:
+            return "The capital of France is Paris."
+        elif "population of paris" in last_message:
+            return "The population of Paris is approximately 2.2 million people."
+        return f"I'm not sure about: {messages[-1]['content']}"
 
 @pytest.fixture
 def sample_tree():
@@ -403,3 +470,94 @@ class TestExecutionStrategies:
         
         # Parent context should have test_value
         assert contexts["1"]["test_value"] == "parent" 
+
+@pytest.mark.asyncio
+async def test_standard_task_execution():
+    """Test that standard task execution properly handles messages and returns factual AI responses."""
+    # Setup
+    persistence_model = MockPersistenceModel()
+    task_runner = TaskRunner(persistence_model)
+    task_runner.operator = MockOperator()
+    
+    # Create test task with system message
+    task = Task(
+        id="test_task",
+        name="Test Task",
+        tasksmanager_id="test_tm",
+        messages=[
+            Message(role="system", content="You are a helpful assistant that provides accurate factual information.")
+        ]
+    )
+    
+    # Create test tasksmanager
+    tasksmanager = Task(
+        id="test_tm",
+        name="Test TaskManager",
+        model="gpt-4"
+    )
+    
+    # Store in persistence
+    persistence_model._tasks["test_task"] = task
+    persistence_model._tasksmanagers["test_tm"] = tasksmanager
+    
+    # Test factual question
+    result = await task_runner._run_standard_task(
+        task=task,
+        running_extra_params={
+            "messages": [
+                {"role": "user", "content": "What is the capital of France?"}
+            ]
+        },
+        tasksmanager=tasksmanager
+    )
+    
+    assert result["status"] == "completed"
+    assert "Paris" in result["response"], "Response should mention Paris as the capital of France"
+    assert result["error"] is None
+    
+    # Test follow-up question
+    result = await task_runner._run_standard_task(
+        task=task,
+        running_extra_params={
+            "messages": [
+                {"role": "user", "content": "What is the population of Paris?"}
+            ]
+        },
+        tasksmanager=tasksmanager
+    )
+    
+    assert result["status"] == "completed"
+    assert "2.2 million" in result["response"], "Response should mention Paris's population"
+    assert result["error"] is None
+    
+    # Test unknown question
+    result = await task_runner._run_standard_task(
+        task=task,
+        running_extra_params={
+            "messages": [
+                {"role": "user", "content": "What is the GDP of Mars?"}
+            ]
+        },
+        tasksmanager=tasksmanager
+    )
+    
+    assert result["status"] == "completed"
+    assert "not sure" in result["response"].lower(), "Response should indicate uncertainty for unknown questions"
+    assert result["error"] is None
+    
+    # Test execution with no messages
+    empty_task = Task(
+        id="empty_task",
+        name="Empty Task",
+        tasksmanager_id="test_tm"
+    )
+    
+    result = await task_runner._run_standard_task(
+        task=empty_task,
+        running_extra_params={},
+        tasksmanager=tasksmanager
+    )
+    
+    assert result["status"] == "failed"
+    assert "No messages found" in result["response"]
+    assert result["error"] == "Missing messages"

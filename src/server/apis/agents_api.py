@@ -9,7 +9,7 @@ from ..tools.tools_catalog import tools_catalog
 router = APIRouter()
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
-@router.post("/agent/crewai")
+@router.post("/agent/crewai", status_code=201)
 async def create_crewai(
     request: CreateCrewRequest,
     task_id: Optional[str] = None ):

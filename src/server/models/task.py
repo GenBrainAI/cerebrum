@@ -69,23 +69,23 @@ class Task(BaseModel):
     description: Optional[str] = Field(default=None)
     status: str = Field(default="pending", description="Current status of the task (pending, running, completed, failed)")
     error: Optional[str] = Field(default=None, description="Error message if task failed")
-    messages: Optional[List[Message]] = Field(default=None, description="System messages for the task")
+    messages: Optional[List[Message]] = Field(default_factory=list)
     chat_sessions: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
-    toolsets: Optional[List[str]] = Field(default=None)
-    curried_tools: Optional[List[str]] = Field(default=None)
+    toolsets: Optional[List[str]] = Field(default_factory=list)
+    curried_tools: Optional[List[str]] = Field(default_factory=list)
     curried_proxy_id: Optional[str] = Field(default=None)
     crewai_config_id: Optional[str] = Field(default=None)
     autogen_config_id: Optional[str] = Field(default=None)
     agent_role: Optional[str] = Field(default=None, description="Role of the agent assigned to this task")
     framework: Optional[str] = Field(default="crewai", description="Framework to use for task execution (e.g. crewai, autogen)")
-    created_at: Optional[datetime] = Field(default=None)
-    updated_at: Optional[datetime] = Field(default=None)
-    config: Optional[Dict[str, Any]] = Field(default=None)
+    created_at: Optional[datetime] = Field(default_factory=datetime.now)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.now)
+    config: Optional[Dict[str, Any]] = Field(default_factory=dict)
     use_context: bool = Field(default=True)
     inherit_manager_context: bool = Field(default=True)
     contexts: List[Dict] = Field(default_factory=list, description="Context references for the task")
-    execution_logs: Optional[List[Dict[str, Any]]] = Field(default=None, description="Logs from task execution")
-    input_data: Optional[Dict[str, Any]] = Field(default=None, description="Input data for task execution")
+    execution_logs: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Logs from task execution")
+    input_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Input data for task execution")
     result: Optional[str] = Field(default=None, description="Result of task execution")
 
     def create_session(self, name: Optional[str] = None) -> str:
@@ -159,12 +159,12 @@ class Task(BaseModel):
 
     def get_chat_sessions(self) -> Dict[str, List[Dict]]:
         """Get all chat sessions."""
-        return self.model_dump().get('chat_sessions', {})
+        return self.chat_sessions or {}
 
     class Config:
         arbitrary_types_allowed = True
         json_encoders = {
-            Message: lambda v: v.dict()
+            Message: lambda v: v.dict() if hasattr(v, 'dict') else v
         }
 
 

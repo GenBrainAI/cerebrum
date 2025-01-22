@@ -1,13 +1,15 @@
-openapi: 3.0.0
+openapi: 3.1.0
 info:
   title: Complex Number Calculator API
   version: 1.0.0
+  description: A FastAPI calculator for complex number operations
 servers:
   - url: http://example_complex_calculator.com
 paths:
   /complex/add:
     post:
-      summary: Adds two complex numbers
+      operationId: postComplexadd
+      summary: Add two complex numbers
       requestBody:
         required: true
         content:
@@ -16,14 +18,15 @@ paths:
               $ref: '#/components/schemas/ComplexOperation'
       responses:
         '200':
-          description: Result of addition
+          description: Successful addition
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ComplexResult'
   /complex/subtract:
     post:
-      summary: Subtracts two complex numbers
+      operationId: postComplexsubtract
+      summary: Subtract two complex numbers
       requestBody:
         required: true
         content:
@@ -32,14 +35,15 @@ paths:
               $ref: '#/components/schemas/ComplexOperation'
       responses:
         '200':
-          description: Result of subtraction
+          description: Successful subtraction
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ComplexResult'
   /complex/multiply:
     post:
-      summary: Multiplies two complex numbers
+      operationId: postComplexmultiply
+      summary: Multiply two complex numbers
       requestBody:
         required: true
         content:
@@ -48,14 +52,15 @@ paths:
               $ref: '#/components/schemas/ComplexOperation'
       responses:
         '200':
-          description: Result of multiplication
+          description: Successful multiplication
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ComplexResult'
   /complex/divide:
     post:
-      summary: Divides two complex numbers
+      operationId: postComplexdivide
+      summary: Divide two complex numbers
       requestBody:
         required: true
         content:
@@ -64,7 +69,7 @@ paths:
               $ref: '#/components/schemas/ComplexOperation'
       responses:
         '200':
-          description: Result of division
+          description: Successful division
           content:
             application/json:
               schema:
@@ -77,9 +82,14 @@ components:
         real:
           type: number
           format: float
+          description: The real part of the complex number
         imag:
           type: number
           format: float
+          description: The imaginary part of the complex number
+      required:
+        - real
+        - imag
     ComplexOperation:
       type: object
       properties:
@@ -87,8 +97,13 @@ components:
           $ref: '#/components/schemas/ComplexNumber'
         num2:
           $ref: '#/components/schemas/ComplexNumber'
+      required:
+        - num1
+        - num2
     ComplexResult:
       type: object
       properties:
         result:
           $ref: '#/components/schemas/ComplexNumber'
+      required:
+        - result

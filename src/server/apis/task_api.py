@@ -619,3 +619,40 @@ async def get_task_tree_status(
     except Exception as e:
         logging.error(f"Error getting task tree status: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail={"message": "Internal server error", "error": str(e)})
+
+@router.get("/tasksmanager/{tasksmanager_id}/tasks", response_model=List[Task])
+async def get_tasksmanager_tasks(tasksmanager_id: str):
+    """Get all tasks for a tasks manager."""
+    try:
+        print(f"\n🔍 Attempting to get tasks for tasksmanager: {tasksmanager_id}")
+        
+        # Read the TasksManager
+        print(f"\n📖 Reading TasksManager {tasksmanager_id}:")
+        tasksmanager = persistence_model.tasksmanagers.read(tasksmanager_id)
+        print(f"  Type: {type(tasksmanager)}")
+        print(f"  Is instance of TasksManager: {isinstance(tasksmanager, TasksManager)}")
+        
+        if not tasksmanager:
+            raise HTTPException(status_code=404, detail="Tasks manager not found")
+        
+        # Get all tasks
+        print("\n📚 Getting all tasks:")
+        tasks = persistence_model.tasks.list()
+        print(f"  Total tasks found: {len(tasks)}")
+        print("  Task IDs and their tasksmanager_ids:")
+        for task in tasks:
+            print(f"    Task {task.id}: tasksmanager_id = {task.tasksmanager_id}")
+        
+        # Filter tasks for this tasksmanager
+        filtered_tasks = [task for task in tasks if task.tasksmanager_id == tasksmanager_id]
+        print(f"\n✅ Filtered tasks for tasksmanager {tasksmanager_id}:")
+        print(f"  Found {len(filtered_tasks)} matching tasks")
+        
+        print("\n📤 Returning response with tasks")
+        return filtered_tasks
+        
+    except Exception as e:
+        print(f"\n❌ Error in get_tasksmanager_tasks: {str(e)}")
+        print(f"  Type: {type(e)}")
+        print(f"  Args: {e.args}")
+        raise HTTPException(status_code=500, detail=str(e))

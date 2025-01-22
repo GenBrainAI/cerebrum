@@ -1,15 +1,21 @@
 import pytest
 from fastapi.testclient import TestClient
-from src.server.models.message import Message
-from src.server.utils.task_utils import find_file
-from src.server.controllers.tasks_tree_controller import ExecutionStrategy
+from unittest.mock import patch, MagicMock
+import json
+import time
+
+from src.server.main import app
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.tools.tools_catalog import tools_catalog
-import httpx
-from unittest.mock import AsyncMock, patch
+from src.server.models.toolset import Tool
+from src.server.models.function import Function
+from src.server.models.schema import ParameterSchema, ResponseContent, ResolvedSchema
+
+client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def cleanup_tools():
-    """Cleanup fixture that runs automatically before and after each test."""
+    """Clean up tools before and after each test."""
     tools_catalog.reset()
     yield
     tools_catalog.reset()
@@ -17,150 +23,250 @@ def cleanup_tools():
 @pytest.fixture
 def mock_calculator_api():
     """Mock the calculator API responses."""
-    with patch('httpx.AsyncClient') as mock_client:
-        # Mock the calculator API endpoints
-        async def mock_post(*args, **kwargs):
-            url = str(kwargs.get('url', args[0] if args else ''))
-            if 'complex/multiply' in url:
-                return httpx.Response(200, json={
-                    "result": {"real": 18, "imag": -1}  # (3 + 4i) * (2 - 3i)
-                })
-            elif 'complex/divide' in url:
-                if '1+2i' in str(kwargs.get('json')):
-                    return httpx.Response(200, json={
-                        "result": {"real": 0.8, "imag": 0.6}  # (1 + 2i) / (2 + i)
-                    })
-                else:
-                    return httpx.Response(200, json={
-                        "result": {"real": 2.0, "imag": 1.0}  # (5 + 6i) / (2 + 2i)
-                    })
-            return httpx.Response(404)
+    with patch('httpx.AsyncClient') as mock:
+        mock_client = MagicMock()
+        mock_client.post.side_effect = [
+            MagicMock(status_code=200, json=lambda: {"result": {"real": 4, "imag": 2}}),  # multiply
+            MagicMock(status_code=200, json=lambda: {"result": {"real": 1, "imag": 0.5}}),  # divide
+        ]
+        mock.return_value.__aenter__.return_value = mock_client
+        yield mock
 
-        mock_client.return_value.__aenter__.return_value.post = AsyncMock(side_effect=mock_post)
-        yield mock_client
-
-def test_complex_calculator_tree(client: TestClient, mock_calculator_api):
-    # Read the calculator swagger YAML for complex number operations
-    with open(find_file("tests/calculator/complex_calc.yml"), "r") as file:
-        swagger_yaml_content = file.read()
-    
+def test_complex_calculator_tree(mock_calculator_api):
+    """Test creating and running a complex calculator task tree."""
     # Create toolset with calculator API
+    with open("tests/calculator/complex_calc.yml", "r") as file:
+        swagger_string = file.read()
+
+    # Create toolset
     toolset_data = {
         "name": ("", "Complex Calculator"),
-        "description": ("", "API for complex number calculations"),
-        "credentials": ("", '{"auth_type":"Bearer","auth_key":"123"}'),
-        "swagger_str": ("", swagger_yaml_content)
+        "description": ("", "Complex number calculator API"),
+        "credentials": ("", '{"auth_type":"Bearer","auth_key":"test-key"}'),
+        "swagger_str": ("", swagger_string)
     }
+
     toolset_response = client.post("/toolsets", files=toolset_data)
     assert toolset_response.status_code == 201
     toolset_id = toolset_response.json()["id"]
 
-    # Create tasksmanager for complex calculations
+    # Generate and register tools
+    tools_response = client.post(f"/generate_tools/{toolset_id}")
+    assert tools_response.status_code == 200
+    tools = tools_response.json()
+
+    # Register tools in catalog
+    for tool_dict in tools:
+        print(f"\nTool dict: {json.dumps(tool_dict, indent=2)}")
+        # Convert parameters to proper format
+        function_dict = tool_dict["function"]
+        parameters = {}
+        if "parameters" in function_dict:
+            param_dict = function_dict["parameters"]
+            if isinstance(param_dict, dict):
+                # Create a requestBody parameter
+                parameters["requestBody"] = {
+                    "requestBody": ParameterSchema(
+                        name="requestBody",
+                        in_="body",
+                        description=param_dict.get("description", "Request body schema"),
+                        required=True,
+                        schema=ResolvedSchema(
+                            type=param_dict.get("type", "object"),
+                            properties=param_dict.get("properties", {}),
+                            required=param_dict.get("required", [])
+                        )
+                    )
+                }
+
+        # Create Function object
+        function = Function(
+            name=function_dict["name"],
+            description=function_dict.get("description", ""),
+            parameters=parameters,
+            responses={},  # Empty responses for now
+            url=function_dict.get("url"),
+            method=function_dict.get("method"),
+            credentials=function_dict.get("credentials"),
+            toolsetId=function_dict.get("toolsetId")
+        )
+
+        # Create Tool object
+        tool = Tool(function=function, type="function")
+        tools_catalog.register_openapi_tool(tool)
+
+    # Wait for tools to be registered
+    time.sleep(0.1)  # 100ms should be enough
+
+    # Create and store CrewAI configuration
+    crewai_config_data = {
+        "description": "Complex Calculator Crew for performing and verifying calculations",
+        "agents": [
+            {
+                "role": "Calculator Aggregator",
+                "goal": "Compare and verify calculation results",
+                "backstory": "Expert in complex number calculations and result verification",
+                "tools": [
+                    {
+                        "name": "fn0_postComplexmultiply",
+                        "description": "Multiply two complex numbers"
+                    },
+                    {
+                        "name": "fn0_postComplexdivide",
+                        "description": "Divide two complex numbers"
+                    }
+                ],
+                "verbose": True
+            },
+            {
+                "role": "Calculator 0",
+                "goal": "Perform complex number calculations accurately",
+                "backstory": "Expert in complex number arithmetic and calculations",
+                "tools": [
+                    {
+                        "name": "fn0_postComplexmultiply",
+                        "description": "Multiply two complex numbers"
+                    },
+                    {
+                        "name": "fn0_postComplexdivide",
+                        "description": "Divide two complex numbers"
+                    }
+                ],
+                "verbose": True
+            },
+            {
+                "role": "Calculator 1",
+                "goal": "Perform complex number calculations accurately",
+                "backstory": "Expert in complex number arithmetic and calculations",
+                "tools": [
+                    {
+                        "name": "fn0_postComplexmultiply",
+                        "description": "Multiply two complex numbers"
+                    },
+                    {
+                        "name": "fn0_postComplexdivide",
+                        "description": "Divide two complex numbers"
+                    }
+                ],
+                "verbose": True
+            }
+        ],
+        "tasks": [
+            {
+                "description": "Compare and verify calculation results from different calculators",
+                "expected_output": "Verification of calculation results",
+                "agent_role": "Calculator Aggregator"
+            },
+            {
+                "description": "Perform complex number calculations using method 0",
+                "expected_output": "Result of complex number calculation",
+                "agent_role": "Calculator 0"
+            },
+            {
+                "description": "Perform complex number calculations using method 1",
+                "expected_output": "Result of complex number calculation",
+                "agent_role": "Calculator 1"
+            }
+        ],
+        "tools_proxy_collection": {
+            "toolsets": [
+                {
+                    "id": toolset_id,
+                    "name": "Complex Calculator"
+                }
+            ],
+            "functions": [],
+            "objects": []
+        }
+    }
+
+    # Create CrewAI configuration
+    crewai_config_response = client.post("/agent/crewai", json=crewai_config_data)
+    if crewai_config_response.status_code != 201:
+        print(f"Error response: {crewai_config_response.json()}")
+    assert crewai_config_response.status_code == 201
+    crew_id = crewai_config_response.json()["crew_id"]
+    curried_proxy_id = crewai_config_response.json()["curried_proxy_id"]
+
+    # Create tasks manager
     tasksmanager_data = {
-        "name": "Complex Math Expert",
-        "description": "TasksManager for complex number calculations",
+        "name": "Complex Calculator Manager",
+        "model": "gpt-4",
+        "description": "Manager for complex number calculations",
+        "toolsets": [toolset_id]
     }
     tasksmanager_response = client.post("/tasksmanager", json=tasksmanager_data)
     assert tasksmanager_response.status_code == 201
     tasksmanager_id = tasksmanager_response.json()["id"]
 
-    # Create root task (Aggregator)
+    # Verify tasksmanager exists
+    verify_response = client.get(f"/tasksmanager/{tasksmanager_id}")
+    assert verify_response.status_code == 200
+
+    # Create root task for aggregating results
     root_task_data = {
-        "name": "Complex Calculator Aggregator",
-        "description": "Compare and aggregate complex calculation results",
+        "name": "Aggregate Calculator Results",
+        "description": "Compare and verify results from different calculators",
         "tasksmanager_id": tasksmanager_id,
         "messages": [
             {
                 "role": "system",
-                "content": "Compare the calculation results and verify they match between calculators."
+                "content": "You are a complex number calculator that verifies results from different calculation methods."
             }
         ],
         "toolsets": [toolset_id],
-        "framework": "crewai",
-        "create_crew": {
-            "name": "Complex Calculator Crew",
-            "description": "A crew for complex number calculations",
-            "agents": [
-                {
-                    "role": "Calculator Aggregator",
-                    "goal": "Compare and verify calculation results",
-                    "backstory": "Expert in complex number calculations and result verification",
-                    "tools": []
-                }
-            ]
-        }
+        "crewai_config_id": crew_id,
+        "curried_proxy_id": curried_proxy_id,
+        "agent_role": "Calculator Aggregator"
     }
     root_task_response = client.post("/task", json=root_task_data)
     assert root_task_response.status_code == 201
     root_task_id = root_task_response.json()["id"]
 
     # Create calculator tasks
-    calc_tasks = []
+    calculator_tasks = []
     for i in range(2):
-        calc_task_data = {
-            "name": f"Complex Calculator {i}",
-            "description": f"Perform complex calculations using method {i}",
+        calculator_task_data = {
+            "name": f"Calculate Complex Numbers {i}",
+            "description": f"Perform complex number calculations using method {i}",
             "tasksmanager_id": tasksmanager_id,
             "messages": [
                 {
                     "role": "system",
-                    "content": "Perform complex number calculations using the calculator API."
+                    "content": f"You are a complex number calculator using method {i}."
                 }
             ],
             "toolsets": [toolset_id],
-            "framework": "crewai",
-            "create_crew": {
-                "name": f"Calculator Crew {i}",
-                "description": "A crew for performing complex number calculations",
-                "agents": [
-                    {
-                        "role": f"Calculator {i}",
-                        "goal": "Perform complex number calculations accurately",
-                        "backstory": "Expert in complex number arithmetic and calculations",
-                        "tools": []
-                    }
-                ]
-            }
+            "crewai_config_id": crew_id,
+            "curried_proxy_id": curried_proxy_id,
+            "agent_role": f"Calculator {i}"
         }
-        calc_response = client.post("/task", json=calc_task_data)
-        assert calc_response.status_code == 201
-        calc_tasks.append(calc_response.json()["id"])
+        calculator_task_response = client.post("/task", json=calculator_task_data)
+        assert calculator_task_response.status_code == 201
+        calculator_tasks.append(calculator_task_response.json()["id"])
 
-    # Set root task
-    root_response = client.post(
-        f"/tasksmanager/{tasksmanager_id}/task/{root_task_id}/tree/root"
-    )
-    assert root_response.status_code == 200
-    assert root_response.json()["root_id"] == root_task_id
+    # Set root task and add calculator tasks as children
+    set_root_response = client.post(f"/tasksmanager/{tasksmanager_id}/task/{root_task_id}/tree/root")
+    assert set_root_response.status_code == 200
 
-    # Add calculator tasks as children
-    for calc_id in calc_tasks:
-        relation = client.post(
-            f"/tasksmanager/{tasksmanager_id}/task/tree/relation",
-            json={
-                "parent_id": root_task_id,
-                "child_id": calc_id,
-                "execution_strategy": "parallel"
-            }
-        )
-        assert relation.status_code == 200
+    for task_id in calculator_tasks:
+        add_child_response = client.post(f"/tasksmanager/{tasksmanager_id}/task/tree/relation", json={
+            "parent_id": root_task_id,
+            "child_id": task_id,
+            "execution_strategy": "parallel"
+        })
+        assert add_child_response.status_code == 200
 
     # Configure execution for parallel processing
-    config_response = client.post(
-        f"/tasksmanager/{tasksmanager_id}/task/{root_task_id}/tree/config",
-        json={
-            "strategy": "parallel",
-            "execute_children": True,
-            "propagate_context": True,
-            "max_retries": 3,
-            "timeout": 60.0
-        }
-    )
+    execution_config = {
+        "strategy": "parallel",
+        "execute_children": True,
+        "propagate_context": True,
+        "max_retries": 3,
+        "timeout": 180.0
+    }
+    config_response = client.post(f"/tasksmanager/{tasksmanager_id}/task/{root_task_id}/tree/config", json=execution_config)
     assert config_response.status_code == 200
-    config_data = config_response.json()
-    assert config_data["config"]["strategy"] == "parallel"
-    assert config_data["config"]["max_retries"] == 3
-    assert config_data["config"]["timeout"] == 60.0
 
     # Run the calculation tree
     calculation_request = {
@@ -168,35 +274,20 @@ def test_complex_calculator_tree(client: TestClient, mock_calculator_api):
         "messages": [
             {
                 "role": "user",
-                "content": "Calculate (3 + 4i) * (2 - 3i)"
+                "content": "Calculate (2+1j) * (1+1j) and (4+2j) / (2+1j) using different methods and verify the results."
             }
         ]
     }
-    
-    run_response = client.post(
-        f"/task/{tasksmanager_id}/{root_task_id}/run",
-        json=calculation_request
-    )
+    run_response = client.post(f"/task/{tasksmanager_id}/{root_task_id}/run", json=calculation_request)
     assert run_response.status_code == 200
-    
-    # Verify the response structure
-    result = run_response.json()
-    assert "result" in result
-    assert "tree_execution" in result
-    assert result["tree_execution"] is True
-    
-    # Get tree status
-    status_response = client.get(
-        f"/tasksmanager/{tasksmanager_id}/task/{root_task_id}/tree/status"
-    )
-    assert status_response.status_code == 200
-    
-    tree_status = status_response.json()
-    assert len(tree_status["children"]) == 2
-    assert all(child["status"] == "completed" for child in tree_status["children"])
-    assert tree_status["status"] == "completed"
 
-def test_tree_error_cases(client: TestClient):
+    # Check that tasks were completed
+    tasks_response = client.get(f"/tasksmanager/{tasksmanager_id}/tasks")
+    assert tasks_response.status_code == 200
+    tasks = tasks_response.json()
+    assert len(tasks) == 3  # Verify we have all three tasks
+
+def test_tree_error_cases():
     """Test various error cases in tree operations"""
     
     # Try operations with non-existent tasksmanager

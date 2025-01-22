@@ -143,16 +143,12 @@ class TaskCrud(InMemoryCrud[Task]):
         
         for item in items:
             if isinstance(item, dict):
-                print(f"Warning: Found raw dict instead of Task: {item}")
                 try:
-                    # Try to convert dict to Task
                     valid_items.append(Task.parse_obj(item))
                 except Exception as e:
                     print(f"Failed to convert dict to Task: {str(e)}")
             elif isinstance(item, Task):
                 valid_items.append(item)
-            else:
-                print(f"Warning: Invalid item type {type(item)}: {item}")
                 
         return valid_items
 
@@ -163,15 +159,11 @@ class TaskCrud(InMemoryCrud[Task]):
             return None
             
         if isinstance(item, dict):
-            print(f"⚠️ Converting dict to Task for id {item_id}")
             try:
                 return Task.parse_obj(item)
             except Exception as e:
-                print(f"❌ Failed to convert dict to Task: {str(e)}")
                 return item
-        elif not isinstance(item, Task):
-            print(f"⚠️ Unexpected type for Task: {type(item)}")
-            
+                
         return item
 
 class MessageCrud(InMemoryCrud[Message]):
