@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import asyncio
 from datetime import datetime
+import io
 
 from src.server.models.scraping_session import ScrapingSession, ScrapingTargetType, ScrapingContentType
 from src.server.context.knowledge_base import KnowledgeBase
@@ -102,92 +103,50 @@ class ScrapingSessionManager:
             
         return sorted(sessions, key=lambda x: x.created_at, reverse=True)
         
-    async def process_entry(
-        self,
-        session: ScrapingSession,
-        entry: Dict,
-        task_ids: Optional[List[str]] = None,
-        tasksmanager_ids: Optional[List[str]] = None
-    ) -> None:
-        """Process a scraped entry according to session configuration."""
+    async def process_entry(self, session_id: str, entry: Dict[str, any]) -> None:
+        """Process a scraped entry according to the session configuration."""
         try:
-            # Update entry metadata
-            entry["processed_at"] = datetime.now().isoformat()
-            entry["session_id"] = session.id
-            
-            # Process for each enabled target
-            for target_type, config in session.target_configs.items():
-                if not config["enabled"]:
-                    continue
-                    
-                if target_type == ScrapingTargetType.KNOWLEDGE_BASE:
-                    # Add to knowledge base
-                    await self.knowledge_base.add_knowledge(
-                        content=entry["content"],
-                        domain=config["domain"] or session.name,
-                        metadata={
-                            **entry["metadata"],
-                            "session_id": session.id,
-                            "session_name": session.name
-                        }
-                    )
-                    
-                    # Add task associations if specified
-                    if task_ids or config["task_ids"]:
-                        for task_id in (task_ids or []) + config["task_ids"]:
-                            await self.knowledge_base.add_knowledge_with_task(
-                                content=entry["content"],
-                                domain=config["domain"] or session.name,
-                                metadata=entry["metadata"],
-                                task_id=task_id
-                            )
-                            
-                    if tasksmanager_ids or config["tasksmanager_ids"]:
-                        for tm_id in (tasksmanager_ids or []) + config["tasksmanager_ids"]:
-                            await self.knowledge_base.add_knowledge_with_task(
-                                content=entry["content"],
-                                domain=config["domain"] or session.name,
-                                metadata=entry["metadata"],
-                                tasksmanager_id=tm_id
-                            )
-                            
-                elif target_type == ScrapingTargetType.VECTOR_STORE:
-                    # Add to vector store
-                    index_name = config["index_name"] or self._sanitize_index_name(session.name)
-                    await self.vector_store.add_text_to_index(
-                        index_name=index_name,
-                        text=entry["content"],
-                        metadata={
-                            **entry["metadata"],
-                            "session_id": session.id,
-                            "session_name": session.name
-                        },
-                        chunk_size=config["chunk_size"],
-                        chunk_overlap=config["chunk_overlap"]
-                    )
-                    
-                elif target_type == ScrapingTargetType.CODE:
-                    # Process code content
-                    if "code_blocks" in entry:
-                        for code_block in entry["code_blocks"]:
-                            if code_block.get("language") and code_block.get("content"):
-                                await self.code_catalog.add_file(
-                                    path=f"{session.name}/{entry['metadata'].get('title', 'untitled')}.{code_block['language']}",
-                                    content=code_block["content"],
-                                    metadata={
-                                        **entry["metadata"],
-                                        "session_id": session.id,
-                                        "session_name": session.name,
-                                        "language": code_block["language"]
-                                    }
-                                )
-                                
-            # Update session
-            session.add_entry(entry)
+            session = self.get_session(session_id)
+            if not session:
+                raise ValueError(f"Session {session_id} not found")
+
+            # Add entry to session
+            session.entries.append(entry)
+
+            # Process entry based on target type
+            if session.target_type == ScrapingTargetType.KNOWLEDGE_BASE:
+                # Add to knowledge base
+                await self.knowledge_base.add_knowledge(
+                    content=entry["content"],
+                    domain=session.name,
+                    metadata=entry["metadata"]
+                )
+            elif session.target_type == ScrapingTargetType.VECTOR_STORE:
+                # Add to vector store
+                config = session.target_config or {}
+                index_name = config["index_name"] or self._sanitize_index_name(session.name)
+                
+                # Add to vector store using add_file_to_index
+                await self.vector_store.add_file_to_index(
+                    index_name=index_name,
+                    file_path_or_obj=io.StringIO(entry["content"]),
+                    metadata=entry["metadata"]
+                )
+            elif session.target_type == ScrapingTargetType.CODE:
+                # Add to code catalog
+                await self.code_catalog.index_directory(
+                    directory_path=entry["path"],
+                    analyze_deps=True,
+                    parse_docs=True
+                )
+
+            # Save session
             self._save_sessions()
-            
+
         except Exception as e:
             print(f"Error processing entry: {str(e)}")
+            import traceback
+            print(f"Stack trace: {traceback.format_exc()}")
             raise
             
     def _sanitize_index_name(self, name: str) -> str:

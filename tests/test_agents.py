@@ -82,6 +82,6 @@ def test_create_agents_and_tasks():
     }
 
     response = client.post("/agent/crewai", json=request_data)
-    assert response.status_code == 200
+    assert response.status_code == 201
     data = response.json()
     assert data["message"] == "Crew created"

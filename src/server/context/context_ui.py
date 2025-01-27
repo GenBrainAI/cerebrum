@@ -1651,7 +1651,8 @@ class ContextManagerUI:
                                     'id': file_info.get('id', ''),    # Ensure not None
                                     'scraped_at': result['scraped_at'],
                                     'added_at': current_time,
-                                    'is_root': True
+                                    'is_root': True,
+                                    'title': f"{result['repo']}/{file_info['path']}"  # Add meaningful title
                                 }
                                 
                                 # Ensure no None values in metadata

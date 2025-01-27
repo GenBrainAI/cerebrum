@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 import shutil
 from datetime import datetime
+import tempfile
 
 from src.server.context.scraping_session_manager import ScrapingSessionManager
 from src.server.models.scraping_session import ScrapingSession, ScrapingTargetType, ScrapingContentType
@@ -73,17 +74,27 @@ def test_list_sessions(manager):
 @pytest.mark.asyncio
 async def test_process_entry(manager):
     """Test processing a scraped entry."""
+    # Create test index first
+    session_name = "Test Session"
+    clean_name = manager._sanitize_index_name(session_name)
+    print(f"\nDEBUG - Clean name: {clean_name}")
+    
+    # Create index with clean name (no vs_ prefix)
+    manager.vector_store.create_index(clean_name, "Test index for scraping")
+    
+    # Create session
     session = manager.create_session(
-        name="Test Session",
+        name=session_name,
         target_type=ScrapingTargetType.MULTI
     )
-    
+
     # Enable all targets
     session.enable_target(ScrapingTargetType.KNOWLEDGE_BASE)
     session.enable_target(ScrapingTargetType.VECTOR_STORE)
     session.enable_target(ScrapingTargetType.CODE)
-    
-    # Create test entry
+
+    # Create test entry with code block
+    code_content = "def test(): pass"
     entry = {
         "content": "Test content",
         "metadata": {
@@ -93,20 +104,30 @@ async def test_process_entry(manager):
         "code_blocks": [
             {
                 "language": "python",
-                "content": "def test(): pass"
+                "content": code_content
             }
         ]
     }
-    
-    # Process entry
-    await manager.process_entry(session, entry)
-    
-    # Verify entry was added to session
-    assert len(session.entries) == 1
-    assert session.entries[0]["content"] == "Test content"
-    
-    # Verify entry was processed for each target
-    # Note: In a real test, you would mock the target systems and verify interactions
+
+    # Create a temporary directory for the code
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Write the code to a file
+        code_file = Path(temp_dir) / "test.py"
+        code_file.write_text(code_content)
+        
+        # Index the directory containing the code
+        await manager.code_catalog.index_directory(
+            directory_path=temp_dir,
+            analyze_deps=True,
+            parse_docs=True
+        )
+
+        # Process entry
+        await manager.process_entry(session.id, entry)
+        
+        # Verify entry was added to session
+        assert len(session.entries) == 1
+        assert session.entries[0]["content"] == "Test content"
 
 @pytest.mark.asyncio
 async def test_delete_session(manager):
@@ -118,7 +139,7 @@ async def test_delete_session(manager):
         "content": "Test content",
         "metadata": {"title": "Test"}
     }
-    await manager.process_entry(session, entry)
+    await manager.process_entry(session.id, entry)
     
     # Delete session without content
     success = await manager.delete_session(session.id, delete_content=False)
@@ -127,7 +148,7 @@ async def test_delete_session(manager):
     
     # Create new session and test deleting with content
     session = manager.create_session(name="Test Session 2")
-    await manager.process_entry(session, entry)
+    await manager.process_entry(session.id, entry)
     success = await manager.delete_session(session.id, delete_content=True)
     assert success
     assert session.id not in manager.sessions
