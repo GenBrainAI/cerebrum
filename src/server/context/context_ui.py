@@ -9,6 +9,9 @@ import time
 import tempfile
 from uuid import uuid4, UUID
 import asyncio
+import traceback
+import os
+from dotenv import load_dotenv
 
 from src.server.context.context_database import ContextDatabase
 from src.server.context.code_catalog import CodeCatalog
@@ -16,6 +19,12 @@ from src.server.context.knowledge_base import KnowledgeBase
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.context.context_provider import ContextProvider
 from src.server.context.vector_store import VectorStore
+from ..tools.web_scraper_tool import WebScraperTool
+from ..tools.repo_scraper import RepoScraper
+
+# Load .env file from project root
+project_root = Path(__file__).parent.parent.parent.parent
+load_dotenv(project_root / '.env')
 
 class ContextManagerUI:
     """Enhanced UI component for managing and visualizing the context system."""
@@ -31,6 +40,7 @@ class ContextManagerUI:
         self.vector_store = VectorStore()
         self.code_catalog = CodeCatalog()
         self.knowledge_base = KnowledgeBase()
+        self.context_db = ContextDatabase()
         
         # Initialize context provider
         asyncio.run(self.context_provider.initialize())
@@ -127,7 +137,7 @@ class ContextManagerUI:
         if 'layout_style' not in st.session_state:
             st.session_state.layout_style = 'horizontal'
         
-        nav_cols = st.columns(5)
+        nav_cols = st.columns(6)  # Changed from 5 to 6 columns
         
         with nav_cols[0]:
             if st.button("Task Contexts", 
@@ -158,6 +168,13 @@ class ContextManagerUI:
                 st.session_state.layout_style = 'horizontal'
                 
         with nav_cols[4]:
+            if st.button("🌐 Scraper", 
+                        key="nav_scraper",
+                        use_container_width=True):
+                st.session_state.context_view = "scraper"
+                st.session_state.layout_style = 'horizontal'
+                
+        with nav_cols[5]:
             if st.button("⚙️ Settings", 
                         key="nav_settings",
                         use_container_width=True):
@@ -201,6 +218,8 @@ class ContextManagerUI:
             await self.render_code_view()
         elif view == "vector":
             await self.render_vector_view()
+        elif view == "scraper":
+            await self.render_scraper_view()
         elif view == "settings":
             self.render_settings_view()
 
@@ -296,6 +315,19 @@ class ContextManagerUI:
             st.session_state.selected_filter_tm = None
 
         st.subheader("Knowledge Base Management")
+
+        # Add Delete All button at the top
+        if st.button("Delete All Knowledge Base Items", type="secondary"):
+            if st.warning("⚠️ This will delete ALL knowledge base items. Are you sure?"):
+                try:
+                    # Clear knowledge base directly
+                    self.knowledge_base.knowledge_index = {"entries": {}, "domains": {}, "tags": {}}
+                    self.knowledge_base._save_index()
+                    st.success("All knowledge base items deleted!")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error deleting knowledge base items: {str(e)}")
 
         # Get available tasks and managers first
         persistence_model = PersistenceModelFactory.persistence_model()
@@ -495,12 +527,10 @@ class ContextManagerUI:
             entry_id = entry.get('id')
             metadata = entry.get('metadata', {})
             
-            # Get file name and description
-            file_name = metadata.get('filename', '')
-            description = metadata.get('description', 'No description')
-            display_title = file_name or description  # Use description if filename is empty
+            # Get title from metadata
+            title = metadata.get('title', 'Untitled')
             
-            with st.expander(f"{metadata.get('source_type', 'Unknown')} - {display_title}"):
+            with st.expander(f"{title}"):
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
@@ -784,249 +814,348 @@ class ContextManagerUI:
         }
         return language_map.get(ext, 'text')
 
+    def _sanitize_index_name(self, name: str) -> str:
+        """Sanitize index name to meet Qdrant requirements."""
+        # Replace spaces and special characters with underscores
+        sanitized = ''.join(c if c.isalnum() else '_' for c in name)
+        # Ensure it starts with a letter
+        if not sanitized[0].isalpha():
+            sanitized = 'idx_' + sanitized
+        # Ensure length is between 3-63 characters
+        if len(sanitized) < 3:
+            sanitized = sanitized + '_index'
+        elif len(sanitized) > 63:
+            sanitized = sanitized[:60] + '_idx'
+        return sanitized
+
     async def render_vector_view(self):
         """Render the vector store management view."""
         st.subheader("Vector Store Management")
 
         # Force refresh vector store state
         try:
+            print("\nDEBUG - Vector Store View:")
             self.vector_store._reload_indices()
+            print("  Reloaded indices")
         except Exception as e:
+            print(f"  Error reloading indices: {str(e)}")
             st.error(f"Error refreshing vector store state: {str(e)}")
 
-        # Index management section
-        st.subheader("Manage Indices")
+        # Get all indices
+        indices = await self.vector_store.list_indices()
+        print(f"  All indices: {[idx['name'] for idx in indices]}")
         
-        # Create new index
-        with st.expander("Create New Index", expanded=False):
-            new_index_name = st.text_input("Index Name")
-            description = st.text_area("Description")
-            if st.button("Create Index", use_container_width=True):
-                if new_index_name:
-                    try:
-                        index_name = self.vector_store.create_index(
-                            name=new_index_name,
-                            description=description
-                        )
-                        st.success(f"Created index: {index_name}")
-                        time.sleep(0.5)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error creating index: {str(e)}")
-                else:
-                    st.warning("Please provide an index name")
-
-        # File ingestion section
-        st.subheader("Add Files to Vector Store")
+        # Filter out non-vs_ indices for display
+        display_indices = [idx for idx in indices if idx["name"].startswith("vs_")]
+        print(f"  Filtered indices: {[idx['name'] for idx in display_indices]}")
         
         # Index selection
-        indices = await self.vector_store.list_indices()
-        if not indices:
-            st.info("No indices available. Create an index first.")
-            return
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            # Initialize the session state for index selection if not present
+            if 'selected_index' not in st.session_state:
+                st.session_state.selected_index = ""
+            
+            # Get the list of options
+            index_options = [""] + [idx["name"] for idx in display_indices]
+            print("\nDEBUG - Index Selection:")
+            print(f"  Available options: {index_options}")
+            print(f"  Current session state: {st.session_state.selected_index}")
+            
+            # If we have a new index, update the session state
+            if 'new_index' in st.session_state:
+                st.session_state.selected_index = st.session_state.new_index
+                print(f"  Updating selected index to new index: {st.session_state.selected_index}")
+                del st.session_state.new_index
+            
+            selected_index = st.selectbox(
+                "Add scraped content to",
+                options=index_options,
+                format_func=lambda x: x.replace("vs_", "") if x else "Select an index...",
+                key="selected_index"
+            )
+            print(f"  Final selected index: {selected_index}")
         
-        selected_index = st.selectbox(
-            "Select Index",
-            options=[""] + [idx["name"] for idx in indices],
-            format_func=lambda x: x.replace("vs_", "") if x else "Select an index..."
-        )
-        
-        if not selected_index:
-            st.warning("Please select an index to add files")
-            return
+        # New index creation
+        with st.expander("Create New Index"):
+            new_index_name = st.text_input("New Index Name")
+            if new_index_name and st.button("Create Index", use_container_width=True):
+                try:
+                    print("\nDEBUG - Creating New Index:")
+                    print(f"  Raw name input: {new_index_name}")
+                    
+                    # Clean the index name - remove any existing vs_ prefix and sanitize
+                    clean_name = new_index_name.lower().replace(' ', '_')
+                    if clean_name.startswith('vs_'):
+                        clean_name = clean_name[3:]
+                    print(f"  Cleaned name: {clean_name}")
+                    
+                    # Create the final index name with vs_ prefix
+                    index_name = f"vs_{clean_name}"
+                    print(f"  Final index name: {index_name}")
+                    
+                    print("  Creating index in vector store...")
+                    # Create index with metadata (non-async call)
+                    self.vector_store.create_index(
+                        clean_name,  # Pass the clean name without vs_ prefix
+                        description=f"Index for {clean_name} content"
+                    )
+                    print("  Index created successfully")
+                    
+                    # Store the new index name in session state (with vs_ prefix)
+                    st.session_state.new_index = f"vs_{clean_name}"
+                    print(f"  Stored in session state: new_index = {st.session_state.new_index}")
+                    
+                    st.success(f"Created index: {clean_name}")
+                    print("  Success message displayed, rerunning...")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    print(f"\nDEBUG - Error Creating Index:")
+                    print(f"  Error type: {type(e)}")
+                    print(f"  Error message: {str(e)}")
+                    print(f"  Stack trace: {traceback.format_exc()}")
+                    st.error(f"Error creating index: {str(e)}")
+                    st.error(f"Stack trace: {traceback.format_exc()}")
 
-        # Source selection
-        source_type = st.radio(
-            "Source Type",
-            ["Local Files", "Directory"],
-            horizontal=True
-        )
-
-        # File upload section
-        if source_type == "Local Files":
-            uploaded_files = st.file_uploader(
-                "Upload Files",
-                type=["txt", "md", "py", "json", "yaml", "pdf", "doc", "docx"],
-                accept_multiple_files=True
+        if selected_index:
+            # Source selection and file upload UI
+            source_type = st.radio(
+                "Source Type",
+                ["Local Files", "Directory"],
+                horizontal=True
             )
 
-            if uploaded_files:
-                col1, col2 = st.columns([3, 1])
+            # Content filters
+            with st.expander("Content Filters"):
+                col1, col2 = st.columns(2)
                 with col1:
-                    st.write(f"{len(uploaded_files)} file(s) ready to process")
+                    exclude_headers = st.checkbox("Exclude headers", value=True)
+                    exclude_footers = st.checkbox("Exclude footers", value=True)
                 with col2:
-                    if st.button("Add to Index", use_container_width=True):
-                        if not selected_index:
-                            st.error("Please select an index first")
-                        else:
-                            # Create a progress bar
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            
-                            for uploaded_file in uploaded_files:
-                                try:
-                                    def update_progress(message: str, current: int, total: int):
-                                        if total > 0:
-                                            progress_bar.progress(current / total)
-                                        status_text.text(message)
-                                    
-                                    metadata = {
-                                        "original_name": uploaded_file.name,
-                                        "file_type": uploaded_file.type,
-                                        "size": uploaded_file.size,
-                                        "index": selected_index,
-                                        "added_at": datetime.now().isoformat(),
-                                        "file_id": str(uuid4()),
-                                        "is_root": True
-                                    }
-                                    
-                                    chunk_ids = await self.vector_store.add_file_to_index(
-                                        index_name=selected_index,
-                                        file_path_or_obj=uploaded_file,
-                                        metadata=metadata,
-                                        progress_callback=update_progress
-                                    )
-                                    
-                                    st.success(f"Added {uploaded_file.name} to {selected_index} ({len(chunk_ids)} chunks)")
-                                except Exception as e:
-                                    st.error(f"Error processing {uploaded_file.name}: {str(e)}")
-                            
-                            # Clear progress indicators
-                            progress_bar.empty()
-                            status_text.empty()
-                            
-                            time.sleep(0.5)
-                            st.rerun()
-        else:
-            # Directory processing
-            dir_path = st.text_input("Directory Path")
-            if dir_path and selected_index:
-                if st.button("Process Directory", use_container_width=True):
-                    try:
-                        processed = await self.vector_store.process_directory(
-                            index_name=selected_index,
-                            directory_path=dir_path
-                        )
-                        st.success(f"Processed {processed} files from directory")
-                    except Exception as e:
-                        st.error(f"Error processing directory: {str(e)}")
+                    exclude_nav = st.checkbox("Exclude navigation", value=True)
+                    exclude_ads = st.checkbox("Exclude ads", value=True)
 
-        # List and manage existing files
-        st.markdown("---")
-        st.subheader("Vector Store Contents")
-        
-        try:
-            # Show indices and their contents
-            for idx in indices:
-                # Get unique files (root items) in this index
-                files = await self.vector_store.get_index_contents(idx['name'])
-                
-                # Add debug logging
-                st.write(f"Debug - Processing index: {idx['name']}")
-                st.write(f"Debug - Number of raw files: {len(files)}")
-                
-                # Deduplicate files based on file_id
-                unique_files = {}
-                for file_info in files:
-                    metadata = file_info.get('metadata', {})
-                    file_id = metadata.get('file_id')
-                    if file_id:
-                        # Keep the most recent version if duplicate
-                        if file_id not in unique_files or (
-                            metadata.get('added_at', '') > unique_files[file_id].get('metadata', {}).get('added_at', '')
-                        ):
-                            unique_files[file_id] = file_info
-                
-                # Convert back to list and sort by added_at
-                files = sorted(
-                    unique_files.values(),
-                    key=lambda x: x.get('metadata', {}).get('added_at', ''),
-                    reverse=True
+            if source_type == "Local Files":
+                uploaded_files = st.file_uploader(
+                    "Upload Files",
+                    type=["txt", "md", "py", "json", "yaml", "pdf", "doc", "docx"],
+                    accept_multiple_files=True
                 )
                 
-                st.write(f"Debug - Number of unique files: {len(files)}")
-                
-                # Display index with file count
-                with st.expander(f"📁 {idx['name'].replace('vs_', '')} ({len(files)} files)"):
-                    st.write(f"Description: {idx.get('description', 'No description')}")
-                    
-                    if files:
-                        # Keep track of used keys to ensure uniqueness
-                        used_keys = set()
-                        
-                        for file_idx, file_info in enumerate(files):
-                            metadata = file_info.get('metadata', {})
-                            chunks = metadata.get('chunks', [])
-                            file_id = metadata.get('file_id', f'unknown_{file_idx}')
-                            
-                            # Debug logging for file info
-                            st.write(f"Debug - Processing file {file_idx}:")
-                            st.write(f"  Name: {metadata.get('original_name', 'Unnamed')}")
-                            st.write(f"  ID: {file_id}")
-                            st.write(f"  Added at: {metadata.get('added_at', 'Unknown')}")
-                            
-                            col1, col2 = st.columns([20, 1])
-                            with col1:
-                                st.write(f"📄 {metadata.get('original_name', 'Unnamed')}")
-                                st.write(f"Added: {metadata.get('added_at', 'Unknown')}")
-                                st.write(f"Size: {metadata.get('size', 'Unknown')} bytes")
-                                st.write(f"Chunks: {metadata.get('total_chunks', len(chunks))}")
-                            with col2:
-                                # Create a unique key for each delete button
-                                base_key = f"delete_{idx['name']}_{file_id}"
-                                delete_key = base_key
-                                counter = 0
+                if uploaded_files:
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.write(f"{len(uploaded_files)} file(s) ready to process")
+                    with col2:
+                        if st.button("Add to Index", use_container_width=True):
+                            if not selected_index:
+                                st.error("Please select an index first")
+                            else:
+                                # Create a progress bar
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
                                 
-                                # Ensure key uniqueness
-                                while delete_key in used_keys:
-                                    counter += 1
-                                    delete_key = f"{base_key}_{counter}"
-                                
-                                used_keys.add(delete_key)
-                                st.write(f"Debug - Delete button key: {delete_key}")
-                                
-                                if st.button("🗑️", key=delete_key, 
-                                           help=f"Delete {metadata.get('original_name', 'file')}"):
+                                for uploaded_file in uploaded_files:
                                     try:
-                                        await self.vector_store.delete_file_from_index(
-                                            index_name=idx['name'],
-                                            file_id=file_id
+                                        def update_progress(message: str, current: int, total: int):
+                                            if total > 0:
+                                                progress_bar.progress(current / total)
+                                            status_text.text(message)
+                                        
+                                        metadata = {
+                                            "original_name": uploaded_file.name,
+                                            "file_type": uploaded_file.type,
+                                            "size": uploaded_file.size,
+                                            "index": selected_index,
+                                            "added_at": datetime.now().isoformat(),
+                                            "file_id": str(uuid4()),
+                                            "is_root": True
+                                        }
+                                        
+                                        chunk_ids = await self.vector_store.add_file_to_index(
+                                            index_name=selected_index,
+                                            file_path_or_obj=uploaded_file,
+                                            metadata=metadata,
+                                            progress_callback=update_progress
                                         )
-                                        st.success("File deleted!")
-                                        time.sleep(0.5)
-                                        st.rerun()
+                                        
+                                        st.success(f"Added {uploaded_file.name} to {selected_index} ({len(chunk_ids)} chunks)")
                                     except Exception as e:
-                                        st.error(f"Error: {str(e)}")
-                    else:
-                        st.info("No files in this index")
-                    
-                    # Create a unique key for the index delete button using counter
-                    base_index_key = f"delete_index_{idx['name']}"
-                    index_delete_key = base_index_key
-                    counter = 0
-                    
-                    while index_delete_key in used_keys:
-                        counter += 1
-                        index_delete_key = f"{base_index_key}_{counter}"
-                    
-                    used_keys.add(index_delete_key)
-                    st.write(f"Debug - Index delete button key: {index_delete_key}")
-                    
-                    if st.button("Delete Index", key=index_delete_key, 
-                               help=f"Delete entire index {idx['name']}"):
+                                        st.error(f"Error processing {uploaded_file.name}: {str(e)}")
+                                
+                                # Clear progress indicators
+                                progress_bar.empty()
+                                status_text.empty()
+                                
+                                time.sleep(0.5)
+                                st.rerun()
+            else:
+                # Directory processing
+                dir_path = st.text_input("Directory Path")
+                if dir_path and selected_index:
+                    if st.button("Process Directory", use_container_width=True):
                         try:
-                            await self.vector_store.delete_index(idx['name'])
-                            st.success("Index deleted!")
-                            time.sleep(0.5)
-                            st.rerun()
+                            processed = await self.vector_store.process_directory(
+                                index_name=selected_index,
+                                directory_path=dir_path
+                            )
+                            st.success(f"Processed {processed} files from directory")
                         except Exception as e:
-                            st.error(f"Error: {str(e)}")
+                            st.error(f"Error processing directory: {str(e)}")
 
-        except Exception as e:
-            st.error(f"Error listing vector store contents: {str(e)}")
-            # Add stack trace for debugging
-            import traceback
-            st.error(f"Stack trace: {traceback.format_exc()}")
+            # Show contents of selected index
+            st.markdown("---")
+            st.subheader("Vector Store Contents")
+            
+            try:
+                # Show only the selected index
+                if selected_index:
+                    idx = next((i for i in indices if i['name'] == selected_index), None)
+                    if idx:
+                        print(f"\nDEBUG - Processing index: {idx['name']}")
+                        print(f"  Index details: {idx}")
+                        
+                        # Get files from collection
+                        files = await self.vector_store.get_index_contents(idx['name'])
+                        print(f"  Raw files retrieved: {len(files)}")
+                        
+                        # Debug raw files
+                        print("  Raw files details:")
+                        for i, file_info in enumerate(files):
+                            print(f"    File {i}:")
+                            print(f"      ID: {file_info.get('id')}")
+                            print(f"      Metadata: {file_info.get('metadata', {})}")
+                        
+                        # Deduplicate files based on file_id
+                        unique_files = {}
+                        for file_info in files:
+                            metadata = file_info.get('metadata', {})
+                            file_id = metadata.get('file_id', file_info.get('id'))
+                            if file_id:
+                                # Keep the most recent version if duplicate
+                                if file_id not in unique_files or (
+                                    metadata.get('added_at', '') > unique_files[file_id].get('metadata', {}).get('added_at', '')
+                                ):
+                                    unique_files[file_id] = file_info
+                        
+                        print(f"  Number of unique files: {len(unique_files)}")
+                        print("  Unique files metadata:")
+                        for file_id, file_info in unique_files.items():
+                            print(f"    {file_id}: {file_info.get('metadata', {})}")
+                        
+                        # Convert back to list and sort by added_at
+                        files = sorted(
+                            unique_files.values(),
+                            key=lambda x: x.get('metadata', {}).get('added_at', ''),
+                            reverse=True
+                        )
+                        
+                        # Display index with file count
+                        with st.expander(f"📁 {idx['name'].replace('vs_', '')} ({len(files)} files)", expanded=True):
+                            st.write(f"Description: {idx.get('description', 'No description')}")
+                            
+                            # Initialize used_keys set
+                            used_keys = set()
+                            
+                            if files:
+                                for file_idx, file_info in enumerate(files):
+                                    metadata = file_info.get('metadata', {})
+                                    content = file_info.get('content', '')
+                                    file_id = metadata.get('file_id', file_info.get('id', f'unknown_{file_idx}'))
+                                    
+                                    print(f"\nDEBUG - Displaying file {file_idx}:")
+                                    print(f"  ID: {file_id}")
+                                    print(f"  Metadata: {metadata}")
+                                    
+                                    col1, col2 = st.columns([20, 1])
+                                    with col1:
+                                        st.write(f"📄 {metadata.get('title', metadata.get('original_name', 'Unnamed'))}")
+                                        st.write(f"Added: {metadata.get('added_at', 'Unknown')}")
+                                        if metadata.get('size'):
+                                            st.write(f"Size: {metadata.get('size')} bytes")
+                                        if metadata.get('total_chunks'):
+                                            st.write(f"Total chunks: {metadata.get('total_chunks')}")
+                                        
+                                        # Show chunks if this is a root document
+                                        if metadata.get('is_root', False):
+                                            chunk_files = [f for f in files if 
+                                                         f.get('metadata', {}).get('file_id') == file_id and 
+                                                         not f.get('metadata', {}).get('is_root', False)]
+                                            
+                                            if chunk_files:
+                                                with st.expander(f"Show {len(chunk_files)} chunks"):
+                                                    for chunk in sorted(chunk_files, 
+                                                                      key=lambda x: x.get('metadata', {}).get('chunk_index', 0)):
+                                                        chunk_meta = chunk.get('metadata', {})
+                                                        st.write(f"Chunk {chunk_meta.get('chunk_index')}")
+                                                        st.write(f"Size: {chunk_meta.get('chunk_size')} bytes")
+                                                        st.text(chunk.get('content', '')[:200] + "...")
+                                        else:
+                                            st.write("Content preview:")
+                                            st.text(content[:200] + "..." if len(content) > 200 else content)
+                                            
+                                    with col2:
+                                        # Create a unique key for each delete button
+                                        base_key = f"delete_{idx['name']}_{file_id}"
+                                        delete_key = base_key
+                                        counter = 0
+                                        
+                                        # Ensure key uniqueness
+                                        while delete_key in used_keys:
+                                            counter += 1
+                                            delete_key = f"{base_key}_{counter}"
+                                        
+                                        used_keys.add(delete_key)
+                                        print(f"  Delete button key: {delete_key}")
+                                        
+                                        if st.button("🗑️", key=delete_key, 
+                                                   help=f"Delete {metadata.get('title', 'file')}"):
+                                            try:
+                                                collection = self.vector_store.client.get_collection(
+                                                    name=idx['name'],
+                                                    embedding_function=self.vector_store.embedding_function
+                                                )
+                                                collection.delete(ids=[file_id])
+                                                st.success("File deleted!")
+                                                time.sleep(0.5)
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Error: {str(e)}")
+                            else:
+                                st.info("No files in this index")
+                            
+                            # Create a unique key for the index delete button using counter
+                            base_index_key = f"delete_index_{idx['name']}"
+                            index_delete_key = base_index_key
+                            counter = 0
+                            
+                            while index_delete_key in used_keys:
+                                counter += 1
+                                index_delete_key = f"{base_index_key}_{counter}"
+                            
+                            used_keys.add(index_delete_key)
+                            print(f"  Index delete button key: {index_delete_key}")
+                            
+                            if st.button("Delete Index", key=index_delete_key, 
+                                       help=f"Delete entire index {idx['name']}", type="secondary"):
+                                try:
+                                    await self.vector_store.delete_index(idx['name'])
+                                    st.success("Index deleted!")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {str(e)}")
+                    else:
+                        st.info("Please select an index to view its contents")
+
+            except Exception as e:
+                st.error(f"Error listing vector store contents: {str(e)}")
+                # Add stack trace for debugging
+                import traceback
+                st.error(f"Stack trace: {traceback.format_exc()}")
+        else:
+            st.info("Please select an index to view its contents")
 
     async def render_task_context_associations(self):
         """Render the task context associations view."""
@@ -1221,3 +1350,410 @@ class ContextManagerUI:
         
         if not has_contexts:
             st.info("No tasks have any contexts associated with them yet.")
+
+    async def render_scraper_view(self):
+        """Render the web and repository scraping interface."""
+        st.subheader("Content Scraper")
+        
+        # Get all vector store indices
+        indices = await self.vector_store.list_indices()
+        
+        # Ensure all indices have vs_ prefix
+        display_indices = []
+        for idx in indices:
+            name = idx["name"]
+            if not name.startswith("vs_"):
+                # Add vs_ prefix if missing
+                idx["name"] = f"vs_{name}"
+            display_indices.append(idx)
+        
+        print(f"\nDEBUG - Vector Store Indices:")
+        print(f"  Raw indices: {[idx['name'] for idx in indices]}")
+        print(f"  Display indices: {[idx['name'] for idx in display_indices]}")
+        
+        # Index selection
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            # Initialize the session state for index selection if not present
+            if 'selected_index' not in st.session_state:
+                st.session_state.selected_index = ""
+            
+            # Get the list of options
+            index_options = [""] + [idx["name"] for idx in display_indices]
+            print("\nDEBUG - Index Selection:")
+            print(f"  Available options: {index_options}")
+            print(f"  Current session state: {st.session_state.selected_index}")
+            
+            selected_index = st.selectbox(
+                "Add scraped content to",
+                options=index_options,
+                format_func=lambda x: x.replace("vs_", "") if x else "Select an index...",
+                key="selected_index"
+            )
+            print(f"  Final selected index: {selected_index}")
+        
+        # New index creation
+        with st.expander("Create New Index"):
+            new_index_name = st.text_input("New Index Name")
+            if new_index_name and st.button("Create Index", use_container_width=True):
+                try:
+                    print("\nDEBUG - Creating New Index:")
+                    print(f"  Raw name input: {new_index_name}")
+                    
+                    # Clean the index name - remove any existing vs_ prefix and sanitize
+                    clean_name = new_index_name.lower().replace(' ', '_')
+                    if clean_name.startswith('vs_'):
+                        clean_name = clean_name[3:]
+                    print(f"  Cleaned name: {clean_name}")
+                    
+                    # Create the final index name with vs_ prefix
+                    index_name = f"vs_{clean_name}"
+                    print(f"  Final index name: {index_name}")
+                    
+                    print("  Creating index in vector store...")
+                    # Create index with metadata (non-async call)
+                    self.vector_store.create_index(
+                        clean_name,  # Pass the clean name without vs_ prefix
+                        description=f"Index for {clean_name} content"
+                    )
+                    print("  Index created successfully")
+                    
+                    # Store the new index name in session state (with vs_ prefix)
+                    st.session_state.new_index = f"vs_{clean_name}"
+                    print(f"  Stored in session state: new_index = {st.session_state.new_index}")
+                    
+                    st.success(f"Created index: {clean_name}")
+                    print("  Success message displayed, rerunning...")
+                    time.sleep(0.5)
+                    st.rerun()
+                except Exception as e:
+                    print(f"\nDEBUG - Error Creating Index:")
+                    print(f"  Error type: {type(e)}")
+                    print(f"  Error message: {str(e)}")
+                    print(f"  Stack trace: {traceback.format_exc()}")
+                    st.error(f"Error creating index: {str(e)}")
+                    st.error(f"Stack trace: {traceback.format_exc()}")
+
+        # Source type selection
+        source_type = st.radio(
+            "Source Type",
+            ["Web Page", "GitHub Repository"],
+            horizontal=True
+        )
+
+        if source_type == "Web Page":
+            # URL input
+            url = st.text_input("URL to scrape")
+            
+            # Domain and URL pattern restrictions
+            col1, col2 = st.columns(2)
+            with col1:
+                allowed_domains = st.text_input(
+                    "Allowed domains (comma-separated, leave empty for no restriction)"
+                )
+            with col2:
+                url_pattern = st.text_input(
+                    "URL pattern (regex)",
+                    help="Only URLs matching this pattern will be scraped"
+                )
+            
+            # Link following and depth control
+            col1, col2 = st.columns(2)
+            with col1:
+                follow_links = st.checkbox(
+                    "Follow links on page",
+                    value=False,
+                    help="If unchecked, will only scrape the provided URL"
+                )
+            with col2:
+                max_depth = st.number_input(
+                    "Max link depth",
+                    min_value=0,
+                    max_value=5,
+                    value=0,
+                    help="0 = only scrape the provided URL, 1 = also scrape linked pages, etc.",
+                    disabled=not follow_links
+                )
+
+            if st.button("Start Web Scraping", use_container_width=True):
+                if not selected_index:
+                    st.error("Please select or create an index first")
+                    return
+                
+                if not url:
+                    st.error("Please enter a URL to scrape")
+                    return
+                
+                try:
+                    with st.spinner("Scraping web content..."):
+                        # Initialize web scraper
+                        scraper = WebScraperTool(
+                            allowed_domains=[d.strip() for d in allowed_domains.split(',')] if allowed_domains else None,
+                            max_depth=max_depth if follow_links else 0
+                        )
+                        if url_pattern:
+                            scraper.url_pattern = url_pattern
+                        
+                        # Get URLs to scrape
+                        if follow_links:
+                            urls_to_scrape = await scraper.get_urls_to_scrape(url)
+                        else:
+                            urls_to_scrape = [url]
+                        
+                        if not urls_to_scrape:
+                            st.warning("No URLs found to scrape")
+                            return
+                        
+                        st.info(f"Found {len(urls_to_scrape)} URLs to scrape")
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        # Process each URL
+                        for i, url_to_scrape in enumerate(urls_to_scrape):
+                            try:
+                                status_text.text(f"Processing: {url_to_scrape}")
+                                result = await scraper.scrape_page(url_to_scrape)
+                                
+                                if result and result.get('content'):
+                                    # Prepare metadata
+                                    current_time = datetime.now().isoformat()
+                                    metadata = {
+                                        'url': url_to_scrape,
+                                        'title': result.get('metadata', {}).get('title', ''),
+                                        'description': result.get('metadata', {}).get('description', []),
+                                        'scraped_at': current_time,
+                                        'added_at': current_time,
+                                        'type': 'web_content'
+                                    }
+                                    
+                                    # Add to vector store
+                                    print(f"\nDEBUG - Adding file to vector store:")
+                                    print(f"  Selected index: {selected_index}")
+                                    print(f"  File path: {result['path']}")
+                                    print(f"  Metadata: {metadata}")
+                                    
+                                    # Add to vector store (keep the vs_ prefix)
+                                    await self.vector_store.add_file_to_index(
+                                        index_name=selected_index,  # Keep the vs_ prefix
+                                        file_path_or_obj=io.StringIO(result['content']),
+                                        metadata=metadata,
+                                        progress_callback=lambda msg, cur, tot: status_text.text(msg)
+                                    )
+                                    print("  File added successfully")
+                                
+                                progress_bar.progress((i + 1) / len(urls_to_scrape))
+                                
+                            except Exception as e:
+                                st.error(f"Error processing {url_to_scrape}: {str(e)}")
+                                continue
+                        
+                        st.success("Web scraping completed!")
+                        
+                except Exception as e:
+                    st.error(f"Error during web scraping: {str(e)}")
+                    import traceback
+                    st.error(f"Stack trace: {traceback.format_exc()}")
+
+        else:  # GitHub Repository
+            # Get GitHub token from environment with debug info
+            default_token = os.getenv("GITHUB_ACCESS_TOKEN")
+            print(f"\nDEBUG - GitHub Authentication:")
+            print(f"  Project root: {project_root}")
+            print(f"  Current working directory: {os.getcwd()}")
+            print(f"  Default token from env: {'Present' if default_token else 'Not found'}")
+            
+            # Repository URL and branch
+            repo_url = st.text_input("Repository URL")
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                branch = st.text_input("Branch (optional)", value="main")
+            with col2:
+                use_auth = st.checkbox("Use Authentication", value=bool(default_token))
+            
+            # Token handling
+            token = default_token  # Set token to default value initially
+            if use_auth:
+                token = st.text_input(
+                    "GitHub Token", 
+                    value=default_token,  # Use the default token directly
+                    type="password",
+                    help="Enter your GitHub token or ensure GITHUB_ACCESS_TOKEN is set in your .env file"
+                )
+                print(f"  Use authentication: {use_auth}")
+                print(f"  Token status: {'Using default token' if token == default_token else 'Using custom token' if token else 'No token'}")
+            
+            # Scraping options
+            st.markdown("### Repository Scraping Options")
+            col1, col2 = st.columns(2)
+            with col1:
+                include_docs = st.checkbox("Include Documentation", value=True)
+                include_tests = st.checkbox("Include Tests", value=False)
+            with col2:
+                max_files = st.number_input("Max Files", min_value=1, value=100)
+                path_pattern = st.text_input(
+                    "Path Pattern (regex)",
+                    help="Optional regex pattern to filter which files to scrape (e.g., 'docs/.*\\.md$' for markdown files in docs folder)"
+                )
+            
+            if st.button("Start Repository Scraping", use_container_width=True):
+                if not selected_index:
+                    st.error("Please select or create an index first")
+                    return
+                
+                if not repo_url:
+                    st.error("Please enter a repository URL")
+                    return
+                
+                try:
+                    with st.spinner("Scraping repository..."):
+                        # Initialize repo scraper
+                        scraper = RepoScraper(
+                            github_token=token if use_auth else None,
+                            gitlab_token=token if use_auth else None
+                        )
+                        
+                        # Scrape repository
+                        result = await scraper.scrape_repository(
+                            url=repo_url,
+                            branch=branch,
+                            max_files=max_files,
+                            include_docs=include_docs,
+                            include_tests=include_tests,
+                            path_pattern=path_pattern if path_pattern else None
+                        )
+                        
+                        # Add files to vector store
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        def update_progress(message: str, current: int, total: int):
+                            if total > 0:
+                                progress_bar.progress(current / total)
+                            status_text.text(message)
+                        
+                        total_files = len(result['files'])
+                        for i, file_info in enumerate(result['files']):
+                            try:
+                                update_progress(f"Processing file {i+1}/{total_files}: {file_info['path']}", i, total_files)
+                                
+                                # Prepare metadata for repository files
+                                current_time = datetime.now().isoformat()
+                                metadata = {
+                                    'repository_url': result['url'],
+                                    'repository_owner': result['owner'],
+                                    'repository_name': result['repo'],
+                                    'branch': result['branch'],
+                                    'platform': result['platform'],
+                                    'file_path': file_info['path'],
+                                    'file_type': file_info['type'],
+                                    'file_size': file_info['size'],
+                                    'sha': file_info.get('sha', ''),  # Ensure not None
+                                    'id': file_info.get('id', ''),    # Ensure not None
+                                    'scraped_at': result['scraped_at'],
+                                    'added_at': current_time,
+                                    'is_root': True,
+                                    'title': f"{result['repo']}/{file_info['path']}"  # Add meaningful title
+                                }
+                                
+                                # Ensure no None values in metadata
+                                metadata = {k: str(v) if v is None else v 
+                                          for k, v in metadata.items()}
+                                
+                                # Add to vector store
+                                print(f"\nDEBUG - Adding file to vector store:")
+                                print(f"  Selected index: {selected_index}")
+                                print(f"  File path: {file_info['path']}")
+                                print(f"  Metadata: {metadata}")
+                                
+                                # Add to vector store (keep the vs_ prefix)
+                                await self.vector_store.add_file_to_index(
+                                    index_name=selected_index,  # Keep the vs_ prefix
+                                    file_path_or_obj=io.StringIO(file_info['content']),
+                                    metadata=metadata,
+                                    progress_callback=lambda msg, cur, tot: update_progress(
+                                        f"File {i+1}/{total_files} - {msg}", cur, tot
+                                    )
+                                )
+                                print("  File added successfully")
+                                
+                            except Exception as e:
+                                st.error(f"Error processing file {file_info['path']}: {str(e)}")
+                                continue
+                        
+                        st.success(f"Successfully scraped {total_files} files from repository")
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        time.sleep(0.5)
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"Error scraping repository: {str(e)}")
+                    import traceback
+                    st.error(f"Stack trace: {traceback.format_exc()}")
+
+    def render_settings_view(self):
+        """Render the context system settings view."""
+        st.subheader("Context System Settings")
+
+        # Vector store settings
+        with st.expander("Vector Store Settings", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.number_input(
+                    "Batch Size",
+                    min_value=1,
+                    value=self.vector_store.config.batch_size
+                )
+                st.number_input(
+                    "Max Retries",
+                    min_value=1,
+                    value=self.vector_store.config.max_retries
+                )
+                
+            with col2:
+                st.number_input(
+                    "Connection Timeout",
+                    min_value=1,
+                    value=self.vector_store.config.connection_timeout
+                )
+                st.number_input(
+                    "Max Concurrent Requests",
+                    min_value=1,
+                    value=self.vector_store.config.max_concurrent_requests
+                )
+
+        # Knowledge base settings
+        with st.expander("Knowledge Base Settings", expanded=False):
+            st.text_input(
+                "Base Path",
+                value=self.knowledge_base.base_path
+            )
+            
+            if st.button("Export Knowledge Base"):
+                try:
+                    export_path = self.knowledge_base.export_domain(
+                        domain="all",
+                        export_path="knowledge_export.json"
+                    )
+                    st.success(f"Knowledge base exported to: {export_path}")
+                except Exception as e:
+                    st.error(f"Error exporting knowledge base: {str(e)}")
+
+        # System context settings
+        with st.expander("System Context Settings", expanded=False):
+            st.markdown("### Embedder Configuration")
+            st.selectbox(
+                "Embedder Provider",
+                options=["openai", "cohere", "huggingface"]
+            )
+            
+            st.markdown("### Cache Settings")
+            st.number_input(
+                "URL Cache TTL (seconds)",
+                min_value=0,
+                value=3600
+            )

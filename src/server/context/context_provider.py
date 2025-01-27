@@ -3,6 +3,9 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from datetime import datetime
 import traceback
+from ..tools.web_scraper_tool import WebScraperTool
+from ..tools.repo_scraper import RepoScraper
+from os import getenv
 
 from src.server.context.context_database import ContextDatabase
 from src.server.context.knowledge_base import KnowledgeBase
@@ -26,6 +29,11 @@ class ContextProvider:
         self.system_context = SystemContextManager()
         self.task_context_manager = TaskContextManager()
         self.context_analytics = ContextAnalytics()
+        self.web_scraper = WebScraperTool()
+        self.repo_scraper = RepoScraper(
+            github_token=getenv('GITHUB_TOKEN'),
+            gitlab_token=getenv('GITLAB_TOKEN')
+        )
 
     @property
     def persistence_model(self):
