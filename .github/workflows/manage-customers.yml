@@ -1,0 +1,134 @@
+name: Manage Customer Access
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - add
+          - remove
+          - list
+      username:
+        description: 'Customer GitHub username'
+        required: false
+        type: string
+      email:
+        description: 'Customer email'
+        required: false
+        type: string
+      plan:
+        description: 'Customer plan level'
+        required: false
+        type: choice
+        options:
+          - basic
+          - premium
+          - enterprise
+        default: 'basic'
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+
+jobs:
+  manage-customer:
+    runs-on: ubuntu-latest
+    # Ensure this workflow can only be run by repository owners
+    if: github.actor == github.repository_owner
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.ADMIN_TOKEN }}
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Load Customer Database
+        id: load-db
+        run: |
+          if [ ! -f .github/customers.json ]; then
+            echo '{"customers":{}}' > .github/customers.json
+          fi
+          echo "current_db=$(cat .github/customers.json)" >> $GITHUB_OUTPUT
+      
+      - name: Add Customer
+        if: github.event.inputs.action == 'add'
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          # Validate inputs
+          if [ -z "${{ github.event.inputs.username }}" ] || [ -z "${{ github.event.inputs.email }}" ]; then
+            echo "Error: Username and email are required for adding customers"
+            exit 1
+          fi
+          
+          # Add as collaborator with pull access
+          gh api -X PUT /repos/${{ github.repository }}/collaborators/${{ github.event.inputs.username }} \
+            -f permission='pull'
+          
+          # Update customer database
+          jq --arg user "${{ github.event.inputs.username }}" \
+             --arg email "${{ github.event.inputs.email }}" \
+             --arg plan "${{ github.event.inputs.plan }}" \
+             --arg date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+             '.customers[$user] = {
+               "email": $email,
+               "plan": $plan,
+               "added_date": $date,
+               "status": "active"
+             }' .github/customers.json > tmp.json && mv tmp.json .github/customers.json
+          
+          # Commit and push changes
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add .github/customers.json
+          git commit -m "chore: add customer ${{ github.event.inputs.username }}"
+          git push
+      
+      - name: Remove Customer
+        if: github.event.inputs.action == 'remove'
+        env:
+          GH_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          # Validate input
+          if [ -z "${{ github.event.inputs.username }}" ]; then
+            echo "Error: Username is required for removing customers"
+            exit 1
+          fi
+          
+          # Remove collaborator access
+          gh api -X DELETE /repos/${{ github.repository }}/collaborators/${{ github.event.inputs.username }}
+          
+          # Update customer database
+          jq --arg user "${{ github.event.inputs.username }}" \
+             --arg date "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+             '.customers[$user].status = "inactive" | 
+              .customers[$user].removed_date = $date' .github/customers.json > tmp.json && mv tmp.json .github/customers.json
+          
+          # Commit and push changes
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add .github/customers.json
+          git commit -m "chore: remove customer ${{ github.event.inputs.username }}"
+          git push
+      
+      - name: List Customers
+        if: github.event.inputs.action == 'list'
+        run: |
+          echo "Current Customers:"
+          jq -r '.customers | to_entries[] | select(.value.status == "active") | 
+            "\(.key):\n  Email: \(.value.email)\n  Plan: \(.value.plan)\n  Added: \(.value.added_date)"' \
+            .github/customers.json
+          
+          echo -e "\nInactive Customers:"
+          jq -r '.customers | to_entries[] | select(.value.status == "inactive") | 
+            "\(.key):\n  Email: \(.value.email)\n  Removed: \(.value.removed_date)"' \
+            .github/customers.json 
