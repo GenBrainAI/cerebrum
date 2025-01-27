@@ -18,6 +18,11 @@ jobs:
           repository: ${{ github.repository_owner }}/cerebrum
           token: ${{ secrets.SYNC_TOKEN }}
       
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+      
       - name: Check Customer Access
         id: check-access
         run: |
