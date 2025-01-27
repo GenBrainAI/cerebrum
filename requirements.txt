@@ -26,7 +26,6 @@ autogen
 deepdiff
 jsonpath_ng
 boto3
-python-dotenv>=1.0.0
 PyGithub
 chromadb
 # chromadb-default-embed
