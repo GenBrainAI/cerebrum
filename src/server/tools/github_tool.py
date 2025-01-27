@@ -6,6 +6,19 @@ import logging
 logger = logging.getLogger(__name__)
 
 class GitHubTool:
+    """
+    A tool for interacting with GitHub repositories.
+    
+    This tool provides methods for common GitHub operations such as:
+    - Reading and writing files in a repository
+    - Creating and managing branches
+    - Creating and managing pull requests
+    - Handling repository content
+    
+    :param access_token: GitHub access token for authentication
+    :param repo_name: Name of the repository to interact with (format: 'owner/repo')
+    """
+    
     def __init__(self, access_token: str, repo_name: str):
         self.github = Github(access_token)
         self.repo = self.github.get_repo(repo_name)

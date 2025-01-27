@@ -5,10 +5,7 @@ import docstring_parser
 from os import getenv
 from dotenv import load_dotenv
 from crewai.tools import (
-    BaseTool as CrewAITool,
-    WebsiteSearchTool,
-    FileReadTool,
-    SerperDevTool
+    BaseTool as CrewAITool
 )
 from langchain.tools import BaseTool as LangChainTool
 from ..tools.file_tool import FileTool
@@ -565,23 +562,15 @@ class ToolsCatalog:
         try:
             # Initialize default tools only if they haven't been initialized
             if not self.DEFAULT_TOOLS:
-                # Register CrewAI tools
-                website_tool = WebsiteSearchTool()
-                serper_tool = SerperDevTool()
-                file_read_tool = FileReadTool()
-                web_scraper_tool = WebScraperTool()
-                self.register_ai_tool(website_tool, "WebsiteSearchTool")
-                self.register_ai_tool(serper_tool, "SerperDevTool")
-                self.register_ai_tool(file_read_tool, "FileReadTool")
-                self.register_instance(web_scraper_tool, "WebScraperTool")
-                
                 # Register custom tools
                 file_tool = FileTool()
                 microservices_tool = MicroservicesTool()
                 sms_tool = SMSTool()
+                web_scraper_tool = WebScraperTool()
                 self.register_instance(file_tool, "FileTool")
                 self.register_instance(microservices_tool, "MicroservicesTool")
                 self.register_instance(sms_tool, "SMSTool")
+                self.register_instance(web_scraper_tool, "WebScraperTool")
                 
                 # Register GitHub tool if credentials are available
                 github_token = getenv("GITHUB_TOKEN")
