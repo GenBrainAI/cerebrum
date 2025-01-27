@@ -15,6 +15,7 @@ from ..tools.file_tool import FileTool
 from ..tools.github_tool import GitHubTool
 from ..tools.microservices_tool import MicroservicesTool
 from ..tools.sms_tool import SMSTool
+from ..tools.web_scraper_tool import WebScraperTool
 from ..models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
 from ..models.toolset import Tool
 from ..models.function import ResolvedSchema
@@ -568,9 +569,11 @@ class ToolsCatalog:
                 website_tool = WebsiteSearchTool()
                 serper_tool = SerperDevTool()
                 file_read_tool = FileReadTool()
+                web_scraper_tool = WebScraperTool()
                 self.register_ai_tool(website_tool, "WebsiteSearchTool")
                 self.register_ai_tool(serper_tool, "SerperDevTool")
                 self.register_ai_tool(file_read_tool, "FileReadTool")
+                self.register_instance(web_scraper_tool, "WebScraperTool")
                 
                 # Register custom tools
                 file_tool = FileTool()

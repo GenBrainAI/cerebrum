@@ -635,34 +635,38 @@ class VectorStore:
 
 
     async def get_index_contents(self, index_name: str) -> List[Dict[str, Any]]:
-        """Get all files stored in a specific index, including root files and chunks."""
+        """Get all files stored in a specific index."""
         try:
-            self._reload_indices()
-            self._ensure_collection(index_name)
+            print(f"\nDEBUG - Getting contents for index: {index_name}")
+            collection = self.client.get_collection(
+                name=index_name,
+                embedding_function=self.embedding_function
+            )
+            print(f"  Got collection. Count: {collection.count()}")
             
-            collection = self.indices[index_name]
+            # Get all documents from the collection
             results = collection.get()
+            print(f"  Retrieved {len(results['ids'])} documents")
             
-            if not results['ids']:
-                return []
-            
-            # Create a list of all documents (both root and chunks)
-            contents = []
-            for doc_id, doc, meta in zip(results['ids'], results['documents'], results['metadatas']):
-                contents.append({
-                    "id": doc_id,
-                    "content": doc,
-                    "metadata": meta
+            # Convert to our standard format
+            files = []
+            for doc_id, doc, metadata in zip(results['ids'], results['documents'], results['metadatas']):
+                print(f"  Processing document: {doc_id}")
+                print(f"    Metadata: {metadata}")
+                
+                files.append({
+                    'id': doc_id,
+                    'content': doc,
+                    'metadata': metadata
                 })
             
-            # Sort by added_at if available
-            contents.sort(key=lambda x: x["metadata"].get("added_at", ""), reverse=True)
-            
-            logging.info(f"Retrieved {len(contents)} files from index {index_name}")
-            return contents
+            print(f"  Returning {len(files)} files")
+            return files
             
         except Exception as e:
-            logging.error(f"Error getting index contents: {str(e)}")
+            print(f"  Error getting index contents: {str(e)}")
+            import traceback
+            print(f"  Traceback: {traceback.format_exc()}")
             return []
 
     async def delete_file_from_index(self, index_name: str, file_id: str) -> bool:

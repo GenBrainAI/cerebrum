@@ -2,6 +2,8 @@
 import streamlit as st
 from ...models.view_state import ViewState
 from ...models.view_types import ViewType
+import json
+import aiohttp
 
 class ToolsCatalogSidebar:
     """Sidebar component for tools catalog view."""
@@ -27,11 +29,85 @@ class ToolsCatalogSidebar:
             
             st.markdown("---")
             
-            # # Add refresh button
-            # if st.button("🔄 Refresh", help="Refresh the tools catalog"):
-            #     st.rerun()
+            # Add OpenAPI Spec Upload Section (Collapsible)
+            with st.expander("➕ Add OpenAPI Tools", expanded=False):
+                # Tool Name and Description
+                tool_name = st.text_input("Tool Name", key="tool_name")
+                tool_description = st.text_area("Description", key="tool_description", height=100)
+                
+                # Security Selection (None as default)
+                security_type = st.selectbox(
+                    "Security Type",
+                    options=["None", "Bearer Token", "API Key"],
+                    index=0,  # Set None as default
+                    key="security_type",
+                    help="Select 'None' for internal APIs that don't require authentication"
+                )
+                
+                # Security Key Input (disabled for None)
+                security_key = st.text_input(
+                    "Security Token/Key",
+                    type="password",
+                    key="security_key",
+                    disabled=security_type == "None",
+                    help="Disabled when security type is None"
+                ) if security_type != "None" else None
+                
+                # File Upload
+                uploaded_file = st.file_uploader(
+                    "Upload OpenAPI Spec",
+                    type=["yaml", "json"],
+                    key="openapi_spec"
+                )
+                
+                # Process Upload Button
+                if st.button("Add Tools", key="process_upload"):
+                    if not tool_name:
+                        st.error("Tool name is required")
+                    elif not tool_description:
+                        st.error("Tool description is required")
+                    elif security_type != "None" and not security_key:
+                        st.error("Security token/key is required when security type is not None")
+                    elif not uploaded_file:
+                        st.error("Please upload an OpenAPI spec file")
+                    else:
+                        try:
+                            # Prepare credentials based on security type
+                            credentials = (
+                                {"auth_type": "None"} if security_type == "None"
+                                else {
+                                    "auth_type": "Bearer" if security_type == "Bearer Token" else "ApiKey",
+                                    "auth_key": security_key
+                                }
+                            )
+                            
+                            # Read file content
+                            spec_content = uploaded_file.read().decode()
+                            
+                            # Prepare form data
+                            form_data = {
+                                "name": tool_name,
+                                "description": tool_description,
+                                "credentials": json.dumps(credentials),
+                                "swagger_str": spec_content
+                            }
+                            
+                            # Make API call to create toolset
+                            async with aiohttp.ClientSession() as session:
+                                async with session.post(
+                                    "http://localhost:8000/toolsets",
+                                    data=form_data
+                                ) as response:
+                                    if response.status == 201:
+                                        st.success("Tools added successfully!")
+                                        # Force refresh of the tree
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Failed to add tools: {await response.text()}")
+                        except Exception as e:
+                            st.error(f"Error processing upload: {str(e)}")
             
-            # st.markdown("---")
+            st.markdown("---")
             
             # Render tools catalog tree as main sidebar content
             st.subheader("Available Tools")
