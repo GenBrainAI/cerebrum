@@ -16,7 +16,8 @@ prance
 pytest
 pytest-order
 crewai
-crewai[tools]
+crewai[tools]>=0.11.0
+crewai-tools>=0.1.0
 composio-crewai
 composio-openai
 ollama
