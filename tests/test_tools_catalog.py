@@ -3,6 +3,7 @@ from typing import List, Optional, Dict, Any
 import os
 import asyncio
 from unittest.mock import patch, MagicMock
+from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from github import Github, Repository, Auth
 from src.server.tools.tools_catalog import (
     ToolsCatalog,
@@ -122,12 +123,13 @@ async def test_default_tools_initialization(mock_github):
     # Verify all default tools are registered
     tools = catalog.list_tools()
     expected_tools = [
+        "WebsiteSearchTool",
+        "SerperDevTool",
+        "FileReadTool",
         "GitHubTool",
         "FileTool",
         "MicroservicesTool",
-        "SMSTool",
-        "WebScraperTool",
-        "URLTools"
+        "SMSTool"
     ]
     
     # Check that all expected tools are present (noting that some might have multiple methods)
@@ -146,33 +148,31 @@ async def test_tool_instances(mock_github):
     catalog = ToolsCatalog()
     
     # Test getting instances of different tool types
+    website_tool = catalog.get_tool_instance("WebsiteSearchTool")
+    assert isinstance(website_tool, WebsiteSearchTool)
+    
     file_tool = catalog.get_tool_instance("FileTool")
     assert isinstance(file_tool, FileTool)
     
-    # Test method access
-    assert hasattr(file_tool, "read_file")
+    github_tool = catalog.get_tool_instance("GitHubTool")
+    assert isinstance(github_tool, GitHubTool)
 
 @pytest.mark.asyncio
 async def test_tool_metadata(mock_github):
     """Test that tool metadata is correctly captured."""
     catalog = ToolsCatalog()
     
-    # Test file tool metadata
-    file_metadata = catalog.get_tool("FileTool")
-    assert file_metadata is not None
-    assert file_metadata.name == "FileTool"
-    assert file_metadata.tool_type.value == ToolType.CLASS_METHOD.value
-    
-    # Test GitHub tool metadata
-    github_tool = catalog.get_tool("GitHubTool")
-    assert github_tool is not None
-    assert github_tool.tool_type.value == ToolType.CLASS_METHOD.value
-    assert github_tool.description
+    # Test CrewAI tool metadata
+    websearch_metadata = catalog.get_tool("WebsiteSearchTool")
+    assert websearch_metadata is not None
+    assert str(websearch_metadata.tool_type) == str(ToolType.CREWAI_TOOL)
+    assert websearch_metadata.description
     
     # Test Python class method metadata - using one of the actual registered methods
     github_method_metadata = catalog.get_tool("GitHubTool.create_branch")  # or any other GitHub tool method
     assert github_method_metadata is not None
-    assert github_method_metadata.tool_type.value == ToolType.CLASS_METHOD.value
+    assert str(github_method_metadata.tool_type) == str(ToolType.CLASS_METHOD)
+    assert github_method_metadata.description
     assert github_method_metadata.class_name == "GitHubTool"
     assert github_method_metadata.method_name == "create_branch"
     

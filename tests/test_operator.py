@@ -118,7 +118,7 @@ async def test_groq_completion():
         model="mixtral-8x7b-32768",
         curried_proxy=curried_proxy
     )
-    assert "Hello" in response and "World" in response, f"Response '{response}' should contain both 'Hello' and 'World'"
+    assert "Hello" in response and "World" in response
 
 @pytest.mark.asyncio
 async def test_langchain_completion():
