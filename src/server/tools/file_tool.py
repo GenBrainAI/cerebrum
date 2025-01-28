@@ -1,5 +1,5 @@
 from typing import Callable, Any
-from crewai_tools import BaseTool
+from crewai.tools.base_tool import BaseTool
 
 class FileTool(BaseTool):
     """

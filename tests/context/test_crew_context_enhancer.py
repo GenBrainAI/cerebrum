@@ -15,7 +15,7 @@ from src.server.context.context_provider import ContextProvider
 from src.server.controllers.agents_controller import create_crew
 from src.server.models.agent import CreateCrewRequest, AgentModel, TaskModel
 from src.server.controllers.curried_proxy import CurriedProxy
-from crewai_tools import BaseTool as CrewAITool
+from crewai.tools.base_tool import BaseTool as CrewAITool
 
 @pytest.fixture
 def mock_agent():

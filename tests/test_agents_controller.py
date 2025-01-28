@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, create_autospec
 from crewai import Agent, Task, Crew
-from crewai_tools import BaseTool
+from crewai.tools.base_tool import BaseTool
 from src.server.controllers.agents_controller import create_crew
 from src.server.models.agent import CreateCrewRequest, AgentModel, TaskModel, ToolModel
 from src.server.controllers.curried_proxy import CurriedProxy
