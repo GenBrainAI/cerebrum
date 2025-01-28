@@ -15,8 +15,10 @@ python-multipart
 prance
 pytest
 pytest-order
-crewai==0.11.0
-crewai[tools]==0.11.0
+crewai
+crewai[tools]
+composio-crewai
+composio-openai
 ollama
 langchain-ollama
 llama-index
@@ -24,6 +26,7 @@ autogen
 deepdiff
 jsonpath_ng
 boto3
+python-dotenv
 PyGithub
 chromadb
 # chromadb-default-embed
