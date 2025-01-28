@@ -40,27 +40,30 @@ def save_current_state(state_name: str) -> str:
             state_name=f"{state_name}"
         )
         
-        # Create context state with only session info (no messages)
-        context_state = {
+        # Get persistence model from session state
+        persistence_model = st.session_state.persistence_model
+        
+        # Get the current state as JSON
+        state_data = json.loads(persistence_model.to_json())
+        
+        # Add context state to the state data
+        state_data['context_state'] = {
             'current_tasksmanager_id': st.session_state.current_tasksmanager_id,
             'current_task_id': st.session_state.current_task_id,
             'current_session_id': st.session_state.current_session_id
         }
         
-        print(f"\n🔍 Context state to save:")
-        print(f"  Content: {context_state}")
+        print(f"\n🔍 Saving state with context:")
+        print(f"  Context: {state_data['context_state']}")
         
-        # Get persistence model from session state
-        persistence_model = st.session_state.persistence_model
-        
-        # Save state with context
-        result = save_to_storage(persistence_model, location)
-        print(f"  Save result: {result}")
+        # Save the updated state
+        with open(state_dir / f"{state_name}", "w") as f:
+            json.dump(state_data, f)
         
         # Save metadata about last used state
         save_last_used_state(f"{state_name}")
         
-        return result
+        return f"State saved to {state_dir / state_name}"
     except Exception as e:
         print(f"❌ Error saving state: {str(e)}")
         st.error(f"Error saving state: {str(e)}")
@@ -69,50 +72,97 @@ def save_current_state(state_name: str) -> str:
 def load_state(state_path: Optional[str] = None):
     """Load Cerebrum state from file."""
     try:
+        print("\n=== START: load_state ===")
+        
+        # Reset persistence model before loading new state
+        print("🔄 Resetting persistence model...")
+        PersistenceModelFactory.reset()
+        print("✓ Persistence model reset")
+        
         if not state_path and not st.session_state.default_state_loaded:
             metadata = get_last_used_state()
+            print(f"📋 Metadata loaded: {metadata}")
             if metadata.get("last_used_state"):
                 state_path = str(get_state_dir() / metadata["last_used_state"])
+                print(f"📍 Using state path from metadata: {state_path}")
             else:
                 state_path = "state/default_state.json"
+                print("📍 Using default state path")
             st.session_state.default_state_loaded = True
         
         if state_path:
             print(f"\n📥 Loading state from: {state_path}")
             
-            location = StorageLocation(
-                type=StorageType.file,
-                location=os.path.dirname(state_path),
-                state_name=os.path.basename(state_path)
-            )
+            # Load the state file directly
+            print("🔄 Reading state file...")
+            with open(state_path) as f:
+                state_data = json.load(f)
+            print(f"✓ State file loaded, keys present: {list(state_data.keys())}")
             
-            # Store location in session state
-            st.session_state.state_location = location
+            # Load the state into the persistence model
+            print("\n🔄 Creating new persistence model...")
+            persistence_model = PersistenceModelFactory.persistence_model("inmemory")
             
-            # Load the state
-            json_str = load_from_storage(location)
-            state_data = json.loads(json_str)
+            print("🔄 Loading state into persistence model...")
+            state_without_context = {k: v for k, v in state_data.items() if k != 'context_state'}
+            persistence_model.from_json(json.dumps(state_without_context))
+            print("✓ State loaded into persistence model")
             
-            print(f"\n🔍 Loaded state data:")
-            print(f"  Has context_state: {'context_state' in state_data}")
+            print("\n🔄 Storing persistence model in session state...")
+            st.session_state.persistence_model = persistence_model
+            print("✓ Persistence model stored")
+            
+            # Restore context state if present
             if 'context_state' in state_data:
+                print("\n📋 Found context state in loaded data:")
                 context_state = state_data['context_state']
-                print(f"  Context state content: {context_state}")
+                print(f"Context state content: {json.dumps(context_state, indent=2)}")
                 
                 # Restore session state from context
-                if 'messages' in context_state:
-                    st.session_state.messages = [Message(**msg) if isinstance(msg, dict) else msg 
-                                               for msg in context_state['messages']]
+                print("\n🔄 Restoring session state from context...")
                 st.session_state.current_tasksmanager_id = context_state.get('current_tasksmanager_id')
                 st.session_state.current_task_id = context_state.get('current_task_id')
                 st.session_state.current_session_id = context_state.get('current_session_id')
+                print(f"✓ Set current_tasksmanager_id: {st.session_state.current_tasksmanager_id}")
+                print(f"✓ Set current_task_id: {st.session_state.current_task_id}")
+                print(f"✓ Set current_session_id: {st.session_state.current_session_id}")
+                
+                # Ensure the task manager exists and is selected
+                if st.session_state.current_tasksmanager_id:
+                    print("\n🔄 Looking up task manager...")
+                    task_manager = persistence_model.tasksmanagers.read(st.session_state.current_tasksmanager_id)
+                    if task_manager:
+                        print(f"✓ Found task manager: {task_manager.name} ({task_manager.id})")
+                        st.session_state.selected_tasksmanager = task_manager
+                        print("✓ Set selected_tasksmanager in session state")
+                        
+                        # Ensure the task exists and is selected
+                        if st.session_state.current_task_id:
+                            print("\n🔄 Looking up task...")
+                            task = persistence_model.tasks.read(st.session_state.current_task_id)
+                            if task:
+                                print(f"✓ Found task: {task.name} ({task.id})")
+                                st.session_state.selected_task = task
+                                print("✓ Set selected_task in session state")
+                            else:
+                                print(f"❌ Task not found with ID: {st.session_state.current_task_id}")
+                    else:
+                        print(f"❌ Task manager not found with ID: {st.session_state.current_tasksmanager_id}")
+            else:
+                print("\n⚠️ No context state found in loaded data")
             
             # Save this as the last used state
+            print("\n🔄 Saving as last used state...")
             save_last_used_state(os.path.basename(state_path))
+            print("✓ Saved as last used state")
             
+            print("\n=== END: load_state ===")
             return f"Successfully loaded state from {state_path}"
+        
+        print("\n⚠️ No state path specified")
         return "No state file specified"
     except Exception as e:
+        print(f"\n❌ Error in load_state: {str(e)}")
         if state_path == "state/default_state.json":
             return "No default state loaded"
         return f"Error loading state: {str(e)}"
@@ -582,12 +632,17 @@ def render_chat_management_sidebar():
         st.markdown("---")
         st.subheader("Existing Chats")
         
+        # Find current task manager in the list
+        current_tm = next((tm for tm in tasksmanagers 
+                          if tm.id == st.session_state.current_tasksmanager_id), None)
+        
         # TaskManager selection
         tm_options = {tm.name: tm.id for tm in tasksmanagers}
         selected_tm = st.selectbox(
             "Select Task Manager",
             options=list(tm_options.keys()),
             key="tm_selector",
+            index=list(tm_options.keys()).index(current_tm.name) if current_tm else 0,
             on_change=on_tm_select
         )
         
@@ -596,18 +651,24 @@ def render_chat_management_sidebar():
             tasks = get_tasks_for_tasksmanager(selected_tm_id)
             
             if tasks:
+                # Find current task in the list
+                current_task = next((task for task in tasks 
+                                   if task.id == st.session_state.current_task_id), None)
+                
                 # Task selection
                 task_options = {task.name: task.id for task in tasks}
                 selected_task = st.selectbox(
                     "Select Task",
                     options=list(task_options.keys()),
-                    key="task_selector"
+                    key="task_selector",
+                    index=list(task_options.keys()).index(current_task.name) if current_task else 0
                 )
                 
                 if selected_task:
                     selected_task_id = task_options[selected_task]
                     print(f"\n🔄 Selected task changed to: {selected_task_id}")
                     
+                    # Only update if actually changed
                     if (selected_tm_id != st.session_state.current_tasksmanager_id or 
                         selected_task_id != st.session_state.current_task_id):
                         
@@ -996,45 +1057,56 @@ def cleanup_session_files():
 
 def initialize_state():
     """Initialize application state from saved state if available."""
-    print("\n🔄 Initializing application state")
+    print("\n=== START: initialize_state ===")
     
     if 'state_initialized' in st.session_state:
-        print("✅ State already initialized")
+        print("⏩ State already initialized, skipping")
+        print("=== END: initialize_state ===")
         return
         
+    print("🔄 Loading metadata...")
     metadata = get_last_used_state()
+    print(f"📋 Metadata content: {json.dumps(metadata, indent=2)}")
+    
     last_used_state = metadata.get("last_used_state")
+    print(f"📍 Last used state: {last_used_state}")
     
     if last_used_state:
         try:
             state_path = str(get_state_dir() / last_used_state)
-            print(f"📥 Loading last used state: {state_path}")
+            print(f"\n🔄 Loading last used state from: {state_path}")
             result = load_state(state_path)
+            print(f"✓ Load state result: {result}")
             
             # Set state flags
+            print("\n🔄 Setting state flags...")
             st.session_state.state_loaded = True
             st.session_state.default_state_loaded = True
             st.session_state.state_initialized = True
             st.session_state.selected_state_file = last_used_state
             
             # Restore last used TM and Task
+            print("\n🔄 Restoring last used TM and Task from metadata...")
             st.session_state.current_tasksmanager_id = metadata.get("last_tm_id")
             st.session_state.current_task_id = metadata.get("last_task_id")
+            print(f"✓ Restored TM ID: {st.session_state.current_tasksmanager_id}")
+            print(f"✓ Restored Task ID: {st.session_state.current_task_id}")
             
-            print("✅ State loaded successfully")
+            print("\n✅ State initialized successfully")
         except Exception as e:
-            print(f"❌ Error loading state: {str(e)}")
+            print(f"\n❌ Error initializing state: {str(e)}")
             # Reset state flags on error
             st.session_state.state_loaded = False
             st.session_state.default_state_loaded = False
             st.session_state.selected_state_file = ""
     else:
-        print("ℹ️ No last used state found")
+        print("\n⚠️ No last used state found")
         st.session_state.state_loaded = False
         st.session_state.default_state_loaded = False
         st.session_state.selected_state_file = ""
     
     st.session_state.state_initialized = True
+    print("\n=== END: initialize_state ===")
 
 def main():
     """Main application entry point."""

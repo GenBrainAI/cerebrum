@@ -83,6 +83,10 @@ class TaskRunner:
         self._task_status = {}  # Store task status
         self._plugin_manager = None  # Plugin manager instance
         self._initialized = False
+        
+        # Initialize context provider
+        self.context_provider.initialize_vector_store()  # Initialize vector store
+        self.context_provider.initialize_context_db()  # Initialize context database
 
     async def initialize(self):
         """Initialize the task runner components."""
@@ -315,7 +319,7 @@ class TaskRunner:
             # Get or create curried proxy for standard execution
             curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager) if tasksmanager else None
 
-            # Standard task execution using operator for completions
+            # Get messages from running_extra_params or task
             messages = running_extra_params.get('messages', [])
             if not messages and task.messages:
                 messages = [msg.dict() if hasattr(msg, 'dict') else msg for msg in task.messages]
@@ -326,6 +330,35 @@ class TaskRunner:
                     "response": "No messages found for task execution",
                     "error": "Missing messages"
                 }
+
+            # Extract query from messages for context search
+            query = None
+            if messages:
+                user_messages = [msg for msg in messages if isinstance(msg, dict) and msg.get('role') == 'user' or 
+                               hasattr(msg, 'role') and msg.role == 'user']
+                if user_messages:
+                    query = user_messages[-1].get('content') if isinstance(user_messages[-1], dict) else user_messages[-1].content
+
+            # Get context if task is configured to use it
+            if hasattr(task, 'use_context') and task.use_context and query:
+                logger.info(f"🔍 Getting context for query: {query}")
+                contexts = await self.context_provider.get_task_contexts(
+                    task_id=task.id,
+                    query=query
+                )
+                
+                if contexts:
+                    # Add context as system message at the beginning
+                    context_content = "\n\n".join([
+                        f"Context from {ctx.get('type', 'unknown')}:\n{ctx.get('content', '')}"
+                        for ctx in contexts
+                    ])
+                    context_message = Message(
+                        role="system",
+                        content=f"Here is the relevant context for your task:\n\n{context_content}"
+                    )
+                    messages.insert(0, context_message.dict())
+                    logger.info(f"✅ Added {len(contexts)} contexts to messages")
 
             # Get model from tasksmanager or use default
             model = None

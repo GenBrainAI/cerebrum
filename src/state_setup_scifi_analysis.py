@@ -2,6 +2,7 @@ import sys
 import os
 from pathlib import Path
 import asyncio
+import json
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).parents[1])
@@ -154,6 +155,14 @@ async def setup_scifi_analysis_state():
     )
     future_development_task = persistence_model.tasks.create(future_development_task)
     
+    # Get the state as JSON and add context state
+    state_data = json.loads(persistence_model.to_json())
+    state_data['context_state'] = {
+        'current_tasksmanager_id': book_analysis_manager.id,
+        'current_task_id': capability_extraction_task.id,
+        'current_session_id': None
+    }
+    
     # Save the state
     state_location = StorageLocation(
         type=StorageType.file,
@@ -164,8 +173,12 @@ async def setup_scifi_analysis_state():
     # Ensure the state directory exists
     os.makedirs("state", exist_ok=True)
     
-    result = save_to_storage(state_location)
-    print(f"State saved: {result}")
+    # Save the state with context
+    state_path = Path("state") / "scifi_analysis_state.json"
+    with open(state_path, "w") as f:
+        json.dump(state_data, f)
+    
+    print(f"State saved with context: {state_path}")
     
     return {
         "book_analysis_manager_id": book_analysis_manager.id,

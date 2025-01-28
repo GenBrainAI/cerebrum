@@ -35,6 +35,18 @@ class ContextProvider:
             gitlab_token=getenv('GITLAB_TOKEN')
         )
 
+    def initialize_vector_store(self):
+        """Initialize vector store if not already initialized."""
+        if self._vector_store is None:
+            self._vector_store = VectorStore()
+            print("✅ Vector store initialized")
+
+    def initialize_context_db(self):
+        """Initialize context database if not already initialized."""
+        if self.context_db is None:
+            self.context_db = ContextDatabase()
+            print("✅ Context database initialized")
+
     @property
     def persistence_model(self):
         """Get persistence model instance when needed"""
