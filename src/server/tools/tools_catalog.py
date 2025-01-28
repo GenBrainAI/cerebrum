@@ -4,8 +4,8 @@ import inspect
 import docstring_parser
 from os import getenv
 from dotenv import load_dotenv
-from crewai.tools import (
-    BaseTool as CrewAITool,
+from crewai.tools.base_tool import BaseTool as CrewAITool
+from crewai_tools import (
     WebsiteSearchTool,
     FileReadTool,
     SerperDevTool
