@@ -1,0 +1,110 @@
+name: Sync with Base Repository
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  verify-access:
+    runs-on: ubuntu-latest
+    outputs:
+      has_access: ${{ steps.check-access.outputs.has_access }}
+    
+    steps:
+      - name: Checkout Base Repository
+        uses: actions/checkout@v3
+        with:
+          repository: ${{ github.repository_owner }}/cerebrum
+          token: ${{ secrets.SYNC_TOKEN }}
+      
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+      
+      - name: Check Customer Access
+        id: check-access
+        run: |
+          # Load customer database
+          if [ ! -f .github/customers.json ]; then
+            echo "has_access=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if user has active access
+          HAS_ACCESS=$(jq -r --arg user "${{ github.actor }}" \
+            '.customers[$user].status == "active"' .github/customers.json)
+          
+          echo "has_access=$HAS_ACCESS" >> $GITHUB_OUTPUT
+  
+  sync-base:
+    needs: verify-access
+    if: needs.verify-access.outputs.has_access == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Customer Fork
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+      
+      - name: Add Base Repository Remote
+        run: |
+          # Add the base repository as a remote if it doesn't exist
+          git remote add base https://github.com/${{ github.repository_owner }}/cerebrum.git 2>/dev/null || true
+          git fetch base
+      
+      - name: Create Sync Branch
+        run: |
+          # Create a new branch for the sync
+          git checkout -b sync-base-${GITHUB_SHA::8}
+          
+          # Try to merge changes from base
+          if git merge base/main --no-commit; then
+            # If merge successful, commit changes
+            git commit -m "chore: sync with base repository"
+          else
+            # If there are conflicts, abort merge and create PR with instructions
+            git merge --abort
+            git checkout -b sync-base-manual-${GITHUB_SHA::8}
+            git push origin sync-base-manual-${GITHUB_SHA::8}
+            gh pr create \
+              --title "Manual Sync Required: Conflicts with Base Repository" \
+              --body "There are conflicts that need to be resolved manually. Please review the changes and resolve conflicts." \
+              --base main \
+              --head sync-base-manual-${GITHUB_SHA::8}
+            exit 0
+          fi
+      
+      - name: Create Pull Request
+        env:
+          GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          # Push the sync branch
+          git push origin sync-base-${GITHUB_SHA::8}
+          
+          # Create a pull request
+          gh pr create \
+            --title "chore: sync with base repository" \
+            --body "This PR syncs your fork with the base repository. Please review the changes before merging." \
+            --base main \
+            --head sync-base-${GITHUB_SHA::8}
+
+  notify-unauthorized:
+    needs: verify-access
+    if: needs.verify-access.outputs.has_access != 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Notify Unauthorized Access
+        run: |
+          echo "Error: You do not have active access to sync with the base repository."
+          echo "Please contact the repository owner to get access."
+          exit 1 

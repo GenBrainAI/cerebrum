@@ -2,6 +2,10 @@ import pytest
 import sys
 import os
 import logging
+import tempfile
+import shutil
+import subprocess
+from pathlib import Path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.server.main import app
 from fastapi.testclient import TestClient
@@ -30,3 +34,37 @@ def setup_logging():
     # Our loggers should remain at DEBUG
     logging.getLogger('src.server').setLevel(logging.DEBUG)
     logging.getLogger('tests').setLevel(logging.DEBUG)
+
+@pytest.fixture
+def temp_workspace():
+    """Create a temporary workspace for testing."""
+    temp_dir = tempfile.mkdtemp()
+    old_cwd = os.getcwd()
+    os.chdir(temp_dir)
+    
+    # Create test directories and files
+    os.makedirs(".github")
+    
+    # Initialize git repo
+    subprocess.run(["git", "init"], check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], check=True)
+    
+    yield temp_dir
+    
+    # Cleanup
+    os.chdir(old_cwd)
+    shutil.rmtree(temp_dir)
+
+@pytest.fixture
+def mock_gh_cli(monkeypatch):
+    """Mock GitHub CLI commands with success responses."""
+    def mock_run(cmd, *args, **kwargs):
+        if "gh" in cmd:
+            return subprocess.CompletedProcess(
+                cmd, 0, stdout=b"Success", stderr=b""
+            )
+        return subprocess.run(cmd, *args, **kwargs)
+    
+    monkeypatch.setattr(subprocess, "run", mock_run)
+    return mock_run

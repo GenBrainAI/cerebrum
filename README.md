@@ -74,7 +74,11 @@ Visit `http://localhost:8080/docs` to access the Swagger documentation.
    - Performance metrics
    - Visualization tools
 
-## 📚 Documentation
+## �� Documentation
+
+### Customer Management
+
+For detailed instructions on managing customer access, subscriptions, and repository synchronization, see our [Customer Management Guide](docs/customer_management.md).
 
 ### Task Tree Management
 
@@ -158,6 +162,39 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Project Maintainer: [Your Name](mailto:your.email@example.com)
 - Project Website: [https://cerebrum.ai](https://cerebrum.ai)
+
+## Syncing with Base Repository
+
+As a customer with a private fork of Cerebrum, you can automatically sync your fork with the base repository to receive updates. Follow these steps to set up automatic syncing:
+
+1. **Generate a Personal Access Token (PAT)**:
+   - Go to your GitHub Settings > Developer settings > Personal access tokens
+   - Generate a new token with `repo` scope
+   - Copy the token value
+
+2. **Add the Token to Your Fork**:
+   - Go to your fork's Settings > Secrets and variables > Actions
+   - Create a new repository secret named `SYNC_TOKEN`
+   - Paste your PAT as the value
+
+3. **Enable Workflows**:
+   - Go to your fork's Actions tab
+   - Enable workflows if they are disabled
+   - You should see the "Sync with Base Repository" workflow
+
+4. **Using the Sync Workflow**:
+   - The workflow runs automatically every day at midnight
+   - You can also trigger it manually from the Actions tab
+   - When updates are available, it creates a pull request for you to review
+   - If there are conflicts, it creates a special PR with instructions for manual resolution
+
+5. **Best Practices**:
+   - Always review the changes in the sync PR before merging
+   - If you have local customizations, keep them well-documented
+   - Consider creating a separate branch for your customizations
+   - Test your application after merging updates
+
+For any issues or questions about syncing, please contact our support team.
 
 ---
 
