@@ -2,7 +2,8 @@ from os import getenv
 from dotenv import load_dotenv
 from fastapi import HTTPException
 from crewai import Agent, Task, Crew
-from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool, BaseTool
+from crewai.tools import BaseTool
+from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from langchain.tools import BaseTool as LangChainBaseTool
 from langchain_ollama.llms import OllamaLLM as Ollama
 from langchain_openai import ChatOpenAI

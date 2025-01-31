@@ -212,7 +212,7 @@ class TaskRunner:
                 self.persistence_model.tasks.update(task.id, task)
                 
                 # Check if this is a CrewAI task
-                if hasattr(task, 'agent_role') and task.agent_role and hasattr(task, 'crewai_config_id') and task.crewai_config_id:
+                if hasattr(task, 'crewai_config_id') and task.crewai_config_id:
                     result = await self._run_crewai_task(task, manager, running_extra_params)
                 else:
                     # Execute standard task

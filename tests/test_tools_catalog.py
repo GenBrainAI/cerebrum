@@ -1,21 +1,16 @@
 import pytest
-from typing import List, Optional, Dict, Any
 import os
 import asyncio
 from unittest.mock import patch, MagicMock
-from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
-from github import Github, Repository, Auth
+from crewai_tools import WebsiteSearchTool
+from github import Repository
 from src.server.tools.tools_catalog import (
     ToolsCatalog,
     ToolType,
-    ParameterInfo,
-    ReturnInfo,
     ToolMetadata
 )
 from src.server.tools.file_tool import FileTool
 from src.server.tools.github_tool import GitHubTool
-from src.server.tools.microservices_tool import MicroservicesTool
-from src.server.tools.sms_tool import SMSTool
 import base64
 
 # Test fixtures and helper functions
