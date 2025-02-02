@@ -1,7 +1,7 @@
 # Agent Framework Plugin System
 
 ## Overview
-The Agent Framework Plugin System provides a flexible and extensible architecture for integrating various AI agent frameworks (like CrewAI, AutoGen, SmolAgents, etc.) through a common interface. The system supports dynamic discovery, loading, and management of plugins.
+The Agent Framework Plugin System provides a flexible and extensible architecture for integrating various AI agent frameworks (like CrewAI, AutoGen, SmolAgents, sworm, etc.) through a common interface. The system supports dynamic discovery, loading, and management of plugins.
 
 ## Architecture
 

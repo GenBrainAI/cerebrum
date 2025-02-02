@@ -7,6 +7,7 @@ from ..models.task import Task
 import asyncio
 from collections import defaultdict
 
+
 class TaskStatus(Enum):
     PENDING = "pending"
     RUNNING = "running"
