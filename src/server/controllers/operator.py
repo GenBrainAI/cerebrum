@@ -90,7 +90,7 @@ class ToolsOperator:
                 messages=messages,
                 tools=tools if tools else None,
                 tool_choice="auto" if tools else None,
-                timeout=120.0  # Set 120 second timeout for completion request
+                timeout=120.0  # Todo: re concider this shit, Set 120 second timeout for completion request
             )
 
             choice = response.choices[0]
