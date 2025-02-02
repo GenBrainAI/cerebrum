@@ -74,7 +74,7 @@ def crewai_plugin_config():
         name="crewai",
         version="1.0.0",
         description="CrewAI framework plugin",
-        model="gpt-4",
+        model="gpt-4o-mini",
         temperature=0.7,
         max_tokens=2000
     )
@@ -118,7 +118,7 @@ async def test_crewai_plugin_loading(plugin_manager, crewai_plugin_config):
         assert plugin.is_initialized, "Plugin should be initialized"
         
         # Verify CrewAI specific configuration
-        assert plugin.config.settings.get('model') == "gpt-4", "Incorrect model configuration"
+        assert plugin.config.settings.get('model') == "gpt-4o-mini", "Incorrect model configuration"
         assert plugin.config.settings.get('temperature') == 0.7, "Incorrect temperature configuration"
         
         # Verify capabilities

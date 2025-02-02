@@ -71,7 +71,7 @@ async def create_crew(
             
         for agent_data in request.agents:
             print(f"\n👤 Creating agent: {agent_data.role}")
-            # Get LLM from agent data or default to GPT-4
+            # Get LLM from agent data or default to gpt-4o-mini
             agent_llm = getattr(llm, agent_data.llm_model) if hasattr(agent_data, 'llm_model') else llm.OpenAIGPT4
             
             agent = Agent(

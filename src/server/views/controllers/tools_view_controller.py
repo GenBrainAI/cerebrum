@@ -45,7 +45,12 @@ class ToolsCatalogController:
         try:
             print("\n🚀 Starting tools controller initialization...")
             
-            state_file = StateLoader.get_state_file("dynamic_tools_state.json")
+            # Look in state/specialized directory for dynamic tools state
+            state_file = Path("state/specialized/dynamic_tools_state.json")
+            if not state_file.exists():
+                # Fallback to StateLoader
+                state_file = StateLoader.get_state_file("dynamic_tools_state.json")
+            
             print(f"📁 Checking state file path: {state_file}")
             
             if not state_file or not state_file.exists():
@@ -98,10 +103,10 @@ class ToolsCatalogController:
                     print(f"❌ Error listing persisted tools: {str(e)}")
                 
                 if task_managers and tasks:
-                    # Find the tools management manager and task
+                    # Find the dynamic tools manager and task
                     tools_manager = next(
-                        (m for m in task_managers if "Tools Management" in m.name),
-                        task_managers[0]
+                        (m for m in task_managers if "Dynamic Langchain Tools Generator" in m.name),
+                        next((m for m in task_managers if "Tools Management" in m.name), task_managers[0])
                     )
                     tools_task = next(
                         (t for t in tasks if t.tasksmanager_id == tools_manager.id),
@@ -118,7 +123,24 @@ class ToolsCatalogController:
                             manager_name=tools_manager.name
                         )
                         
+                        # Set task status for UI
+                        self.view_state.task_status = {
+                            "loaded": True,
+                            "task_id": tools_task.id,
+                            "tasksmanager_id": tools_manager.id,
+                            "tasksmanager_name": tools_manager.name,
+                            "task_name": tools_task.name
+                        }
+                        
                         print(f"🟢 Loaded state for {tools_manager.name}-{tools_task.name}")
+                        
+                        # Load any existing chat history
+                        if hasattr(tools_task, 'chat_sessions') and tools_task.chat_sessions:
+                            # Get the most recent session
+                            latest_session = max(tools_task.chat_sessions.items(), key=lambda x: x[0])
+                            if latest_session[1]:
+                                self.view_state.chat_history = latest_session[1]
+                                print(f"📝 Loaded chat history from session {latest_session[0]}")
                     else:
                         print("🔴 No tools management task found")
                 else:

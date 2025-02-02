@@ -25,7 +25,7 @@ class CrewAIPluginConfig(AgentFrameworkConfig):
             data['description'] = 'CrewAI framework plugin'
         if 'settings' not in data:
             data['settings'] = {
-                'model': 'gpt-4',
+                'model': 'gpt-4o-mini',
                 'temperature': 0.7,
                 'max_tokens': 4000,
                 'verbose': True
@@ -114,7 +114,7 @@ class CrewAIPlugin(AgentFrameworkPlugin):
                 verbose=self.config.settings.get('verbose', True),
                 allow_delegation=False,  # Disable delegation for single-agent tasks
                 llm_config={
-                    'model': self.config.settings.get('model', 'gpt-4'),
+                    'model': self.config.settings.get('model', 'gpt-4o-mini'),
                     'temperature': self.config.settings.get('temperature', 0.7),
                     'max_tokens': self.config.settings.get('max_tokens', 4000)
                 }

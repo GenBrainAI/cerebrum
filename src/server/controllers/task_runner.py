@@ -123,7 +123,7 @@ class TaskRunner:
                 version="1.0.0",
                 description="CrewAI framework integration",
                 settings={
-                    "model": "gpt-4",
+                    "model": "gpt-4o-mini",
                     "temperature": 0.7,
                     "max_tokens": 2000
                 }
@@ -334,7 +334,7 @@ class TaskRunner:
             if not model and hasattr(task, 'model'):
                 model = task.model
             if not model:
-                model = "gpt-4"  # Default model if none specified
+                model = "gpt-4o-mini"  # Default model if none specified
 
             # Execute completion with curried proxy
             response = await self.completion(

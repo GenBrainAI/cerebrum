@@ -28,13 +28,13 @@ def max_tokens(model):
         return 16385
     elif model == 'gpt-3.5-turbo-1106':
         return 16385
-    elif model == 'gpt-4-0613':
+    elif model == 'gpt-4o-mini-0613':
         return 8192
-    elif model == 'gpt-4-32k-0613':
+    elif model == 'gpt-4o-mini-32k-0613':
         return 32768
-    elif model == 'gpt-4-turbo-preview':
+    elif model == 'gpt-4o-mini-turbo-preview':
         return 128000
-    elif model == 'gpt-4':
+    elif model == 'gpt-4o-mini':
         return 8192
     elif model == 'gpt-4o':
         return 8192

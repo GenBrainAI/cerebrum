@@ -77,7 +77,7 @@ class JobPostingPlugin(AgentFrameworkPlugin):
                 "version": "1.0.0",
                 "description": "Job posting plugin",
                 "settings": {
-                    "model": "gpt-4",
+                    "model": "gpt-4o-mini",
                     "temperature": 0.7,
                     "max_tokens": 2000
                 },
@@ -186,7 +186,7 @@ async def test_agent_creation(plugin_registry, job_posting_config):
     
     researcher_config = AgentConfig(
         role=AgentRole.ASSISTANT,
-        model="gpt-4",
+        model="gpt-4o-mini",
         instructions="Research job market",
         tools=[]
     )
@@ -195,7 +195,7 @@ async def test_agent_creation(plugin_registry, job_posting_config):
     
     writer_config = AgentConfig(
         role=AgentRole.ASSISTANT,
-        model="gpt-4",
+        model="gpt-4o-mini",
         instructions="Write job posting",
         tools=[]
     )
@@ -211,7 +211,7 @@ async def test_task_execution(plugin_registry, job_posting_config):
     
     agent_config = AgentConfig(
         role=AgentRole.ASSISTANT,
-        model="gpt-4",
+        model="gpt-4o-mini",
         instructions="Write job posting",
         tools=[]
     )
@@ -237,7 +237,7 @@ async def test_error_handling(plugin_registry):
     with pytest.raises(Exception, match="Plugin not initialized"):
         await plugin.create_agent(AgentConfig(
             role=AgentRole.ASSISTANT,
-            model="gpt-4",
+            model="gpt-4o-mini",
             instructions="",
             tools=[]
         ))

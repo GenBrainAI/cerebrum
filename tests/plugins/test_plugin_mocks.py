@@ -16,7 +16,7 @@ MOCK_CREWAI_RESPONSE = {
     "metadata": {
         "framework": "crewai",
         "agent_role": "writer",
-        "model": "gpt-4"
+        "model": "gpt-4o-mini"
     }
 }
 
@@ -115,7 +115,7 @@ async def test_job_posting_workflow(mock_plugin_registry, mock_crewai_plugin):
     # Create agent
     config = AgentConfig(
         role=AgentRole.USER_PROXY,
-        model="gpt-4",
+        model="gpt-4o-mini",
         instructions="Create compelling job descriptions",
         tools=[]
     )
@@ -145,7 +145,7 @@ async def test_rag_workflow(mock_plugin_registry, mock_smolagents_plugin):
     # Create agent
     config = AgentConfig(
         role=AgentRole.CODE_AGENT,
-        model="gpt-4",
+        model="gpt-4o-mini",
         instructions="Generate code based on documentation",
         tools=[]
     )
@@ -175,7 +175,7 @@ async def test_airline_workflow(mock_plugin_registry, mock_swarm_plugin):
     # Create agent
     config = AgentConfig(
         role=AgentRole.ASSISTANT,
-        model="gpt-4",
+        model="gpt-4o-mini",
         instructions="Help with flight booking",
         tools=[]
     )
@@ -207,7 +207,7 @@ async def test_error_handling(mock_plugin_registry, mock_crewai_plugin):
     with pytest.raises(Exception):
         await plugin.create_agent(AgentConfig(
             role=AgentRole.ASSISTANT,
-            model="gpt-4",
+            model="gpt-4o-mini",
             instructions="test",
             tools=[]
         ))

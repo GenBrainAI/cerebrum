@@ -767,7 +767,7 @@ async def test_crewai_invocation(test_state):
         crewai_config = CrewAIConfig(
             create_crew=CreateCrewRequest(**CREWAI_CONFIG),
             model_config={
-                "model": "gpt-4",
+                "model": "gpt-4o-mini",
                 "temperature": 0.7,
                 "max_tokens": 2000
             }
@@ -868,7 +868,7 @@ async def test_crewai_invocation_with_context(test_state):
         crewai_config = CrewAIConfig(
             create_crew=CreateCrewRequest(**CREWAI_CONFIG),
             model_config={
-                "model": "gpt-4",
+                "model": "gpt-4o-mini",
                 "temperature": 0.7,
                 "max_tokens": 2000
             }

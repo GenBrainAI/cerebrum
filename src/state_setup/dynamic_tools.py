@@ -98,10 +98,10 @@ def save_persistence_state(persistence_model: InMemoryPersistenceModel, file_pat
         # Create storage location for the state
         state_location = StorageLocation(
             type=StorageType.file,
-            location="persistent_state",
+            location="state/specialized",
             state_name="dynamic_tools_state.json"
         )
-        
+
         # Ensure the directory exists
         os.makedirs(state_location.location, exist_ok=True)
         
@@ -194,7 +194,7 @@ def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state
         if not existing_managers:
             tasksmanager = TasksManager(
                 name="Dynamic Langchain Tools Generator",
-                model="gpt-4",
+                model="gpt-4o-mini",
                 description="Manages the generation and integration of Langchain tools",
                 messages=[{
                     "role": "system",

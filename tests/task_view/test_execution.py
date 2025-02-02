@@ -493,7 +493,7 @@ async def test_standard_task_execution():
     tasksmanager = Task(
         id="test_tm",
         name="Test TaskManager",
-        model="gpt-4"
+        model="gpt-4o-mini"
     )
     
     # Store in persistence

@@ -23,7 +23,7 @@ def test_complex_calculator_tree(client: TestClient):
     # Create tasksmanager for complex calculations
     tasksmanager_data = {
         "name": "Complex Math Expert",
-        "model": "gpt-4",
+        "model": "gpt-4o-mini",
         "description": "TasksManager for complex number calculations",
         "create_crew": {
             "process_type": "sequential",
