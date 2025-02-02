@@ -5,7 +5,7 @@
     # https://github.com/togethercomputer/MoA
     # Phi ?? 
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field
 
@@ -164,8 +164,7 @@ class Task(BaseModel):
     class Config:
         arbitrary_types_allowed = True
         json_encoders = {
-            Message: lambda v: v.dict() if hasattr(v, 'dict') else v
+            datetime: lambda v: v.isoformat() if v else None,
+            date: lambda v: v.isoformat() if v else None,
+            Message: lambda v: v.dict() if v else None
         }
-
-
-Task.model_rebuild()

@@ -18,10 +18,13 @@ from ..tools.sms_tool import SMSTool
 from ..tools.web_scraper_tool import WebScraperTool
 from ..models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
 from ..models.toolset import Tool
-from ..models.function import ResolvedSchema
 import logging
 from enum import Enum
 from src.server.tools.url_tools import URLTools
+from ..tools.internal_file_tools import InternalFileTools
+from ..tools.internal_credentials_tools import InternalCredentialsTools
+from ..tools.internal_testing_tools import InternalTestingTools
+from ..tools.internal_proxy_tools import InternalProxyTools
 
 load_dotenv()
 
@@ -48,7 +51,8 @@ class ToolsCatalog:
         return cls._instance
     
     def __init__(self):
-        if not ToolsCatalog._initialized:
+        if not self._initialized:
+            self._logger = logging.getLogger(__name__)
             self._tools: Dict[str, ToolMetadata] = {}
             self._tool_instances: Dict[str, Any] = {}
             self._functions: Dict[str, Callable] = {}
@@ -58,7 +62,7 @@ class ToolsCatalog:
             self._metadata = {}  # Initialize metadata dictionary
             self.DEFAULT_TOOLS = {}  # Store default tools for test isolation
             self._initialize_default_tools()
-            ToolsCatalog._initialized = True
+            self._initialized = True
         else:
             self._initialize_default_tools()
 
@@ -74,7 +78,8 @@ class ToolsCatalog:
             sig = inspect.signature(obj)
             for param_name, param in sig.parameters.items():
                 if param_name not in ['self', 'cls']:
-                    param_type = param.annotation if param.annotation != inspect.Parameter.empty else Any
+                    # Use object instead of Any as the default type
+                    param_type = param.annotation if param.annotation != inspect.Parameter.empty else object
                     parameters.append(ParameterInfo(
                         name=param_name,
                         type_hint=self._type_to_string(param_type),
@@ -84,9 +89,9 @@ class ToolsCatalog:
                     ))
         except (ValueError, TypeError):
             pass
-
+        
         # Get return type and description
-        return_type = "Any"
+        return_type = "object"  # Use object instead of Any
         return_description = "Return value"
         try:
             sig = inspect.signature(obj)
@@ -96,20 +101,20 @@ class ToolsCatalog:
                 return_description = parsed_docstring.returns.description
         except (ValueError, TypeError):
             pass
-
+        
         # Check if the function/method is async
         is_async = inspect.iscoroutinefunction(obj)
         if not is_async and hasattr(obj, '__call__'):
             # Check if it's a callable object with an async __call__ method
             is_async = inspect.iscoroutinefunction(obj.__call__)
-
+        
         # Combine short and long descriptions
         description = parsed_docstring.short_description or ""
         if parsed_docstring.long_description:
             description = description + "\n\n" + parsed_docstring.long_description
-
+        
         return ToolMetadata(
-            name=str(name),  # Ensure name is a string
+            name=str(name),
             tool_type=tool_type,
             description=description or docstring,
             parameters=parameters,
@@ -121,85 +126,149 @@ class ToolsCatalog:
             async_tool=is_async
         )
 
-    def register_tool(self, tool: Any, name: Optional[str] = None) -> str:
-        """Register a tool in the catalog.
+    def _create_instance_metadata(self, instance: Any, name: str) -> ToolMetadata:
+        """Create metadata for a class instance.
         
         Args:
-            tool: The tool to register
-            name: Optional name for the tool
+            instance: The instance to create metadata for
+            name: Name for the instance
             
         Returns:
-            The registered tool name
+            ToolMetadata for the instance
         """
-        if name is None:
-            name = tool.__name__ if hasattr(tool, '__name__') else tool.__class__.__name__
+        # Get docstring from the instance's class
+        docstring = inspect.getdoc(instance.__class__) or ""
+        parsed_docstring = docstring_parser.parse(docstring)
+        description = parsed_docstring.short_description or ""
+        if parsed_docstring.long_description:
+            description = description + "\n\n" + parsed_docstring.long_description
+        
+        # Get parameters from instance attributes or __init__
+        parameters = []
+        if hasattr(instance, '__init__'):
+            sig = inspect.signature(instance.__init__)
+            for param_name, param in sig.parameters.items():
+                if param_name not in ['self', 'cls']:
+                    param_type = param.annotation if param.annotation != inspect.Parameter.empty else object
+                    parameters.append(ParameterInfo(
+                        name=param_name,
+                        type_hint=self._type_to_string(param_type),
+                        required=param.default == inspect.Parameter.empty,
+                        description=f"Parameter {param_name}",
+                        default=None if param.default == inspect.Parameter.empty else param.default
+                    ))
+        
+        # Create metadata
+        return ToolMetadata(
+            name=name,
+            tool_type=ToolType.CLASS_METHOD,
+            description=description or docstring,
+            parameters=parameters,
+            original_obj=instance,
+            returns=ReturnInfo(
+                type_hint="Any",
+                description="Return value"
+            ),
+            async_tool=inspect.iscoroutinefunction(instance) or (hasattr(instance, '__call__') and inspect.iscoroutinefunction(instance.__call__))
+        )
+
+    def register_instance(self, instance: Any, name: str) -> List[str]:
+        """Register an instance and all its methods.
+        
+        Args:
+            instance: The object instance to register
+            name: Base name for the instance
             
-        # Create metadata based on tool type
-        if inspect.isfunction(tool):
-            metadata = self._create_function_metadata(tool, name)
-            self._tools[name] = metadata
-            self._functions[name] = tool
-        elif inspect.isclass(tool):
-            metadata = self._create_class_metadata(name, tool)
-            self._tools[name] = metadata
-            self._classes[name] = tool
-        elif isinstance(tool, (CrewAITool, LangChainTool)):
-            metadata = self._create_ai_tool_metadata(name, tool)
-            self._tools[name] = metadata
-            self._ai_tools[name] = tool
-        elif isinstance(tool, Tool):
-            metadata = self._create_openapi_tool_metadata(name, tool)
-            self._tools[name] = metadata
-            self._openapi_tools[name] = tool
-        else:
-            # Store instance and its methods
-            metadata = self._create_instance_metadata(name, tool)
-            self._tools[name] = metadata
-            self._tool_instances[name] = tool
-            
-            # Store the class in _classes if it's a class instance
-            if not inspect.isclass(tool) and not inspect.isfunction(tool):
-                self._classes[name] = tool.__class__
-            
-            # Register instance methods
-            if hasattr(tool, '__dict__'):
-                for method_name, method in inspect.getmembers(tool, predicate=inspect.ismethod):
-                    if not method_name.startswith('_'):
-                        method_qualified_name = f"{name}.{method_name}"
-                        self._tool_instances[method_qualified_name] = method
-                        
-                        # Create metadata for the method
-                        method_metadata = self._extract_docstring_info(method, method_qualified_name, ToolType.CLASS_METHOD)
-                        method_metadata.class_name = name
-                        method_metadata.method_name = method_name
-                        self._tools[method_qualified_name] = method_metadata
-                        
-        return name
+        Returns:
+            List of registered tool names
+        """
+        print(f"Registering instance {name}")
+        registered_names = []
+        
+        # Register the base instance
+        metadata = self._create_instance_metadata(instance, name)
+        self._tools[name] = metadata
+        self._tool_instances[name] = instance
+        registered_names.append(name)
+        
+        # Register all public methods
+        for method_name, method in inspect.getmembers(instance, predicate=inspect.ismethod):
+            if not method_name.startswith('_'):
+                full_name = f"{name}.{method_name}"
+                method_metadata = self._create_method_metadata(method, method_name)
+                method_metadata.class_name = name
+                method_metadata.method_name = method_name
+                self._tools[full_name] = method_metadata
+                self._tool_instances[full_name] = method
+                registered_names.append(full_name)
+                print(f"  Registered method: {full_name}")
+        
+        return registered_names
+
+    def register_tool(self, tool_name: str, metadata: Union[ToolMetadata, Any]) -> None:
+        """Register a tool with the catalog.
+
+        Args:
+            tool_name: Name of the tool
+            metadata: Either a ToolMetadata instance or an object to create metadata from
+        """
+        self._logger.info(f"Registering tool: {metadata}")
+        self._logger.debug(f"Tool type: {type(metadata)}")
+
+        try:
+            if isinstance(metadata, ToolMetadata):
+                self._tools[tool_name] = metadata
+            else:
+                base_metadata = self._create_instance_metadata(metadata, tool_name)
+                self._tools[tool_name] = base_metadata
+                self._tool_instances[tool_name] = metadata
+        except Exception as e:
+            self._logger.error(f"Failed to register tool {metadata}: {e}")
+            raise
 
     def _create_method_metadata(self, method: Callable, method_name: str) -> ToolMetadata:
         """Create metadata for a method."""
+        # Get docstring info for better description
+        docstring = inspect.getdoc(method) or f"Method {method_name}"
+        parsed_docstring = docstring_parser.parse(docstring)
+        description = parsed_docstring.short_description or ""
+        if parsed_docstring.long_description:
+            description = description + "\n\n" + parsed_docstring.long_description
+        
+        # Extract parameters from method signature
         sig = inspect.signature(method)
-        params = []
-        for name, param in sig.parameters.items():
-            if name == 'self':
+        parameters = []
+        param_descriptions = {param.arg_name: param.description for param in parsed_docstring.params}
+        for param_name, param in sig.parameters.items():
+            if param_name == 'self':
                 continue
             type_hint = param.annotation if param.annotation != inspect.Parameter.empty else Any
             # Convert type hint to string format
             type_str = str(type_hint)
             if type_str.startswith("<class '") and type_str.endswith("'>"):
                 type_str = type_str[8:-2]  # Remove "<class '" and "'>"
-            params.append(ParameterInfo(
-                name=name,
+            parameters.append(ParameterInfo(
+                name=param_name,
                 type_hint=type_str,
                 required=param.default == inspect.Parameter.empty,
-                description=f"Parameter {name}"
+                description=param_descriptions.get(param_name, f"Parameter {param_name}"),
+                default=None if param.default == inspect.Parameter.empty else param.default
             ))
+        
+        # Get return type and description
+        return_type = "Any"
+        return_description = "Method return value"
+        if sig.return_annotation != inspect.Parameter.empty:
+            return_type = self._type_to_string(sig.return_annotation)
+        if parsed_docstring.returns:
+            return_description = parsed_docstring.returns.description
+        
         return ToolMetadata(
             name=method_name,
-            description=inspect.getdoc(method) or f"Method {method_name}",
+            description=description or docstring,
             tool_type=ToolType.CLASS_METHOD,
-            parameters=params,
-            returns=ReturnInfo(type_hint="Any", description="Method return value"),
+            parameters=parameters,
+            returns=ReturnInfo(type_hint=return_type, description=return_description),
             original_obj=method,
             async_tool=inspect.iscoroutinefunction(method)
         )
@@ -232,136 +301,212 @@ class ToolsCatalog:
 
         return registered_names
 
-    def register_instance(self, instance: Any, name: str) -> List[str]:
-        """Register a class instance and its methods."""
-        tool_names = []
-
-        # Register the instance itself
-        self._tool_instances[name] = instance
+    def get_tool_instance(self, name: str) -> Optional[Any]:
+        """Get a tool instance by name.
         
-        # Extract docstring from the instance's class
-        docstring = inspect.getdoc(instance.__class__) or ""
-        
-        # Create metadata for the instance
-        if hasattr(instance, 'required_args'):
-            # For tools with required_args (like MockInternalTool)
-            parameters = []
-            for param_name, param_type in instance.required_args.items():
-                description = "Description of the content" if param_name == "description" else "Path to the file to read" if param_name == "file_path" else f"Required parameter {param_name}"
-                parameters.append(ParameterInfo(
-                    name=param_name,
-                    type_hint=self._type_to_string(param_type),
-                    required=True,
-                    description=description
-                ))
+        Args:
+            name: Name of the tool to get
             
-            self._tools[name] = ToolMetadata(
-                name=name,
-                tool_type=ToolType.AI_TOOL,
-                description=docstring,
-                parameters=parameters,
-                original_obj=instance,
-                returns=ReturnInfo(
-                    type_hint="Any",
-                    description="Return value"
-                ),
-                async_tool=inspect.iscoroutinefunction(instance) or (hasattr(instance, '__call__') and inspect.iscoroutinefunction(instance.__call__))
-            )
-        else:
-            # For regular class instances
-            metadata = self._extract_docstring_info(instance.__class__, name)
-            metadata.tool_type = ToolType.CLASS_METHOD  # Override tool type for class instances
-            self._tools[name] = metadata
+        Returns:
+            The tool instance if found, None otherwise
+            
+        Raises:
+            KeyError: If the tool is not found and raise_error is True
+        """
+        # First try direct lookup
+        if name in self._tool_instances:
+            return self._tool_instances[name]
+            
+        # If not found and this might be a method name
+        if '.' in name:
+            base_name, method_name = name.split('.')
+            base_instance = self._tool_instances.get(base_name)
+            if base_instance and hasattr(base_instance, method_name):
+                return getattr(base_instance, method_name)
+                
+        # If still not found, try to create a new instance
+        if name in self._tools:
+            metadata = self._tools[name]
+            if metadata.original_obj:
+                if inspect.isclass(metadata.original_obj):
+                    instance = metadata.original_obj()
+                    self._tool_instances[name] = instance
+                    return instance
+                return metadata.original_obj
+                
+        raise KeyError(f"Tool not found: {name}")
+
+    def get_tool(self, name: str) -> Optional[ToolMetadata]:
+        """Get metadata for a registered tool.
         
-        tool_names.append(name)
+        This method handles both direct tool lookups and method lookups.
+        For methods, it will:
+        1. Try to find metadata for the full method name (e.g. 'tool.method')
+        2. If not found, try to find metadata for the base tool name
+        3. If base tool found, look for the method in its metadata
+        """
+        # First try direct lookup
+        metadata = self._tools.get(name)
+        if metadata:
+            return metadata
+            
+        # If not found and this might be a method name
+        if '.' in name:
+            base_name, method_name = name.split('.')
+            
+            # Try to get the base tool's metadata
+            base_metadata = self._tools.get(base_name)
+            if base_metadata:
+                # Look for the method in the base tool's metadata
+                if base_metadata.tool_type == ToolType.CLASS_METHOD:
+                    # Get the tool instance and method
+                    tool_instance = self._tool_instances.get(base_name)
+                    if tool_instance and hasattr(tool_instance, method_name):
+                        method = getattr(tool_instance, method_name)
+                        if callable(method):
+                            # Create method metadata
+                            method_metadata = self._create_method_metadata(method, name)
+                            method_metadata.class_name = base_name
+                            method_metadata.method_name = method_name
+                            
+                            # Get docstring info for better description
+                            docstring = inspect.getdoc(method) or f"Method {method_name}"
+                            parsed_docstring = docstring_parser.parse(docstring)
+                            description = parsed_docstring.short_description or ""
+                            if parsed_docstring.long_description:
+                                description = description + "\n\n" + parsed_docstring.long_description
+                            method_metadata.description = description or docstring
+                            
+                            # Extract parameters from method signature
+                            sig = inspect.signature(method)
+                            parameters = []
+                            param_descriptions = {param.arg_name: param.description for param in parsed_docstring.params}
+                            for param_name, param in sig.parameters.items():
+                                if param_name == 'self':
+                                    continue
+                                parameters.append(ParameterInfo(
+                                    name=param_name,
+                                    type_hint=str(param.annotation) if param.annotation != inspect.Parameter.empty else 'Any',
+                                    description=param_descriptions.get(param_name, f"Parameter {param_name}"),
+                                    required=param.default == inspect.Parameter.empty,
+                                    default=None if param.default == inspect.Parameter.empty else param.default
+                                ))
+                            method_metadata.parameters = parameters
+                            
+                            # Cache the metadata for future use
+                            self._tools[name] = method_metadata
+                            return method_metadata
+                            
+        return None
 
-        # Register instance methods
-        for method_name, method in inspect.getmembers(instance, inspect.ismethod):
-            if not method_name.startswith('_'):  # Skip private methods
-                full_name = f"{name}.{method_name}"
-                self._tool_instances[full_name] = method
-                
-                # Extract method metadata
-                metadata = self._extract_docstring_info(method, full_name, ToolType.CLASS_METHOD)
-                metadata.class_name = name
-                metadata.method_name = method_name
-                metadata.async_tool = inspect.iscoroutinefunction(method)
-                
-                # Extract parameters from method
-                sig = inspect.signature(method)
-                parameters = []
-                for param_name, param in sig.parameters.items():
-                    if param_name not in ['self', 'cls']:
-                        parameters.append(ParameterInfo(
-                            name=param_name,
-                            type_hint=self._type_to_string(param.annotation if param.annotation != inspect.Parameter.empty else Any),
-                            required=param.default == inspect.Parameter.empty,
-                            description=f"Parameter {param_name}"
-                        ))
-                metadata.parameters = parameters
-                
-                self._tools[full_name] = metadata
-                tool_names.append(full_name)
+    def list_tools(self) -> List[str]:
+        """List all registered tool names."""
+        return list(self._tools.keys())
 
-        return tool_names
+    def reset(self) -> None:
+        """Reset the catalog to its initial state."""
+        self._tools = {}
+        self._tool_instances = {}
+        self._functions = {}
+        self._classes = {}
+        self._openapi_tools = {}
+        self._ai_tools = {}
+        self._initialize_default_tools()
 
-    def _extract_parameters(self, tool: Any) -> List[ParameterInfo]:
-        """Extract parameter information from a tool."""
-        params = []
-        
+    def _initialize_default_tools(self):
+        """Initialize default tools."""
         try:
-            if inspect.isclass(tool):
-                # For classes, get signature of __init__
-                sig = inspect.signature(tool.__init__)
-            elif inspect.isfunction(tool) or inspect.ismethod(tool):
-                # For functions and methods
-                sig = inspect.signature(tool)
-            elif hasattr(tool, '__call__'):
-                # For callable objects
-                sig = inspect.signature(tool.__call__)
-            else:
-                # For class instances, get all public methods
-                methods = [m for m in dir(tool) if not m.startswith('_') and callable(getattr(tool, m))]
-                for method_name in methods:
-                    method = getattr(tool, method_name)
-                    try:
-                        method_sig = inspect.signature(method)
-                        for name, param in method_sig.parameters.items():
-                            if name == 'self':
-                                continue
-                            params.append(ParameterInfo(
-                                name=f"{method_name}.{name}",
-                                type_hint=str(param.annotation) if param.annotation != inspect.Parameter.empty else None,
-                                description='',
-                                default=None if param.default == inspect.Parameter.empty else param.default,
-                                required=param.default == inspect.Parameter.empty
-                            ))
-                    except (ValueError, TypeError):
-                        continue
-                return params
-
-            # Process signature for callable objects
-            for name, param in sig.parameters.items():
-                if name == 'self':
-                    continue
-                params.append(ParameterInfo(
-                    name=name,
-                    type_hint=str(param.annotation) if param.annotation != inspect.Parameter.empty else None,
-                    description='',
-                    default=None if param.default == inspect.Parameter.empty else param.default,
-                    required=param.default == inspect.Parameter.empty
-                ))
-            
-        except (ValueError, TypeError) as e:
-            self._logger.warning(f"Could not extract parameters from {tool}: {str(e)}")
-        
-        return params
+            # Initialize default tools only if they haven't been initialized
+            if not self.DEFAULT_TOOLS:
+                # Register internal tools
+                internal_file_tools = InternalFileTools()
+                internal_credentials_tools = InternalCredentialsTools()
+                internal_testing_tools = InternalTestingTools()
+                internal_proxy_tools = InternalProxyTools()
+                
+                # Register instances and their methods
+                self.register_instance(internal_file_tools, "internal_file_tools")
+                self.register_instance(internal_credentials_tools, "internal_credentials_tools")
+                self.register_instance(internal_testing_tools, "internal_testing_tools")
+                self.register_instance(internal_proxy_tools, "internal_proxy_tools")
+                
+                # Register CrewAI tools
+                website_tool = WebsiteSearchTool()
+                serper_tool = SerperDevTool()
+                file_read_tool = FileReadTool()
+                web_scraper_tool = WebScraperTool()
+                self.register_ai_tool(website_tool, "WebsiteSearchTool")
+                self.register_ai_tool(serper_tool, "SerperDevTool")
+                self.register_ai_tool(file_read_tool, "FileReadTool")
+                self.register_instance(web_scraper_tool, "WebScraperTool")
+                
+                # Register custom tools
+                file_tool = FileTool()
+                microservices_tool = MicroservicesTool()
+                sms_tool = SMSTool()
+                self.register_instance(file_tool, "FileTool")
+                self.register_instance(microservices_tool, "MicroservicesTool")
+                self.register_instance(sms_tool, "SMSTool")
+                
+                # Register GitHub tool if credentials are available
+                github_token = getenv("GITHUB_TOKEN")
+                repo_name = getenv("GITHUB_REPO")
+                if github_token and repo_name:
+                    github_tool = GitHubTool(github_token, repo_name)
+                    self.register_instance(github_tool, "GitHubTool")
+                
+                # Register URL tools
+                url_tools = URLTools()
+                self.register_instance(url_tools, "URLTools")
+                
+                # Store current tools as defaults
+                self.DEFAULT_TOOLS = {
+                    'tools': self._tools.copy(),
+                    'instances': self._tool_instances.copy(),
+                    'functions': self._functions.copy(),
+                    'classes': self._classes.copy(),
+                    'openapi': self._openapi_tools.copy(),
+                    'ai_tools': self._ai_tools.copy()
+                }
+        except Exception as e:
+            logger.error(f"Failed to initialize default tools: {str(e)}")
+            raise
 
     def _type_to_string(self, type_hint: Any) -> str:
         """Convert a type hint to a string representation."""
         if hasattr(type_hint, "__name__"):
             return type_hint.__name__
         return str(type_hint)
+
+    def _create_class_metadata(self, cls: Type, class_name: str) -> ToolMetadata:
+        """Create metadata for a class."""
+        return ToolMetadata(
+            name=class_name,
+            description=inspect.getdoc(cls) or f"Class {class_name}",
+            tool_type=ToolType.CLASS,
+            parameters=[],
+            returns=ReturnInfo(type_hint="Any", description="Class instance"),
+            original_obj=cls,
+            async_tool=False
+        )
+
+    def _create_function_metadata(self, func: Callable, name: str) -> ToolMetadata:
+        """Create metadata for a function.
+
+        Args:
+            func: The function to create metadata for
+            name: Name for the function
+
+        Returns:
+            ToolMetadata for the function
+        """
+        logger.debug(f"Creating function metadata for: {name}")
+        
+        # Extract docstring info
+        metadata = self._extract_docstring_info(func, name)
+        
+        # Create metadata
+        return metadata
 
     def register_ai_tool(self, tool: Union[CrewAITool, LangChainTool], name: Optional[str] = None) -> str:
         """Register an AI tool (CrewAI or LangChain) in the catalog.
@@ -436,221 +581,92 @@ class ToolsCatalog:
             for param_location, params in function.parameters.items():
                 if param_location == 'requestBody':
                     if isinstance(params, dict) and 'requestBody' in params:
-                        schema = params['requestBody'].schema
+                        request_body = params['requestBody']
                         # Add the full request body parameter
                         parameters.append(ParameterInfo(
                             name="requestBody",
                             type_hint="object",
-                            description=params['requestBody'].description or "Request body schema",
-                            required=params['requestBody'].required
+                            description=request_body.description or "Request body schema",
+                            required=request_body.required
                         ))
                         # Also add individual properties for granular access
-                        if schema and schema.properties:
-                            for prop_name, prop_schema in schema.properties.items():
+                        if request_body.param_schema and request_body.param_schema.properties:
+                            for prop_name, prop_schema in request_body.param_schema.properties.items():
+                                type_hint = prop_schema.type or "object"
                                 parameters.append(ParameterInfo(
                                     name=prop_name,
-                                    type_hint=prop_schema.type,
-                                    description=prop_schema.description or '',
-                                    required=prop_name in (schema.required or [])
+                                    type_hint=type_hint,
+                                    description=prop_schema.description or f"Property {prop_name}",
+                                    required=prop_schema.required is not None and prop_name in prop_schema.required
                                 ))
                 else:
-                    # Handle path, query, and header parameters
-                    for param_name, param_schema in params.items():
+                    # Handle other parameter locations (query, path, etc.)
+                    for param_name, param in params.items():
+                        type_hint = param.param_schema.type or "object"
                         parameters.append(ParameterInfo(
                             name=param_name,
-                            type_hint=param_schema.schema.type if hasattr(param_schema.schema, 'type') else 'Any',
-                            description=param_schema.description or '',
-                            required=getattr(param_schema, 'required', False)
+                            type_hint=type_hint,
+                            description=param.description or f"Parameter {param_name}",
+                            required=param.required
                         ))
 
-        metadata = ToolMetadata(
-            name=tool_name,
-            description=function.description or "",
-            tool_type=ToolType.OPENAPI_TOOL,
-            parameters=parameters,  # Structured parameters for LLM understanding
-            schema=function.parameters,  # Original OpenAPI schema
-            returns=ReturnInfo(
-                type_hint='Dict[str, Any]',
-                description=function.responses['200'].description if function.responses and '200' in function.responses else "Successful response"
-            ),
-            original_obj=tool,
-            async_tool=True
+        # Register the tool with extracted metadata
+        self.register_tool(
+            tool_name,
+            ToolMetadata(
+                name=tool_name,
+                description=function.description or f"OpenAPI tool {tool_name}",
+                parameters=parameters,
+                schema=tool.model_dump(),
+                tool_type=ToolType.OPENAPI_TOOL,
+                returns=ReturnInfo(
+                    type_hint="Dict[str, Any]",
+                    description=function.responses['200'].description if function.responses and '200' in function.responses else "Successful response"
+                ),
+                original_obj=tool,
+                async_tool=True
+            )
         )
 
-        self._tools[tool_name] = metadata
-        self._openapi_tools[tool_name] = tool
-        self._tool_instances[tool_name] = tool
         return tool_name
-
-    def get_tool_instance(self, name: str) -> Any:
-        """Get or create an instance of a tool.
-        
-        Args:
-            name: Name of the tool to retrieve
-            
-        Returns:
-            Tool instance or callable
-            
-        Raises:
-            KeyError: If tool not found
-        """
-        # First check direct instance
-        if name in self._tool_instances:
-            return self._tool_instances[name]
-            
-        # Check functions
-        if name in self._functions:
-            return self._functions[name]
-            
-        # Check metadata
-        metadata = self._tools.get(name)
-        if not metadata:
-            # Try checking if this is a method call using full qualification
-            parts = name.split('.')
-            if len(parts) >= 2:
-                instance_name = '.'.join(parts[:-1])  # Everything except the last part
-                method_name = parts[-1]  # Last part is the method name
-                
-                if instance_name in self._tool_instances:
-                    instance = self._tool_instances[instance_name]
-                    if hasattr(instance, method_name):
-                        return getattr(instance, method_name)
-            
-            raise KeyError(f"Tool not found: {name}")
-            
-        # Create instance based on tool type
-        if metadata.tool_type == ToolType.PYTHON_FUNCTION:
-            return metadata.original_obj
-        elif metadata.tool_type == ToolType.CLASS_METHOD:
-            instance = metadata.original_obj()
-            self._tool_instances[name] = instance
-            return instance
-        elif metadata.tool_type == ToolType.CREWAI_TOOL:
-            return metadata.original_obj
-        elif metadata.tool_type == ToolType.LANGCHAIN_TOOL:
-            return metadata.original_obj
-        elif metadata.tool_type == ToolType.OPENAPI_TOOL:
-            return metadata.original_obj
-        else:
-            raise ValueError(f"Unknown tool type: {metadata.tool_type}")
-
-    def list_tools_by_type(self) -> Dict[str, List[str]]:
-        """List all tools grouped by type."""
-        return {
-            "functions": list(self._functions.keys()),
-            "classes": list(self._classes.keys()),
-            "instances": list(self._tool_instances.keys())  # Use _tool_instances instead of _instances
-        }
-
-    def list_tools(self) -> List[str]:
-        """List all registered tool names."""
-        return list(self._tools.keys())
-
-    def get_tool(self, name: str) -> Optional[ToolMetadata]:
-        """Get metadata for a registered tool."""
-        return self._tools.get(name)
-
-    def reset(self) -> None:
-        """Reset the catalog to its initial state."""
-        self._tools = {}
-        self._tool_instances = {}  # Make sure this is initialized
-        self._functions = {}
-        self._classes = {}
-        self._openapi_tools = {}
-        self._ai_tools = {}
-        self._initialize_default_tools()
-
-    def _initialize_default_tools(self):
-        """Initialize default tools."""
-        try:
-            # Initialize default tools only if they haven't been initialized
-            if not self.DEFAULT_TOOLS:
-                # Register CrewAI tools
-                website_tool = WebsiteSearchTool()
-                serper_tool = SerperDevTool()
-                file_read_tool = FileReadTool()
-                web_scraper_tool = WebScraperTool()
-                self.register_ai_tool(website_tool, "WebsiteSearchTool")
-                self.register_ai_tool(serper_tool, "SerperDevTool")
-                self.register_ai_tool(file_read_tool, "FileReadTool")
-                self.register_instance(web_scraper_tool, "WebScraperTool")
-                
-                # Register custom tools
-                file_tool = FileTool()
-                microservices_tool = MicroservicesTool()
-                sms_tool = SMSTool()
-                self.register_instance(file_tool, "FileTool")
-                self.register_instance(microservices_tool, "MicroservicesTool")
-                self.register_instance(sms_tool, "SMSTool")
-                
-                # Register GitHub tool if credentials are available
-                github_token = getenv("GITHUB_TOKEN")
-                repo_name = getenv("GITHUB_REPO")
-                if github_token and repo_name:
-                    github_tool = GitHubTool(github_token, repo_name)
-                    self.register_instance(github_tool, "GitHubTool")
-                
-                # Register URL tools
-                url_tools = URLTools()
-                self.register_instance(url_tools, "URLTools")
-                
-                # Store current tools as defaults
-                self.DEFAULT_TOOLS = {
-                    'tools': self._tools.copy(),
-                    'instances': self._tool_instances.copy(),
-                    'functions': self._functions.copy(),
-                    'classes': self._classes.copy(),
-                    'openapi': self._openapi_tools.copy(),
-                    'ai_tools': self._ai_tools.copy()
-                }
-        except Exception as e:
-            logger.error(f"Error initializing default tools: {str(e)}")
-            raise
-
-    def unregister_tool(self, name: str) -> None:
-        """Unregister a tool from the catalog.
-        
-        Args:
-            name: Name of the tool to unregister
-        """
-        if name in self._tools:
-            del self._tools[name]
-        if name in self._tool_instances:
-            del self._tool_instances[name]
-        if name in self._functions:
-            del self._functions[name]
-        if name in self._classes:
-            del self._classes[name]
-        if name in self._openapi_tools:
-            del self._openapi_tools[name]
-        if name in self._ai_tools:
-            del self._ai_tools[name]
-
-    def _create_function_metadata(self, func: Callable, name: str) -> ToolMetadata:
-        """Create metadata for a function.
-
-        Args:
-            func: The function to create metadata for
-            name: Name for the function
-
-        Returns:
-            ToolMetadata for the function
-        """
-        logger.debug(f"Creating function metadata for: {name}")
-        
-        # Extract docstring info
-        metadata = self._extract_docstring_info(func, name)
-        
-        # Create metadata
-        return metadata
 
     def get_tool_metadata(self, name: str) -> Optional[ToolMetadata]:
         """Get metadata for a tool from the catalog."""
-        # If metadata doesn't exist but tool does, create it
-        if name not in self._metadata and name in self._tools:
-            tool = self._tools[name]
-            self._metadata[name] = self._create_tool_metadata(name, tool)
-        return self._metadata.get(name)
+        logger.debug(f"Getting metadata for tool: {name}")
+        logger.debug(f"Available tools: {list(self._tools.keys())}")
+        
+        # First try getting the tool directly
+        if name in self._tools:
+            logger.debug(f"Found metadata directly for {name}")
+            return self._tools[name]
+        
+        # If not found and contains a dot, try getting the base tool's metadata
+        if '.' in name:
+            base_name, method_name = name.split('.')
+            logger.debug(f"Trying base tool {base_name} for method {method_name}")
+            
+            # First check if we have metadata for the full method name
+            if name in self._tools:
+                logger.debug(f"Found metadata for full method name {name}")
+                return self._tools[name]
+            
+            # Then check if we have the base tool instance
+            base_instance = self._tool_instances.get(base_name)
+            if base_instance and hasattr(base_instance, method_name):
+                method = getattr(base_instance, method_name)
+                if callable(method):
+                    logger.debug(f"Creating metadata for method {method_name}")
+                    # Create method metadata
+                    method_metadata = self._create_method_metadata(method, name)
+                    method_metadata.class_name = base_name
+                    method_metadata.method_name = method_name
+                    
+                    # Cache the metadata for future use
+                    self._tools[name] = method_metadata
+                    return method_metadata
+                
+        logger.debug(f"No metadata found for {name}")
+        return None
 
     def _create_tool_metadata(self, name: str, tool: Any) -> ToolMetadata:
         """Create metadata for a tool."""
@@ -660,32 +676,7 @@ class ToolsCatalog:
         elif inspect.isfunction(tool) or inspect.ismethod(tool):
             return self._create_function_metadata(name, tool)
         else:
-            return self._create_instance_metadata(name, tool)
-
-    def _create_instance_metadata(self, name: str, tool: Any) -> ToolMetadata:
-        """Create metadata for a tool instance.
-        
-        Args:
-            name: Name of the tool
-            tool: The tool instance
-            
-        Returns:
-            ToolMetadata for the tool
-        """
-        # Extract docstring info
-        metadata = self._extract_docstring_info(tool, name)
-        
-        # Get class name and method name if this is a method
-        class_name = None
-        method_name = None
-        if '.' in name:
-            class_name, method_name = name.split('.')
-            
-        # Update metadata with class and method names
-        metadata.class_name = class_name
-        metadata.method_name = method_name
-        
-        return metadata
+            return self._create_instance_metadata(tool, name)
 
     def update_tool_metadata(self, name: str, updates: Dict[str, Any]) -> None:
         """Update metadata for a registered tool.
@@ -742,18 +733,6 @@ class ToolsCatalog:
         self.reset()
         self._load_tools()
         return list(self._tools.keys())
-
-    def _create_class_metadata(self, cls: Type, class_name: str) -> ToolMetadata:
-        """Create metadata for a class."""
-        return ToolMetadata(
-            name=class_name,
-            description=inspect.getdoc(cls) or f"Class {class_name}",
-            tool_type=ToolType.CLASS,
-            parameters=[],
-            returns=ReturnInfo(type_hint="Any", description="Class instance"),
-            original_obj=cls,
-            async_tool=False
-        )
 
     def _load_tools(self):
         """Load all tools from the catalog."""

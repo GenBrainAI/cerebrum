@@ -20,6 +20,3 @@ class ToolsetCredentials(BaseModel):
     authorization_header: Optional[str] = None
     custom_auth_type: Optional[str] = None
     path_credentials: Optional[str] = None
-
-
-ToolsetCredentials.model_rebuild()

@@ -42,7 +42,10 @@ class ToolsOperator:
     def set_api_provider(self, api_provider: str):
         self.api_provider = api_provider.lower()
         if self.api_provider == "openai":
-            self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+            self.client = AsyncOpenAI(
+                api_key=os.environ.get("OPENAI_API_KEY"),
+                timeout=120.0  # Set 120 second timeout
+            )
         elif self.api_provider == "anthropic":
             self.client = AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         elif self.api_provider == "gemini":
@@ -86,7 +89,8 @@ class ToolsOperator:
                 model=model,
                 messages=messages,
                 tools=tools if tools else None,
-                tool_choice="auto" if tools else None
+                tool_choice="auto" if tools else None,
+                timeout=120.0  # Set 120 second timeout for completion request
             )
 
             choice = response.choices[0]

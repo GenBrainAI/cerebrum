@@ -225,6 +225,16 @@ class ToolsCatalog:
                 metadata = self._create_class_instance_metadata(tool, tool_name)
                 self._tools[tool_name] = metadata
                 self._instances[tool_name] = tool
+                
+                # Register methods
+                for method_name in dir(tool):
+                    if not method_name.startswith('_'):
+                        method = getattr(tool, method_name)
+                        if callable(method):
+                            method_tool_name = f"{tool_name}.{method_name}"
+                            method_metadata = self._create_method_metadata(method, method_tool_name, tool.__class__.__name__)
+                            self._tools[method_tool_name] = method_metadata
+                
                 return tool_name
             
             # Handle classes
@@ -235,6 +245,17 @@ class ToolsCatalog:
                 metadata = self._create_class_metadata(tool, tool_name)
                 self._tools[tool_name] = metadata
                 self._instances[tool_name] = tool()
+                
+                # Register methods
+                instance = self._instances[tool_name]
+                for method_name in dir(instance):
+                    if not method_name.startswith('_'):
+                        method = getattr(instance, method_name)
+                        if callable(method):
+                            method_tool_name = f"{tool_name}.{method_name}"
+                            method_metadata = self._create_method_metadata(method, method_tool_name, tool.__name__)
+                            self._tools[method_tool_name] = method_metadata
+                
                 return tool_name
             
             # Handle functions
@@ -247,16 +268,106 @@ class ToolsCatalog:
             self._logger.error(f"Failed to register tool {tool_name}: {str(e)}")
             raise
 
-    def _create_class_instance_metadata(self, tool: Any, tool_name: str) -> ToolMetadata:
-        """Create metadata for a class instance."""
-        return ToolMetadata(
-            name=tool_name,
-            description=getattr(tool, '__doc__', '') or '',
+    def _create_method_metadata(self, method: Callable, method_name: str, class_name: str) -> ToolMetadata:
+        """Create metadata for a class method."""
+        docstring = method.__doc__ or ""
+        parsed_docstring = docstring_parser.parse(docstring)
+        
+        # Get type hints from the method's signature
+        try:
+            type_hints = get_type_hints(method)
+        except Exception:
+            type_hints = {}
+        
+        # Extract parameters from docstring
+        parameters = []
+        for param in parsed_docstring.params:
+            param_info = ParameterInfo(
+                name=param.arg_name,
+                description=param.description or "",
+                type_hint=str(type_hints.get(param.arg_name, "Any")),
+                required=True  # Default to required
+            )
+            parameters.append(param_info)
+        
+        # Extract return info from docstring
+        return_info = None
+        if parsed_docstring.returns:
+            return_info = ReturnInfo(
+                description=parsed_docstring.returns.description or "",
+                type_hint=str(type_hints.get('return', "Any"))
+            )
+        else:
+            return_info = ReturnInfo(
+                description="",
+                type_hint=str(type_hints.get('return', "Any"))
+            )
+        
+        # Create metadata
+        metadata = ToolMetadata(
+            name=method_name,
+            description=parsed_docstring.short_description or docstring,
             tool_type=ToolType.CLASS_METHOD,
-            parameters=self._extract_parameters(tool),
-            returns=ReturnInfo(type_hint='Any', description=''),
-            original_obj=tool
+            parameters=parameters,
+            returns=return_info,
+            class_name=class_name,
+            method_name=method_name.split('.')[-1],
+            original_obj=method
         )
+        
+        return metadata
+
+    def _create_class_instance_metadata(self, tool: Any, tool_name: str) -> ToolMetadata:
+        """Create metadata for a class instance and its methods."""
+        # Get class docstring info
+        docstring_info = self._extract_docstring_info(tool.__class__)
+        
+        # Get all public methods
+        method_metadatas = []
+        for method_name in dir(tool):
+            if not method_name.startswith('_'):
+                method = getattr(tool, method_name)
+                if callable(method):
+                    # Create metadata for method
+                    method_docstring = self._extract_docstring_info(method)
+                    method_metadata = ToolMetadata(
+                        name=f"{tool_name}.{method_name}",
+                        description=method_docstring.description,
+                        tool_type=ToolType.CLASS_METHOD,
+                        parameters=method_docstring.parameters,
+                        returns=method_docstring.returns,
+                        original_obj=method,
+                        class_name=tool_name,
+                        method_name=method_name,
+                        async_tool=inspect.iscoroutinefunction(method)
+                    )
+                    # Store method metadata
+                    self._tools[f"{tool_name}.{method_name}"] = method_metadata
+                    method_metadatas.append(method_metadata)
+        
+        # Create base tool metadata that includes all method descriptions and parameters
+        base_description = docstring_info.description + "\n\nAvailable methods:\n"
+        for method_metadata in method_metadatas:
+            base_description += f"\n- {method_metadata.method_name}: {method_metadata.description}"
+        
+        # Combine parameters from all methods
+        all_parameters = []
+        for method_metadata in method_metadatas:
+            all_parameters.extend(method_metadata.parameters)
+        
+        # Create base tool metadata
+        base_metadata = ToolMetadata(
+            name=tool_name,
+            description=base_description,
+            tool_type=ToolType.CLASS_METHOD,
+            parameters=all_parameters,
+            returns=docstring_info.returns,
+            original_obj=tool,
+            class_name=tool.__class__.__name__,
+            async_tool=any(m.async_tool for m in method_metadatas)
+        )
+        
+        return base_metadata
 
     def _create_class_metadata(self, tool: Type, tool_name: str) -> ToolMetadata:
         """Create metadata for a class."""
@@ -332,6 +443,37 @@ class ToolsCatalog:
         
         return params
 
+    def _extract_docstring_info(self, obj: Any) -> DocstringInfo:
+        """Extract docstring information from a function or class."""
+        # Get docstring
+        docstring = inspect.getdoc(obj) or ""
+        
+        # Parse docstring
+        parsed = docstring_parser.parse(docstring)
+        
+        # Extract parameters
+        parameters = []
+        for param in parsed.params:
+            parameters.append(ParameterInfo(
+                name=param.arg_name,
+                type_hint=param.type_name,
+                description=param.description or "",
+                required=True  # Default to required
+            ))
+        
+        # Extract return info
+        return_info = ReturnInfo(
+            type_hint=parsed.returns.type_name if parsed.returns else None,
+            description=parsed.returns.description if parsed.returns else ""
+        )
+        
+        # Create docstring info
+        return DocstringInfo(
+            description=parsed.short_description or "",
+            parameters=parameters,
+            returns=return_info
+        )
+
     def unregister_tool(self, name: str) -> None:
         """Unregister a tool from the catalog.
         
@@ -371,3 +513,89 @@ class ToolsCatalog:
             # Re-initialize
             cls._initialized = False
             cls._instance = None 
+
+    def register_instance(self, instance: Any, name: str) -> List[str]:
+        """Register an instance and all its methods.
+        
+        Args:
+            instance: The object instance to register
+            name: Base name for the instance
+            
+        Returns:
+            List of registered tool names
+        """
+        print(f"Registering instance {name}")
+        registered_names = []
+        
+        # Register the base instance
+        metadata = self._create_class_instance_metadata(instance, name)
+        self._tools[name] = metadata
+        self._instances[name] = instance
+        registered_names.append(name)
+        
+        # Register all public methods
+        for method_name in dir(instance):
+            if not method_name.startswith('_'):
+                method = getattr(instance, method_name)
+                if callable(method):
+                    full_name = f"{name}.{method_name}"
+                    method_metadata = self._create_method_metadata(method, full_name, instance.__class__.__name__)
+                    self._tools[full_name] = method_metadata
+                    registered_names.append(full_name)
+                    print(f"  Registered method: {full_name}")
+        
+        return registered_names 
+
+    def register_openapi_tool(self, tool: Tool, name: Optional[str] = None) -> str:
+        """Register an OpenAPI tool from a Tool model instance."""
+        tool_name = name or tool.function.name
+        function = tool.function
+
+        # Extract structured parameters for LLM understanding
+        parameters = []
+        if function.parameters:
+            for param_location, params in function.parameters.items():
+                if param_location == 'requestBody':
+                    if isinstance(params, dict) and 'requestBody' in params:
+                        request_body = params['requestBody']
+                        # Add the full request body parameter
+                        parameters.append(ParameterInfo(
+                            name="requestBody",
+                            type_hint="object",
+                            description=request_body.description or "Request body schema",
+                            required=request_body.required
+                        ))
+                        # Also add individual properties for granular access
+                        if request_body.param_schema and request_body.param_schema.properties:
+                            for prop_name, prop_schema in request_body.param_schema.properties.items():
+                                type_hint = prop_schema.type or "object"
+                                parameters.append(ParameterInfo(
+                                    name=prop_name,
+                                    type_hint=type_hint,
+                                    description=prop_schema.description or f"Property {prop_name}",
+                                    required=prop_schema.required is not None and prop_name in prop_schema.required
+                                ))
+                else:
+                    # Handle other parameter locations (query, path, etc.)
+                    for param_name, param in params.items():
+                        type_hint = param.param_schema.type or "object"
+                        parameters.append(ParameterInfo(
+                            name=param_name,
+                            type_hint=type_hint,
+                            description=param.description or f"Parameter {param_name}",
+                            required=param.required
+                        ))
+
+        # Register the tool with extracted metadata
+        self.register_tool(
+            tool_name,
+            ToolMetadata(
+                name=tool_name,
+                description=function.description or f"OpenAPI tool {tool_name}",
+                parameters=parameters,
+                schema=tool.model_dump(),
+                type=ToolType.OPENAPI
+            )
+        )
+
+        return tool_name 

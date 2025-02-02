@@ -1,7 +1,7 @@
 """A simple calculator tool for testing dynamic tool loading."""
 from typing import Dict, Any, Optional
 
-class CalculatorTool:
+class Calculator:
     """A simple calculator tool that supports basic arithmetic operations."""
     
     def __init__(self):
@@ -66,4 +66,4 @@ class CalculatorTool:
         return a / b
 
 # Create an instance to be loaded by the dynamic tools loader
-calculator = CalculatorTool() 
+calculator = Calculator() 

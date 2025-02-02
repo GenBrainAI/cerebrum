@@ -5,6 +5,7 @@ import inspect
 import logging
 import httpx
 import asyncio
+import docstring_parser
 
 from crewai.tools import BaseTool
 from langchain.tools import BaseTool as LangChainTool
@@ -168,6 +169,44 @@ class CurriedProxy(BaseModel):
         except Exception as e:
             return {"error": str(e)}
 
+    async def execute(self, tool_name: str, args: Dict[str, Any]) -> Any:
+        """Execute a tool by name with given arguments.
+        
+        Args:
+            tool_name: The name of the tool to execute
+            args: The arguments to pass to the tool
+            
+        Returns:
+            The result of the tool execution
+        """
+        try:
+            # Get tool metadata
+            metadata = self.catalog.get_tool(tool_name)
+            if not metadata:
+                raise ValueError(f"Tool {tool_name} not found")
+                
+            # Get tool instance
+            tool_instance = self.catalog.get_tool_instance(tool_name)
+            if not tool_instance:
+                raise ValueError(f"Tool instance {tool_name} not found")
+                
+            # Execute the tool based on its type
+            if metadata.tool_type == ToolType.OPENAPI_TOOL:
+                return await self._call_openapi_tool(tool_instance, args)
+            elif metadata.tool_type == ToolType.PYTHON_FUNCTION:
+                if inspect.iscoroutinefunction(tool_instance):
+                    return await tool_instance(**args)
+                return tool_instance(**args)
+            elif metadata.tool_type == ToolType.CLASS_METHOD:
+                if inspect.iscoroutinefunction(tool_instance):
+                    return await tool_instance(**args)
+                return tool_instance(**args)
+            else:
+                raise ValueError(f"Unsupported tool type: {metadata.tool_type}")
+                
+        except Exception as e:
+            raise ValueError(f"Error executing tool {tool_name}: {str(e)}")
+
     def curried_proxy(self, name: str):
         """Create a curried function for the named tool."""
         return lambda args: self.multiset_proxy(name, args)
@@ -220,19 +259,40 @@ class CurriedProxy(BaseModel):
         return self.catalog.get_tool(name)
 
     def export_to_crewai(self) -> List[BaseTool]:
-        """Export tools in CrewAI format."""
-        tools = []
+        """Export tools to CrewAI format."""
+        print("\n🔍 DEBUG: Exporting tools to CrewAI")
+        print(f"📋 Tool names in proxy: {', '.join(sorted(self.tool_names))}")
+        
+        crewai_tools = []
         for tool_name in self.tool_names:
-            metadata = self.catalog.get_tool(tool_name)
-            if metadata:
-                # Create the tool instance with raw description
-                tool = CerebrumCrewAITool(
-                    name=metadata.name,
-                    description=metadata.description,  # Use raw description from metadata
-                    proxy=self
-                )
-                tools.append(tool)
-        return tools
+            print(f"  ⚙️ Processing tool: {tool_name}")
+            try:
+                # Get tool metadata
+                metadata = self.catalog.get_tool_metadata(tool_name)
+                if metadata:
+                    print(f"    Type: {metadata.tool_type}")
+                    description = metadata.description.split('\n')[0] if metadata.description else ''
+                    print(f"    Description: {description}")
+                    if metadata.parameters:
+                        print(f"    Parameters: {[p.name for p in metadata.parameters]}")
+                    
+                    # Create CrewAI tool
+                    crewai_tool = CerebrumCrewAITool(
+                        name=tool_name,
+                        description=metadata.description or "No description available",
+                        proxy=self
+                    )
+                    crewai_tools.append(crewai_tool)
+                    print(f"    ✅ Created CrewAI tool: {tool_name}")
+                else:
+                    print(f"    ❌ No metadata found for {tool_name}")
+                    
+            except Exception as e:
+                print(f"    ❌ Error processing tool {tool_name}: {str(e)}")
+                continue
+        
+        print(f"📦 Total tools exported: {len(crewai_tools)}")
+        return crewai_tools
 
     def export_to_openai(self) -> List[Dict[str, Any]]:
         """Export tools to OpenAI format."""
@@ -257,31 +317,28 @@ class CurriedProxy(BaseModel):
                     }
                     required.append(param_name)
 
-            # Add parameters from metadata
+            # Extract schema from metadata
+            if metadata.schema and 'function' in metadata.schema:
+                function_params = metadata.schema['function'].get('parameters', {})
+                if 'requestBody' in function_params:
+                    request_body = function_params['requestBody'].get('requestBody', {})
+                    if request_body and 'param_schema' in request_body:
+                        param_schema = request_body['param_schema']
+                        if param_schema.get('properties'):
+                            # Convert the schema properties directly
+                            for prop_name, prop_schema in param_schema['properties'].items():
+                                parameters[prop_name] = self._convert_schema(prop_schema)
+                                if request_body.get('required'):
+                                    required.append(prop_name)
+
+            # Add any remaining parameters from metadata
             for param in metadata.parameters:
                 if param.name not in parameters:
-                    description = "Description of the content" if param.name == "description" else "Path to the file to read" if param.name == "file_path" else param.description or f"Parameter {param.name}"
-                    
-                    # Check if we have schema information for this parameter
-                    param_schema = None
-                    if metadata.schema and 'requestBody' in metadata.schema:
-                        request_body = metadata.schema['requestBody'].get('requestBody')
-                        if request_body and request_body.schema:
-                            param_schema = request_body.schema
-                            if param_schema.properties and param.name in param_schema.properties:
-                                param_schema = param_schema.properties[param.name]
-                    
-                    if param_schema:
-                        # Convert the schema to OpenAI format
-                        parameters[param.name] = self._convert_schema(param_schema)
-                    else:
-                        # Fallback to basic type inference
-                        param_type = "object" if "Dict" in param.type_hint or "object" in param.type_hint else "string"
-                        parameters[param.name] = {
-                            "type": param_type,
-                            "description": description
-                        }
-                    
+                    description = param.description or f"Parameter {param.name}"
+                    parameters[param.name] = {
+                        "type": "object" if "Dict" in param.type_hint or "object" in param.type_hint else "string",
+                        "description": description
+                    }
                     if param.required:
                         required.append(param.name)
 
@@ -421,19 +478,13 @@ class CurriedProxy(BaseModel):
         return properties
 
     def _convert_schema(self, schema: Union[ResolvedSchema, Dict[str, Any]]) -> Dict[str, Any]:
-        """Convert schema to OpenAI-compatible format.
-        
-        Args:
-            schema: Either a ResolvedSchema object or a dict representing the schema
-            
-        Returns:
-            Dictionary in OpenAI function parameter format
-        """
+        """Convert schema to OpenAI function schema format."""
         if isinstance(schema, ResolvedSchema):
             converted = {
                 "type": schema.type or "string"  # Default to string if type is None
             }
             
+            # Only add description if it has a value
             if schema.description:
                 converted["description"] = schema.description
                 
@@ -452,26 +503,34 @@ class CurriedProxy(BaseModel):
             
         elif isinstance(schema, dict):
             converted = {
-                "type": schema.get("type", "string")
+                "type": schema.get("type", "string")  # Default to string if type is missing
             }
             
-            if "description" in schema:
+            # Only add description if it exists and has a value
+            if schema.get("description"):
                 converted["description"] = schema["description"]
                 
-            if "properties" in schema:
+            if "properties" in schema and schema["properties"]:
                 converted["properties"] = {}
                 for prop_name, prop_schema in schema["properties"].items():
-                    converted["properties"][prop_name] = self._convert_schema(prop_schema)
+                    prop_converted = self._convert_schema(prop_schema)
+                    # Only add property if conversion returned a valid schema
+                    if prop_converted and isinstance(prop_converted, dict):
+                        converted["properties"][prop_name] = prop_converted
                     
-                if "required" in schema:
+                # Only add required if it exists and has values
+                if schema.get("required"):
                     converted["required"] = schema["required"]
                     
-            if "items" in schema:
-                converted["items"] = self._convert_schema(schema["items"])
+            if "items" in schema and schema["items"]:
+                items_converted = self._convert_schema(schema["items"])
+                if items_converted:
+                    converted["items"] = items_converted
                 
             return converted
         
-        return {"type": "string"}  # Default fallback
+        # Default fallback for unknown schema types
+        return {"type": "string", "description": "Generic parameter"}
 
     def _create_crewai_tool(self, name: str, metadata: ToolMetadata) -> BaseTool:
         """Create a CrewAI tool from tool metadata."""
@@ -614,18 +673,6 @@ class CurriedProxy(BaseModel):
         if hasattr(tool, 'description'):
             self.catalog.update_tool_metadata(name, {'description': tool.description})
 
-    async def execute(self, tool_name: str, args: Dict[str, Any]) -> Any:
-        """Execute a tool by name with given arguments.
-        
-        Args:
-            tool_name: The name of the tool to execute
-            args: The arguments to pass to the tool
-            
-        Returns:
-            The result of the tool execution
-        """
-        return await self.multiset_proxy(tool_name, args)
-
     def _create_args_schema(self, tool_name: str, parameters: Dict[str, str]) -> Type[BaseModel]:
         """Create a Pydantic model for tool arguments."""
         fields = {}
@@ -719,6 +766,46 @@ class CerebrumCrewAITool(BaseTool):
         """Initialize the tool with name, description and proxy."""
         # Get tool metadata to ensure we have all parameters
         metadata = proxy.catalog.get_tool(name)
+        if metadata is None and '.' in name:
+            # Try getting metadata for the method directly
+            base_name, method_name = name.split('.')
+            base_metadata = proxy.catalog.get_tool(base_name)
+            if base_metadata:
+                # Get the tool instance and method
+                tool_instance = proxy.catalog._tool_instances.get(base_name)
+                if tool_instance and hasattr(tool_instance, method_name):
+                    method = getattr(tool_instance, method_name)
+                    if callable(method):
+                        # Create method metadata and store it in the catalog
+                        metadata = proxy.catalog._create_method_metadata(method, name)
+                        metadata.class_name = base_name
+                        metadata.method_name = method_name
+                        # Get docstring info for better description
+                        docstring = inspect.getdoc(method) or f"Method {method_name}"
+                        parsed_docstring = docstring_parser.parse(docstring)
+                        method_description = parsed_docstring.short_description or ""
+                        if parsed_docstring.long_description:
+                            method_description = method_description + "\n\n" + parsed_docstring.long_description
+                        metadata.description = method_description or docstring
+                        # Extract parameters from method signature
+                        sig = inspect.signature(method)
+                        parameters = []
+                        param_descriptions = {param.arg_name: param.description for param in parsed_docstring.params}
+                        for param_name, param in sig.parameters.items():
+                            if param_name == 'self':
+                                continue
+                            parameters.append(ParameterInfo(
+                                name=param_name,
+                                type_hint=str(param.annotation) if param.annotation != inspect.Parameter.empty else 'Any',
+                                description=param_descriptions.get(param_name, f"Parameter {param_name}"),
+                                required=param.default == inspect.Parameter.empty,
+                                default=None if param.default == inspect.Parameter.empty else param.default
+                            ))
+                        metadata.parameters = parameters
+                        # Store the method metadata in the catalog
+                        proxy.catalog._tools[name] = metadata
+                        proxy.catalog._tools[method_name] = metadata  # Also store with just the method name
+
         if metadata is None:
             raise ValueError(f"Tool {name} not found in catalog")
 
@@ -726,18 +813,19 @@ class CerebrumCrewAITool(BaseTool):
         field_definitions = {}
         
         # Add parameters from required_args if available
-        if hasattr(metadata.original_obj, 'required_args'):
+        if hasattr(metadata, 'original_obj') and hasattr(metadata.original_obj, 'required_args'):
             for param_name, type_hint in metadata.original_obj.required_args.items():
                 python_type = eval(type_hint)
                 description = "Description of the content" if param_name == "description" else "Path to the file to read" if param_name == "file_path" else f"Parameter {param_name}"
                 field_definitions[param_name] = (python_type, Field(..., description=description))
 
         # Add parameters from metadata
-        for param in metadata.parameters:
-            if param.name not in field_definitions:
-                python_type = eval(param.type_hint) if param.type_hint else str
-                description = "Description of the content" if param.name == "description" else "Path to the file to read" if param.name == "file_path" else param.description or f"Parameter {param.name}"
-                field_definitions[param.name] = (python_type, Field(..., description=description))
+        if hasattr(metadata, 'parameters'):
+            for param in metadata.parameters:
+                if param.name not in field_definitions:
+                    python_type = eval(param.type_hint) if param.type_hint else str
+                    description = "Description of the content" if param.name == "description" else "Path to the file to read" if param.name == "file_path" else param.description or f"Parameter {param.name}"
+                    field_definitions[param.name] = (python_type, Field(..., description=description))
 
         # Create schema class
         schema = create_model(

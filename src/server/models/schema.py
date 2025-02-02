@@ -29,7 +29,7 @@ class ParameterSchema(BaseModel):
     in_: Optional[str] = Field(None, alias='in')
     description: Optional[str] = None
     required: Optional[bool] = None
-    schema: ResolvedSchema
+    param_schema: ResolvedSchema = Field(alias='schema')
 
     model_config = {
         "populate_by_name": True,

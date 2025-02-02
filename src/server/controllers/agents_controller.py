@@ -55,6 +55,7 @@ async def create_crew(
     Create a CrewAI crew. Maintains original crew creation logic
     without context dependencies.
     """
+    print("\n🔄 Creating CrewAI crew...")
     llm = CrewLLM()
     try:
         # Create agents with tools from proxy
@@ -62,9 +63,14 @@ async def create_crew(
         agent_tools = []
         
         if curried_proxy:
+            print("🛠️ Curried proxy provided, exporting tools...")
             agent_tools = curried_proxy.export_to_crewai()
+            print(f"🔧 Exported {len(agent_tools)} tools from proxy")
+        else:
+            print("⚠️ No curried proxy provided, agents will have no tools")
             
         for agent_data in request.agents:
+            print(f"\n👤 Creating agent: {agent_data.role}")
             # Get LLM from agent data or default to GPT-4
             agent_llm = getattr(llm, agent_data.llm_model) if hasattr(agent_data, 'llm_model') else llm.OpenAIGPT4
             
@@ -76,23 +82,28 @@ async def create_crew(
                 verbose=True,
                 llm=agent_llm
             )
+            print(f"  ✅ Agent created with {len(agent_tools)} tools")
             agents.append(agent)
 
         # Create tasks
         tasks = []
         for task_data in request.tasks:
+            print(f"\n📋 Creating task: {task_data.description[:50]}...")
             agent = next(
                 (a for a in agents if a.role == task_data.agent_role),
                 None
             )
             if not agent:
-                raise HTTPException(status_code=400, detail=f"Agent role '{task_data.agent_role}' not found.")
+                error_msg = f"Agent role '{task_data.agent_role}' not found."
+                print(f"  ❌ {error_msg}")
+                raise HTTPException(status_code=400, detail=error_msg)
                 
             task = Task(
                 description=task_data.description,
                 expected_output=str(task_data.expected_output),
                 agent=agent
             )
+            print(f"  ✅ Task created and assigned to agent: {task_data.agent_role}")
             tasks.append(task)
 
         # Create the crew
@@ -101,6 +112,10 @@ async def create_crew(
             tasks=tasks,
             verbose=True
         )
+        print("\n✨ Crew created successfully!")
+        print(f"  - {len(agents)} agents")
+        print(f"  - {len(tasks)} tasks")
+        print(f"  - {len(agent_tools)} tools per agent\n")
 
         return crew
 

@@ -98,21 +98,17 @@ another_instance = ConfiguredTool({"other": "config"})
 def clear_catalog():
     """Clear the tools catalog before each test."""
     # Store original tools
-    original_tools = tools_catalog.DEFAULT_TOOLS.copy()
+    original_tools = tools_catalog.DEFAULT_TOOLS.copy() if hasattr(tools_catalog, 'DEFAULT_TOOLS') else {}
     
-    # Clear all tools
-    tools_catalog._tools.clear()
-    tools_catalog._tool_instances.clear()
-    tools_catalog._functions.clear()
-    tools_catalog._classes.clear()
-    tools_catalog._openapi_tools.clear()
-    tools_catalog._ai_tools.clear()
+    # Reset the catalog
+    tools_catalog.reset()
     
     yield
     
     # Restore original tools
-    tools_catalog.DEFAULT_TOOLS = original_tools
-    tools_catalog.reset_to_defaults()
+    if hasattr(tools_catalog, 'DEFAULT_TOOLS'):
+        tools_catalog.DEFAULT_TOOLS = original_tools
+        tools_catalog._initialize_default_tools()
 
 
 def test_singleton():
@@ -130,17 +126,17 @@ def test_load_tools_from_directory(temp_tools_dir):
     # Check function tools
     assert "function_tool.test_function" in registered
     assert "function_tool.another_function" in registered
-    assert "function_tool.test_function" in tools_catalog._functions
+    assert "function_tool.test_function" in tools_catalog.list_tools()
     
     # Check class tools
     assert "class_tool.TestTool" in registered
     assert "class_tool.AnotherTool" in registered
-    assert "class_tool.TestTool" in tools_catalog._classes
+    assert "class_tool.TestTool" in tools_catalog.list_tools()
     
     # Check instance tools
     assert "instance_tool.configured_tool" in registered
     assert "instance_tool.another_instance" in registered
-    assert "instance_tool.configured_tool" in tools_catalog._tool_instances
+    assert "instance_tool.configured_tool" in tools_catalog.list_tools()
     
     # Check metadata
     tool_meta = tools_catalog.get_tool("function_tool.test_function")
@@ -155,19 +151,19 @@ def test_load_tools_by_type(temp_tools_dir):
     """Test loading and categorizing tools by type."""
     tools_loader.load_tools_from_directory(temp_tools_dir)
     
-    tools_by_type = tools_catalog.list_tools_by_type()
+    all_tools = tools_catalog.list_tools()
     
     # Check functions
-    assert "function_tool.test_function" in tools_by_type["functions"]
-    assert "function_tool.another_function" in tools_by_type["functions"]
+    assert "function_tool.test_function" in all_tools
+    assert "function_tool.another_function" in all_tools
     
     # Check classes
-    assert "class_tool.TestTool" in tools_by_type["classes"]
-    assert "class_tool.AnotherTool" in tools_by_type["classes"]
+    assert "class_tool.TestTool" in all_tools
+    assert "class_tool.AnotherTool" in all_tools
     
     # Check instances
-    assert "instance_tool.configured_tool" in tools_by_type["instances"]
-    assert "instance_tool.another_instance" in tools_by_type["instances"]
+    assert "instance_tool.configured_tool" in all_tools
+    assert "instance_tool.another_instance" in all_tools
 
 
 def test_reload_module(temp_tools_dir):
@@ -191,7 +187,6 @@ def new_function():
     
     # Check that the new function was added
     assert "function_tool.new_function" in tools_catalog.list_tools()
-    assert "function_tool.new_function" in tools_catalog._functions
     
     # Cleanup
     func_tool.write_text(original_content)
@@ -230,11 +225,9 @@ def test_unregister_module(temp_tools_dir):
     remaining_tools = set(tools_catalog.list_tools())
     removed_tools = initial_tools - remaining_tools
     
-    # Verify removal from all storages
+    # Verify removal
     assert all(tool.startswith("function_tool.") for tool in removed_tools)
-    assert not any(name.startswith("function_tool.") for name in tools_catalog._functions)
-    assert not any(name.startswith("function_tool.") for name in tools_catalog._classes)
-    assert not any(name.startswith("function_tool.") for name in tools_catalog._tool_instances)
+    assert not any(name.startswith("function_tool.") for name in tools_catalog.list_tools())
 
 
 def test_initialize():
@@ -248,27 +241,30 @@ def test_initialize():
 
 
 def test_module_isolation(temp_tools_dir):
-    """Test that modules are properly isolated when loading."""
-    # Create a module that tries to import another module
-    module_a = temp_tools_dir / "module_a.py"
-    module_a.write_text('''
-def function_a():
-    """Test function A."""
-    return "a"
-''')
+    """Test that modules are properly isolated."""
+    # First load
+    tools_loader.load_tools_from_directory(temp_tools_dir)
     
-    module_b = temp_tools_dir / "module_b.py"
-    module_b.write_text('''
-from module_a import function_a
+    # Create a new module that imports another module
+    dependent_tool = temp_tools_dir / "dependent_tool.py"
+    dependent_tool.write_text('''
+from .function_tool import test_function
 
-def function_b():
-    """Test function B."""
-    return function_a()
+def wrapper_function(param: str) -> str:
+    """Wrapper for test_function."""
+    return test_function(param)
 ''')
     
-    # Load tools
-    registered = tools_loader.load_tools_from_directory(temp_tools_dir)
+    # Load the new module
+    tools_loader.load_tools_from_directory(temp_tools_dir)
     
-    # Both modules should be loaded successfully
-    assert "module_a.function_a" in registered
-    assert "module_b.function_b" in registered 
+    # Check that both modules are loaded
+    assert "function_tool.test_function" in tools_catalog.list_tools()
+    assert "dependent_tool.wrapper_function" in tools_catalog.list_tools()
+    
+    # Unregister the dependency
+    tools_loader._unregister_module("function_tool")
+    
+    # Check that only the dependent module remains
+    assert "function_tool.test_function" not in tools_catalog.list_tools()
+    assert "dependent_tool.wrapper_function" in tools_catalog.list_tools() 

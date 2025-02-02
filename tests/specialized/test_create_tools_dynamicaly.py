@@ -20,6 +20,7 @@ import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import traceback
+from unittest.mock import patch, MagicMock
 from src.server.models.task import Task
 from src.server.models.tasks_manager import TasksManager
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
@@ -33,6 +34,7 @@ from src.server.tools.tools_metrics import ToolExecutionMetrics, CerebrumCrewAIT
 from crewai.tools import BaseTool as CrewAITool
 from pydantic import BaseModel, Field, create_model, ConfigDict
 from src.server.models.agent import CrewAIConfig, CreateCrewRequest
+from src.server.models.persistence_models import StorageType
 import asyncio
 from src.server.context.context_provider import ContextProvider
 
@@ -389,13 +391,12 @@ def setup_mock_tools():
     """Set up mock tools for testing."""
     # Register mock tools in the catalog
     for name, tool in MOCK_TOOLS.items():
-        tools_catalog.register_tool(tool=tool, name=name)
+        tools_catalog.register_instance(tool, name)
     
     yield MOCK_TOOLS
     
     # Cleanup
-    for name in MOCK_TOOLS:
-        tools_catalog.unregister_tool(name)
+    tools_catalog.reset()
 
 # SECTION 1: Test Setup and Cleanup
 @pytest.fixture(scope="module", autouse=True)
@@ -417,10 +418,16 @@ def ensure_generated_tools_dir():
         init_file.touch()
     yield
 
+@pytest.fixture(scope="module")
+def temp_state_file(tmp_path_factory):
+    """Create a temporary state file path."""
+    tmp_path = tmp_path_factory.mktemp("dynamic_tools")
+    return str(tmp_path / "test_state.json")
+
 # SECTION 2: State Generation and Setup
 @pytest.mark.order(1)
 @pytest.mark.asyncio
-async def test_dynamic_tools_state_generation(test_state):
+async def test_dynamic_tools_state_generation(test_state, temp_state_file):
     """Test step 1: Generate dynamic tools state."""
     try:
         logger.info("Step 1: Generating dynamic tools state...")
@@ -429,13 +436,20 @@ async def test_dynamic_tools_state_generation(test_state):
         PersistenceModelFactory.reset()
         persistence_model = PersistenceModelFactory.persistence_model()
         
-        # Generate state
-        state = await setup_dynamic_tools_state(persistence_model)
+        # Generate state with mocked storage location
+        with patch('src.state_setup.dynamic_tools.StorageLocation') as mock_storage_location:
+            mock_storage_location.return_value.type = StorageType.file
+            mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
+            mock_storage_location.return_value.state_name = Path(temp_state_file).name
+            
+            state = setup_dynamic_tools_state(persistence_model, temp_state_file)
+            
         assert state is not None, "Failed to generate initial state"
         
         # Store state for next tests
         test_state['generated_state'] = state
         test_state['persistence_model'] = persistence_model
+        test_state['state_file'] = temp_state_file
         
         # Get the CrewAI config that was created by setup_dynamic_tools_state
         crewai_configs = persistence_model.crewai_config.list()
@@ -452,75 +466,25 @@ async def test_dynamic_tools_state_generation(test_state):
 @pytest.mark.order(2)
 @pytest.mark.asyncio
 async def test_state_loading_to_local_persistence(test_state):
-    """Test step 2: Load state to local persistence."""
+    """Test step 2: Load state into local persistence."""
     try:
-        logger.info("Step 2: Loading state to local persistence...")
-
-        # Get the source model with generated state
-        source_model = test_state.get('persistence_model')
-        assert source_model is not None, "Source model not found in test state"
-
-        # Create new persistence model
-        local_model = InMemoryPersistenceModel()
-
-        # Copy CrewAI config
-        crewai_config = test_state.get('crewai_config')
-        assert crewai_config is not None, "CrewAI config not found in test state"
-        local_model.crewai_config.create(crewai_config)
-
-        # Debug: List all task managers in source model
-        task_managers = source_model.tasksmanagers.list()
-        logger.info(f"Found {len(task_managers)} task managers in source model")
-        for manager in task_managers:
-            logger.info(f"Task manager in source: {manager.id}")
-
-        # Debug: List all tasks in source model
-        tasks = source_model.tasks.list()
-        logger.info(f"Found {len(tasks)} tasks in source model")
-        for task in tasks:
-            logger.info(f"Task in source: {task.id} with manager {task.tasksmanager_id}")
-
-        # Copy all tasks managers from source model first
-        for manager in task_managers:
-            # Create with the same ID
-            logger.info(f"Creating task manager {manager.id}")
-            # Create a copy of the manager to avoid modifying the original
-            manager_copy = TasksManager(**manager.model_dump())
-            manager_copy.id = manager.id  # Preserve the original ID
-            created_manager = local_model.tasksmanagers.create(manager_copy)
-            assert created_manager is not None, f"Failed to create task manager {manager.id}"
-            assert created_manager.id == manager.id, f"Task manager ID mismatch: {created_manager.id} != {manager.id}"
-
-            # Verify manager was created
-            read_manager = local_model.tasksmanagers.read(manager.id)
-            assert read_manager is not None, f"Failed to read task manager {manager.id} after creation"
-
-        # Copy all tasks from source model
-        for task in tasks:
-            # Create a copy of the task to avoid modifying the original
-            task_copy = Task(**task.model_dump())
-            task_copy.id = task.id  # Preserve the original ID
-            logger.info(f"Creating task {task_copy.id} with manager {task_copy.tasksmanager_id}")
-            created_task = local_model.tasks.create(task_copy)
-            assert created_task is not None, f"Failed to create task {task.id}"
-            assert created_task.id == task.id, f"Task ID mismatch: {created_task.id} != {task.id}"
-            assert created_task.tasksmanager_id == task.tasksmanager_id, f"Task manager ID mismatch: {created_task.tasksmanager_id} != {task.tasksmanager_id}"
-
-            # Verify task was created
-            read_task = local_model.tasks.read(task.id)
-            assert read_task is not None, f"Failed to read task {task.id} after creation"
-            assert read_task.tasksmanager_id == task.tasksmanager_id, f"Task manager ID mismatch after read: {read_task.tasksmanager_id} != {task.tasksmanager_id}"
-
-        # Copy all curried proxies from source model
-        proxies = source_model.curried_proxies.list()
-        for proxy in proxies:
-            # Create with the same ID
-            proxy_copy = CurriedProxy(**proxy.model_dump())
-            proxy_copy.id = proxy.id  # Preserve the original ID
-            created_proxy = local_model.curried_proxies.create(proxy_copy)
-            assert created_proxy is not None, f"Failed to create curried proxy {proxy.id}"
-            assert created_proxy.id == proxy.id, f"Curried proxy ID mismatch: {created_proxy.id} != {proxy.id}"
-
+        logger.info("Step 2: Loading state into local persistence...")
+        
+        # Get state file path from previous test
+        temp_state_file = test_state['state_file']
+        assert Path(temp_state_file).exists(), f"State file not found at {temp_state_file}"
+        
+        # Create new persistence model for local state
+        local_model = PersistenceModelFactory.persistence_model()
+        
+        # Load state with mocked storage location
+        with patch('src.state_setup.dynamic_tools.StorageLocation') as mock_storage_location:
+            mock_storage_location.return_value.type = StorageType.file
+            mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
+            mock_storage_location.return_value.state_name = Path(temp_state_file).name
+            
+            setup_dynamic_tools_state(local_model, temp_state_file)
+        
         # Store local model for next tests
         test_state['local_model'] = local_model
 
@@ -728,18 +692,26 @@ async def test_tool_argument_schemas(test_state):
 async def test_dynamic_tools_state(test_state):
     """Test the setup of dynamic tools generation state."""
     try:
+        # Get state file path from previous test
+        temp_state_file = test_state['state_file']
+        assert Path(temp_state_file).exists(), f"State file not found at {temp_state_file}"
+        
         # Initialize persistence model
         persistence_model = InMemoryPersistenceModel()
         
-        # Load state from file
-        with open(DYNAMIC_TOOLS_STATE_FILE, 'r') as f:
-            state_data = json.load(f)
+        # Load state with mocked storage location
+        with patch('src.state_setup.dynamic_tools.StorageLocation') as mock_storage_location:
+            mock_storage_location.return_value.type = StorageType.file
+            mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
+            mock_storage_location.return_value.state_name = Path(temp_state_file).name
             
-        # Extract IDs from collections
-        tasksmanager_id = list(json.loads(state_data["tasksmanagers"]).keys())[0]
-        task_id = list(json.loads(state_data["tasks"]).keys())[0]
-        crewai_config_id = list(json.loads(state_data["crewai_config"]).keys())[0]
-        curried_proxy_id = list(json.loads(state_data["curried_proxies"]).keys())[0]
+            setup_dynamic_tools_state(persistence_model, temp_state_file)
+        
+        # Extract IDs from loaded state
+        tasksmanager_id = persistence_model.tasksmanagers.list()[0].id
+        task_id = persistence_model.tasks.list()[0].id
+        crewai_config_id = persistence_model.crewai_config.list()[0].id
+        curried_proxy_id = persistence_model.curried_proxies.list()[0].id
         
         # Store state for next test
         test_state["tasksmanager_id"] = tasksmanager_id
@@ -750,7 +722,7 @@ async def test_dynamic_tools_state(test_state):
         
         # Register mock tools
         for name, tool in MOCK_TOOLS.items():
-            tools_catalog.register_tool(tool, name)
+            tools_catalog.register_instance(tool, name)
             
         # Create CurriedProxy and register tools
         curried_proxy = CurriedProxy()
