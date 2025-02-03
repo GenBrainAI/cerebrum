@@ -25,6 +25,7 @@ import logging
 import json
 from pathlib import Path
 import streamlit as st
+from ...extensions.dynamic_tools_loader import tools_loader
 
 class ToolsCatalogController:
     """Controller for tools catalog view with specialized state support."""
@@ -39,6 +40,11 @@ class ToolsCatalogController:
         self.tree_component = TreeSelectComponent(self.handle_node_click)
         self.logger = logging.getLogger(__name__)
         self.task_runner = None  # Will be initialized after local persistence is loaded
+        
+        # Initialize dynamic tools loader
+        tools_loader.initialize()
+        tools_loader.start_file_watching()
+        print("✅ Dynamic tools loader initialized and watching for changes")
         
     async def initialize(self):
         """Initialize controller with specialized state."""

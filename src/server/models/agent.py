@@ -51,7 +51,6 @@ class CreateCrewRequest(BaseModel):
     agents: List[AgentModel]
     tasks: List[TaskModel]
     tools_proxy_collection: Optional[ToolsProxyCollection] = None
-
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 @dataclass
