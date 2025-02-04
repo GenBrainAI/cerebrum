@@ -40,7 +40,7 @@ TOOLS = {
 class CrewLLM:
     """LLM configuration for CrewAI agents."""
     def __init__(self):
-        self.OpenAIGPT4 = ChatOpenAI(model_name="gpt-4o", temperature=0.7)
+        self.OpenAIGPT4 = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.7)
         self.Ollama = Ollama(model="llama3.2:latest")
 
 def create_manager_agent() -> AgentModel:
@@ -84,7 +84,7 @@ async def create_crew(
             
         for agent_data in request.agents:
             print(f"\n👤 Creating agent: {agent_data.role}")
-            # Get LLM from agent data or default to gpt-4o-mini
+            # Get LLM from agent data or default to gpt-4
             agent_llm = getattr(llm, agent_data.llm_model) if hasattr(agent_data, 'llm_model') else llm.OpenAIGPT4
             
             # For hierarchical process, manager gets all tools
@@ -140,13 +140,19 @@ async def create_crew(
                 print("  ➕ Added manager review task")
                 tasks.append(review_task)
 
-        # Create the crew
-        crew = Crew(
-            agents=agents,
-            tasks=tasks,
-            verbose=True,
-            process=request.process  # Pass process type to Crew
-        )
+        # Create the crew with manager_llm for hierarchical process
+        crew_kwargs = {
+            "agents": agents,
+            "tasks": tasks,
+            "verbose": True,
+            "process": request.process
+        }
+        
+        # Add manager_llm for hierarchical process
+        if request.process == Process.hierarchical:
+            crew_kwargs["manager_llm"] = llm.OpenAIGPT4
+            
+        crew = Crew(**crew_kwargs)
         print("\n✨ Crew created successfully!")
         print(f"  - {len(agents)} agents")
         print(f"  - {len(tasks)} tasks")

@@ -141,6 +141,7 @@ class CrewAIConfig(BaseModel):
     create_crew: Optional[CreateCrewRequest] = Field(alias="create_crew", default=None)
     created_at: Optional[datetime] = Field(alias="created_at", default=None)
     updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
+    process: Optional[Process] = Field(alias="process", default=Process.sequential)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

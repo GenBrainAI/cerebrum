@@ -63,8 +63,6 @@ class ToolsCatalog:
             self.DEFAULT_TOOLS = {}  # Store default tools for test isolation
             self._initialize_default_tools()
             self._initialized = True
-        else:
-            self._initialize_default_tools()
 
     def _extract_docstring_info(self, obj: Any, name: str, tool_type: ToolType = ToolType.PYTHON_FUNCTION) -> ToolMetadata:
         """Extract metadata from a function or method's docstring."""
@@ -745,4 +743,5 @@ class ToolsCatalog:
             for tool in tools:
                 self.register_tool(tool)
 
-tools_catalog = ToolsCatalog() 
+tools_catalog = ToolsCatalog()
+print("🔧 Tools catalog initialized with tools:", tools_catalog.list_tools()) 

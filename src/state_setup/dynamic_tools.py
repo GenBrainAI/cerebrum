@@ -27,7 +27,7 @@ from src.server.models.task import Task
 from src.server.controllers.agents_controller import CreateCrewRequest, AgentModel
 from src.server.models.agent import ToolModel
 from src.server.models.persistence_models import StorageLocation, StorageType
-from src.server.controllers.persistence_controller import save_to_storage
+from src.server.controllers.persistence_controller import save_to_storage, load_from_storage
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.context.context_provider import ContextProvider
 from src.server.context.crew_context_enhancer import CrewContextEnhancer, CrewContextConfig
@@ -118,7 +118,7 @@ def load_persistence_state(persistence_model: InMemoryPersistenceModel, file_pat
     try:
         state_location = StorageLocation(
             type=StorageType.file,
-            location="persistent_state",
+            location="state/specialized",
             state_name="dynamic_tools_state.json"
         )
         
@@ -126,7 +126,9 @@ def load_persistence_state(persistence_model: InMemoryPersistenceModel, file_pat
             logger.info(f"No existing state file found at {state_location.location}/{state_location.state_name}")
             return
             
-        # State will be loaded automatically by the persistence model
+        # Load state using the persistence controller
+        state_data = load_from_storage(state_location)
+        persistence_model.from_json(state_data)
         logger.info(f"✅ Loaded persistence state from {state_location.location}/{state_location.state_name}")
     except Exception as e:
         logger.error(f"❌ Failed to load persistence state: {str(e)}")
@@ -312,13 +314,14 @@ async def create_technical_lead_agent() -> AgentModel:
                for tool_name in tools_catalog.list_tools()]
     )
 
-async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state_file: str = "persistent_state/dynamic_tools_state.json") -> Dict[str, Any]:
+async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state_file: str = "state/specialized/dynamic_tools_state.json") -> Dict[str, Any]:
     """Set up the dynamic tools state with in-memory persistence and JSON serialization."""
     try:
         print("\n🔄 Setting up dynamic tools state...")
         
         # Initialize unified context manager
         context_manager = UnifiedContextManager()
+        await context_manager.initialize()  # Initialize async components
         
         # Register tools if not already registered
         if not tools_catalog.list_tools():
@@ -328,9 +331,13 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
         available_tools = tools_catalog.list_tools()
         print(f"📦 Available tools in catalog: {available_tools}")
 
-        # Then try to load existing state
+        # Try to load existing state
         print("\n🔄 Loading existing state...")
-        load_persistence_state(persistence_model, state_file)
+        try:
+            load_persistence_state(persistence_model, state_file)
+        except Exception as e:
+            print(f"⚠️ Could not load existing state: {str(e)}")
+            print("🆕 Creating new state...")
 
         # Create curried proxy if not exists
         existing_proxies = persistence_model.curried_proxies.list()
@@ -409,77 +416,110 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
                     agents=[
                         technical_lead,  # Use enhanced Technical Lead
                         AgentModel(
-                            name="Tools Architect",
-                            role="Lead Tools Architect",
-                            goal="Design robust and reusable tools with clear interfaces",
-                            backstory="Expert in designing modular and maintainable tools",
+                            name="File Operations Manager",
+                            role="File Operations Manager",
+                            goal="Manage file operations and ensure consistent file naming across iterations",
+                            backstory="""Expert in file management and version control.
+                            Responsible for:
+                            1. Maintaining consistent file names
+                            2. Managing file updates
+                            3. Preventing duplicate files
+                            4. Coordinating between implementation and test files""",
                             tools=[
-                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
-                                ToolModel(name="internal_testing_tools", description="Tool for testing operations")
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
                             ]
                         ),
                         AgentModel(
-                            name="Implementation Engineer",
+                            name="Tools Developer",
                             role="Tools Developer",
-                            goal="Implement tools following the design specifications and save them to the dist directory",
+                            goal="Implement tools following the design specifications and save them to the correct files",
                             backstory="Skilled in writing clean, efficient, and well-tested code",
                             tools=[
                                 ToolModel(name="internal_file_tools", description="Tool for file operations"),
-                                ToolModel(name="internal_testing_tools", description="Tool for testing operations")
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files")
                             ]
                         ),
                         AgentModel(
                             name="Test Engineer",
                             role="Test Engineer",
-                            goal="Create and execute comprehensive tests for the implemented tools",
+                            goal="Create and execute tests for the implemented tools",
                             backstory="Expert in test-driven development and quality assurance",
                             tools=[
                                 ToolModel(name="internal_testing_tools", description="Tool for testing operations"),
-                                ToolModel(name="internal_file_tools", description="Tool for file operations")
+                                ToolModel(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
+                                ToolModel(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
                             ]
-                        ),
-                        AgentModel(
-                            name="Code Saver",
-                            role="Code Extractor",
-                            goal="Extract and save clean code from markdown-formatted implementations",
-                            backstory="Expert in parsing and extracting code from documentation and saving it to the correct location",
-                            tools=[ToolModel(name="internal_file_tools", description="Tool for file operations")]
                         )
                     ],
                     tasks=[
                         {
-                            "name": "Design Complex Fibonacci Tool",
-                            "description": "Design a tool that calculates Fibonacci sequence for complex numbers, starting with i+i and i+2i. The tool should handle complex number arithmetic and provide clear interfaces for sequence generation.",
-                            "agent_role": "Lead Tools Architect",
-                            "expected_output": "Tool design specification for complex number Fibonacci calculator",
-                            "tools": [ToolModel(name="internal_file_tools", description="Tool for file operations")],
-                            "next": "Implement Complex Fibonacci Tool"
+                            "name": "Setup File Structure",
+                            "description": """Initialize and manage the file structure for the complex Fibonacci implementation.
+                            
+                            Required files:
+                            1. src/tools/complex_fibonacci.py - Main implementation file
+                            2. src/tools/tests/test_complex_fibonacci.py - Test suite file
+                            
+                            Tasks:
+                            1. Create necessary directories
+                            2. Initialize files with basic structure
+                            3. Ensure proper file permissions""",
+                            "agent_role": "File Operations Manager",
+                            "expected_output": "File structure initialized successfully",
+                            "tools": [
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                            ]
                         },
                         {
-                            "name": "Implement Complex Fibonacci Tool",
-                            "description": "Implement the complex number Fibonacci calculator following the design specifications. Provide the implementation in markdown format with explanations.",
+                            "name": "Implement Complex Fibonacci",
+                            "description": """Implement the complex Fibonacci calculator in src/tools/complex_fibonacci.py.
+                            
+                            Initial values:
+                            - First term (z0) = 2i
+                            - Second term (z1) = 3i
+                            
+                            The sequence follows the standard Fibonacci rule where each term is the sum of the previous two terms:
+                            For n >= 2: z[n] = z[n-1] + z[n-2]
+                            
+                            Requirements:
+                            1. Use the EXACT file path: src/tools/complex_fibonacci.py
+                            2. Implement as a single function: complex_fibonacci(n: int) -> complex
+                            3. Return complex numbers (using Python's complex type)
+                            4. Include proper error handling for negative inputs""",
                             "agent_role": "Tools Developer",
-                            "expected_output": "Implemented complex number Fibonacci tool code with explanations in markdown",
-                            "tools": [ToolModel(name="internal_file_tools", description="Tool for file operations")],
-                            "depends_on": ["Design Complex Fibonacci Tool"],
-                            "next": "Create Tests"
+                            "expected_output": "Complex Fibonacci implementation saved to src/tools/complex_fibonacci.py",
+                            "tools": [
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files")
+                            ]
                         },
                         {
                             "name": "Create Tests",
-                            "description": "Create comprehensive unit tests for the complex Fibonacci tool, including edge cases and error handling",
+                            "description": """Create tests for the complex Fibonacci implementation in src/tools/tests/test_complex_fibonacci.py.
+                            
+                            Test requirements:
+                            1. Use the EXACT file path: src/tools/tests/test_complex_fibonacci.py
+                            2. Test the first 5 terms: [2i, 3i, 5i, 8i, 13i]
+                            3. Test error handling for negative inputs
+                            4. Use Python's unittest framework
+                            
+                            Test structure:
+                            - test_basic_sequence: Verify the first 5 terms
+                            - test_negative_input: Verify error handling""",
                             "agent_role": "Test Engineer",
-                            "expected_output": "Complete test suite for the complex Fibonacci tool",
-                            "tools": [ToolModel(name="internal_testing_tools", description="Tool for testing operations")],
-                            "depends_on": ["Implement Complex Fibonacci Tool"],
-                            "next": "Save Code to Dist"
-                        },
-                        {
-                            "name": "Save Code to Dist",
-                            "description": "Extract the Python code from the markdown-formatted implementation and save it using internal_file_tools.save_implementation. Steps: 1) Extract only the actual Python code from the markdown, ignoring explanations and formatting. 2) Call internal_file_tools.save_implementation(code=extracted_code, tool_name='complex_fibonacci_tool'). The function will automatically save the file as 'complex_fibonacci_tool.py' in the dist directory.",
-                            "agent_role": "Code Extractor",
-                            "expected_output": "Clean Python code saved to dist directory",
-                            "tools": [ToolModel(name="internal_file_tools", description="Tool for file operations")],
-                            "depends_on": ["Create Tests"]
+                            "expected_output": "Test suite saved to src/tools/tests/test_complex_fibonacci.py",
+                            "tools": [
+                                ToolModel(name="internal_testing_tools", description="Tool for testing operations"),
+                                ToolModel(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
+                                ToolModel(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                            ]
                         }
                     ]
                 ),

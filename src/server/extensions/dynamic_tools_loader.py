@@ -1,20 +1,16 @@
 from __future__ import annotations
-import os
 import sys
 import inspect
 import importlib.util
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Type, Union
 from pathlib import Path
 import time
-import json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from uuid import uuid4
 
 from ..tools.tools_catalog import ToolsCatalog, tools_catalog
 from ..models.tools_descriptors import ParameterInfo, ToolMetadata, ToolType, ReturnInfo
-from ..persistence.in_memory_persistence import InMemoryPersistenceModel
-from ..persistence.persistence_model_factory import PersistenceModelFactory
 
 # Create singleton instance of ToolsCatalog
 tools_catalog = ToolsCatalog()

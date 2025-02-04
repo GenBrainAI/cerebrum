@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import hashlib
 import io
+import uuid
 
 from .context_provider import ContextProvider
 from .knowledge_base import KnowledgeBase
@@ -91,8 +92,15 @@ class UnifiedContextManager:
         self.prepared_data: Dict[str, PreparedData] = {}
         self._load_prepared_data()
         
-        # Load documentation into knowledge base
-        self._initialize_documentation()
+        # Initialize documentation asynchronously in initialize method
+        self._documentation_initialized = False
+    
+    async def initialize(self):
+        """Initialize all context components."""
+        await self.context_provider.initialize()
+        if not self._documentation_initialized:
+            await self._initialize_documentation()
+            self._documentation_initialized = True
     
     def _load_prepared_data(self):
         """Load previously prepared data."""
@@ -302,9 +310,9 @@ class UnifiedContextManager:
         """Add context to a task."""
         try:
             # Add to knowledge base if needed
+            source_id = None
             if context_type == "knowledge":
-                entry_id = self.knowledge_base.add_entry(content, metadata)
-                source_id = entry_id
+                source_id = self.knowledge_base.add_entry(content, metadata)
             elif context_type == "vector":
                 # Add to vector store
                 try:
@@ -321,6 +329,16 @@ class UnifiedContextManager:
             if not source_id:
                 logger.error("No source ID available for context")
                 return False
+            
+            # Create context reference
+            context_ref = {
+                'id': str(uuid.uuid4()),
+                'type': context_type,
+                'source_id': source_id,
+                'metadata': metadata or {},
+                'priority': priority,
+                'created_at': datetime.now()
+            }
             
             # Add context reference through provider
             try:
@@ -496,6 +514,64 @@ class UnifiedContextManager:
         except Exception as e:
             logger.error(f"Error adding repository: {str(e)}")
             raise
+    
+    async def prepare_context(self, task_id: str) -> Dict[str, Any]:
+        """Prepare context for task execution."""
+        try:
+            # Get all context for the task
+            contexts = await self.get_task_context(task_id)
+            
+            # Organize context by type
+            organized_context = {
+                "knowledge": [],
+                "vector": [],
+                "system": [],
+                "task": []
+            }
+            
+            for context in contexts:
+                context_type = context.get("type", "knowledge")
+                if context_type in organized_context:
+                    organized_context[context_type].append(context)
+            
+            # Add task-specific context
+            task_context = self.context_provider.task_context_manager.get_task_context(task_id)
+            if task_context:
+                organized_context["task"].append({
+                    "task_id": task_id,
+                    "metadata": task_context.metadata if hasattr(task_context, 'metadata') else {}
+                })
+            
+            return organized_context
+            
+        except Exception as e:
+            logger.error(f"Error preparing context: {str(e)}")
+            return {}
+    
+    async def update_context(self, task_id: str, context_data: Dict[str, Any]) -> bool:
+        """Update context with task execution results."""
+        try:
+            # Get existing task context
+            task_context = self.context_provider.task_context_manager.get_task_context(task_id)
+            if not task_context:
+                logger.warning(f"No task context found for task {task_id}")
+                return False
+            
+            # Initialize metadata if it doesn't exist
+            if not hasattr(task_context, 'metadata'):
+                task_context.metadata = {}
+            
+            # Update metadata with new context data
+            task_context.metadata.update(context_data)
+            
+            # Save updated context
+            self.context_provider.task_context_manager.task_contexts[task_id] = task_context
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating context: {str(e)}")
+            return False
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get statistics about all context types."""
