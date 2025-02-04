@@ -301,40 +301,42 @@ class ToolsCatalog:
 
         return registered_names
 
-    def get_tool_instance(self, name: str) -> Optional[Any]:
+    def get_tool_instance(self, name: str) -> Any:
         """Get a tool instance by name.
-        
+
         Args:
             name: Name of the tool to get
-            
+
         Returns:
-            The tool instance if found, None otherwise
-            
+            The tool instance
+
         Raises:
-            KeyError: If the tool is not found and raise_error is True
+            KeyError: If the tool is not found
         """
         # First try direct lookup
         if name in self._tool_instances:
             return self._tool_instances[name]
-            
+
         # If not found and this might be a method name
         if '.' in name:
-            base_name, method_name = name.split('.')
-            base_instance = self._tool_instances.get(base_name)
-            if base_instance and hasattr(base_instance, method_name):
-                return getattr(base_instance, method_name)
-                
-        # If still not found, try to create a new instance
-        if name in self._tools:
-            metadata = self._tools[name]
-            if metadata.original_obj:
-                if inspect.isclass(metadata.original_obj):
-                    instance = metadata.original_obj()
-                    self._tool_instances[name] = instance
-                    return instance
-                return metadata.original_obj
-                
-        raise KeyError(f"Tool not found: {name}")
+            # Split on first dot to get base name
+            parts = name.split('.')
+            base_name = parts[0]
+            method_path = '.'.join(parts[1:])
+
+            # Try to find the base tool
+            base_tool = self._tool_instances.get(base_name)
+            if base_tool:
+                # Navigate through the object hierarchy
+                current = base_tool
+                for part in method_path.split('.'):
+                    if hasattr(current, part):
+                        current = getattr(current, part)
+                    else:
+                        raise KeyError(f"Tool method {name} not found")
+                return current
+
+        raise KeyError(f"Tool {name} not found")
 
     def get_tool(self, name: str) -> Optional[ToolMetadata]:
         """Get metadata for a registered tool.
@@ -610,23 +612,25 @@ class ToolsCatalog:
                             required=param.required
                         ))
 
-        # Register the tool with extracted metadata
-        self.register_tool(
-            tool_name,
-            ToolMetadata(
-                name=tool_name,
-                description=function.description or f"OpenAPI tool {tool_name}",
-                parameters=parameters,
-                schema=tool.model_dump(),
-                tool_type=ToolType.OPENAPI_TOOL,
-                returns=ReturnInfo(
-                    type_hint="Dict[str, Any]",
-                    description=function.responses['200'].description if function.responses and '200' in function.responses else "Successful response"
-                ),
-                original_obj=tool,
-                async_tool=True
-            )
+        # Create metadata
+        metadata = ToolMetadata(
+            name=tool_name,
+            description=function.description or f"OpenAPI tool {tool_name}",
+            parameters=parameters,
+            schema=tool.model_dump(),
+            tool_type=ToolType.OPENAPI_TOOL,
+            returns=ReturnInfo(
+                type_hint="Dict[str, Any]",
+                description=function.responses['200'].description if function.responses and '200' in function.responses else "Successful response"
+            ),
+            original_obj=tool,
+            async_tool=True
         )
+
+        # Register the tool
+        self._tools[tool_name] = metadata
+        self._tool_instances[tool_name] = tool
+        self._openapi_tools[tool_name] = tool
 
         return tool_name
 

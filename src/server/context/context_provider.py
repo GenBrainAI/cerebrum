@@ -81,115 +81,126 @@ class ContextProvider:
         )
 
     async def get_task_contexts(
-        self, 
-        task_id: str, 
+        self,
+        task_id: str,
         context_types: List[str] = None,
-        query: Optional[str] = None,
-        limit: Optional[int] = None
-    ) -> List[Dict]:
-        """Get contexts for a task, including inherited contexts from the manager."""
+        query: str = None
+    ) -> List[Dict[str, Any]]:
+        """Get contexts for a task."""
         # Get task context
         task_context = self.task_context_manager.get_task_context(task_id)
         if not task_context or not task_context.use_context:
             return []
 
-        all_contexts = []
+        # Get contexts from context DB
+        contexts = await self.context_db.get_contexts(task_id, context_types)
 
-        # If task inherits from manager, get manager contexts first
+        # If task inherits manager context, get manager contexts too
         if task_context.inherit_manager_context:
-            task = self.persistence_model.tasks.read(task_id)
-            if task and hasattr(task, 'tasksmanager_id'):
-                manager_id = task.tasksmanager_id
-                manager_context_id = f"manager_{manager_id}"
-                
-                # Get manager contexts from context DB
-                manager_contexts = await self.context_db.get_contexts(
-                    task_id=manager_context_id,
-                    context_types=context_types
-                )
-                all_contexts.extend(manager_contexts)
-
-        # Get task-specific contexts from context DB
-        task_contexts = await self.context_db.get_contexts(
-            task_id=task_id,
-            context_types=context_types
-        )
-        all_contexts.extend(task_contexts)
+            manager_id = self._get_manager_id(task_id)
+            if manager_id:
+                manager_contexts = await self.context_db.get_contexts(manager_id, context_types)
+                contexts.extend(manager_contexts)
 
         # Sort by priority (highest first)
-        all_contexts.sort(key=lambda x: x.get('priority', 0), reverse=True)
-        
-        # Apply limit if specified
-        if limit is not None:
-            all_contexts = all_contexts[:limit]
-        
-        return all_contexts
+        contexts.sort(key=lambda x: x.get("priority", 0), reverse=True)
 
-    async def _get_context_data(self, context_ref: ContextReference, query: Optional[str] = None) -> Optional[Dict]:
-        """Get context data based on context type and reference."""
+        # For each context, get the actual content
+        enriched_contexts = []
+        for context in contexts:
+            try:
+                context_data = await self._get_context_data(
+                    type=context["type"],
+                    source_id=context["source_id"],
+                    metadata=context["metadata"],
+                    query=query
+                )
+                if context_data:
+                    enriched_contexts.append({
+                        **context,
+                        **context_data
+                    })
+            except Exception as e:
+                print(f"Error getting context data: {str(e)}")
+
+        return enriched_contexts
+
+    async def _get_context_data(
+        self,
+        type: str,
+        source_id: str,
+        metadata: Dict,
+        query: str = None
+    ) -> Optional[Dict[str, Any]]:
+        """Get context data from the appropriate source."""
+        print(f"\nDebug - _get_context_data:")
+        print(f"Type: {type}")
+        print(f"Source ID: {source_id}")
+        print(f"Metadata: {metadata}")
+
         try:
-            if context_ref.type == "vector":
-                # For vector context, use vector store with query
-                if self._vector_store is None:
-                    self._vector_store = VectorStore()
-                
-                if query:
-                    # Convert query text to embeddings before searching
-                    query_embedding = self._vector_store.generate_embeddings([query])[0]
-                    
-                    results = await self._vector_store.search(
-                        embedding=query_embedding,
-                        filters=context_ref.metadata.get('filters', {}),
+            if type == "system":
+                # Get from system context
+                content = self.system_context.get_context(source_id)
+                if content:
+                    return {
+                        "content": content,
+                        "metadata": metadata
+                    }
+                # If not found in system context, use metadata content
+                if "content" in metadata:
+                    return {
+                        "content": metadata["content"],
+                        "metadata": metadata
+                    }
+
+            elif type == "vector":
+                # Get from vector store
+                print(f"Debug - Getting content with source ID: {source_id}")
+                content = await self.context_db.vector_store.get_content(source_id)
+                print(f"Debug - Got content: {content}")
+                if content:
+                    return {
+                        "content": content["content"],
+                        "metadata": {**metadata, **content["metadata"]}
+                    }
+                # If not found in vector store, try getting from filters
+                if "filters" in metadata:
+                    items = await self.context_db.vector_store.get_filtered_items(
+                        filters=metadata["filters"],
                         limit=1
                     )
-                    if results:
+                    if items:
                         return {
-                            "id": context_ref.id,
-                            "type": context_ref.type,
-                            "content": results[0]["content"],
-                            "relevance": results[0]["relevance"],
-                            "priority": context_ref.priority
+                            "content": items[0]["content"],
+                            "metadata": {**metadata, **items[0]["metadata"]}
                         }
-                
-            elif context_ref.type == "system":
-                # For system context, get from system context manager
-                content = self.system_context.get_context(context_ref.source_id)
-                if content:
+                # If not found in vector store or filters, use metadata content
+                if "content" in metadata:
                     return {
-                        "id": context_ref.id,
-                        "type": context_ref.type,
-                        "content": content,
-                        "priority": context_ref.priority
+                        "content": metadata["content"],
+                        "metadata": metadata
                     }
-                
-            elif context_ref.type == "knowledge":
-                # For knowledge context, get from knowledge base
-                content = self.knowledge_base.get_entry(context_ref.source_id)
-                if content:
+
+            elif type == "knowledge":
+                # Get from knowledge base
+                entry = await self.knowledge_base.get_entry(source_id)
+                if entry:
                     return {
-                        "id": context_ref.id,
-                        "type": context_ref.type,
-                        "content": content,
-                        "priority": context_ref.priority
+                        "content": entry["content"],
+                        "metadata": {**metadata, **entry["metadata"]}
                     }
-                
-            elif context_ref.type == "code":
-                # For code context, get from code catalog
-                if self.code_catalog:
-                    content = self.code_catalog.get_file_content(context_ref.source_id)
-                    if content:
-                        return {
-                            "id": context_ref.id,
-                            "type": context_ref.type,
-                            "content": content,
-                            "priority": context_ref.priority
-                        }
-                    
-            return None
-            
+                # If not found in knowledge base, use metadata content
+                if "content" in metadata:
+                    return {
+                        "content": metadata["content"],
+                        "metadata": metadata
+                    }
+
         except Exception as e:
             print(f"Error getting context data: {str(e)}")
-            return None
+
+        return None
 
     def _get_manager_id(self, task_id: str) -> Optional[str]:
         """Get the manager ID for a task."""
@@ -348,48 +359,31 @@ class ContextProvider:
         print(f"Source ID: {source_id}")
         print(f"Priority: {priority}")
         print(f"Metadata: {metadata}")
-
+    
         # Get or create task context
         task_context = self.task_context_manager.get_task_context(task_id)
         if not task_context:
             print(f"Debug - Creating new task context for {task_id}")
             task_context = self.create_task_context(task_id)
-
-        # Add context to task context manager (no await needed)
-        context_ref = task_context.add_context(
+    
+        # Add context to task context manager (this is asynchronous)
+        context_ref = await task_context.add_context(
             type=type,
             source_id=source_id,
             priority=priority,
             metadata=metadata
         )
-        print(f"Debug - Added context reference: {context_ref}")
-
-        # Store context in context DB (this is async)
-        await self.context_db.store_context(
-            task_id=task_id,
-            context_type=type,
-            source_id=source_id,
-            metadata=metadata,
-            priority=priority
-        )
-
-        # Update the task model in persistence
-        task = self.persistence_model.tasks.read(task_id)
-        if task:
-            # Convert context reference to dict for task model
-            context_dict = context_ref.__dict__
-            
-            # Initialize contexts list if needed
-            if not hasattr(task, 'contexts'):
-                task.contexts = []
-            
-            # Add the new context
-            task.contexts.append(context_dict)
-            
-            # Update task in persistence
-            self.persistence_model.tasks.update(task_id, task)
-            print(f"Debug - Updated task model with contexts: {task.contexts}")
-
+        
+        # Store in context database
+        if self.context_db:
+            await self.context_db.store_context(
+                task_id=task_id,
+                context_type=type,
+                source_id=source_id,
+                metadata=metadata,
+                priority=priority
+            )
+        
         return context_ref
 
     async def update_task_context(

@@ -139,33 +139,38 @@ class CurriedProxy(BaseModel):
 
     async def multiset_proxy(self, name: str, arguments: Dict[str, Any]) -> Any:
         """Execute a tool by name with given arguments."""
-        # First try direct metadata lookup
-        tool_metadata = self.catalog.get_tool(name)
-        if tool_metadata is None:
-            # If not found, try with class prefix if this might be a method
-            if '.' in name and not name.startswith('.'):
-                class_name = name.split('.')[0]
-                if class_name in self.tool_names:
-                    tool_metadata = self.catalog.get_tool(name)
-        
-        if tool_metadata is None:
-            raise ValueError(f"Tool not found: {name}")
-
         try:
+            # First try direct metadata lookup
+            tool_metadata = self.catalog.get_tool(name)
+            if tool_metadata is None:
+                # If not found, try with class prefix if this might be a method
+                if '.' in name and not name.startswith('.'):
+                    class_name = name.split('.')[0]
+                    if class_name in self.tool_names:
+                        tool_metadata = self.catalog.get_tool(name)
+            
+            if tool_metadata is None:
+                return {"error": f"Tool {name} not found"}
+
+            # Get tool instance
             tool_instance = self.catalog.get_tool_instance(name)
             if tool_instance is None:
-                return {"error": f"Tool instance not found: {name}"}
+                return {"error": f"Tool instance {name} not found"}
 
+            # Execute based on tool type
             if tool_metadata.tool_type == ToolType.OPENAPI_TOOL:
                 return await self._call_openapi_tool(tool_instance, arguments)
             elif tool_metadata.tool_type == ToolType.PYTHON_FUNCTION:
                 if inspect.iscoroutinefunction(tool_instance):
                     return await tool_instance(**arguments)
                 return tool_instance(**arguments)
-            else:
+            elif tool_metadata.tool_type == ToolType.CLASS_METHOD:
                 if inspect.iscoroutinefunction(tool_instance):
                     return await tool_instance(**arguments)
                 return tool_instance(**arguments)
+            else:
+                return {"error": f"Unsupported tool type: {tool_metadata.tool_type}"}
+                
         except Exception as e:
             return {"error": str(e)}
 

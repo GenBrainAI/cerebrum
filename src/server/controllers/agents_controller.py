@@ -2,18 +2,14 @@ from os import getenv
 from dotenv import load_dotenv
 from fastapi import HTTPException
 from crewai import Agent, Task, Crew
-from crewai.tools import BaseTool
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
-from langchain.tools import BaseTool as LangChainBaseTool
-from langchain_ollama.llms import OllamaLLM as Ollama
+from langchain_ollama import OllamaLLM as Ollama
 from langchain_openai import ChatOpenAI
-from langchain_openai import AzureChatOpenAI
 from typing import Optional, Dict, Any
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..models.agent import CreateCrewRequest, AgentModel, TaskModel
+from ..models.agent import CreateCrewRequest, AgentModel, Process
 from ..tools.file_tool import FileTool
 from ..tools.github_tool import GitHubTool
-from ..tools.jira_tool import JiraTool
 from ..tools.microservices_tool import MicroservicesTool
 from ..tools.sms_tool import SMSTool
 from ..controllers.curried_proxy import CurriedProxy
@@ -47,13 +43,22 @@ class CrewLLM:
         self.OpenAIGPT4 = ChatOpenAI(model_name="gpt-4o", temperature=0.7)
         self.Ollama = Ollama(model="llama3.2:latest")
 
+def create_manager_agent() -> AgentModel:
+    """Create a manager agent for hierarchical process."""
+    return AgentModel(
+        role="Technical Lead",
+        goal="Oversee and coordinate the development process, ensuring high quality and proper implementation",
+        backstory="Experienced technical lead with expertise in software architecture, development practices, and team coordination",
+        tools=[],  # Will be populated with all available tools
+        verbose=True
+    )
+
 async def create_crew(
     request: CreateCrewRequest,
     curried_proxy: Optional[CurriedProxy] = None
 ) -> Crew:
     """
-    Create a CrewAI crew. Maintains original crew creation logic
-    without context dependencies.
+    Create a CrewAI crew with support for both sequential and hierarchical processes.
     """
     print("\n🔄 Creating CrewAI crew...")
     llm = CrewLLM()
@@ -69,23 +74,40 @@ async def create_crew(
         else:
             print("⚠️ No curried proxy provided, agents will have no tools")
             
+        # Add manager agent for hierarchical process
+        if request.process == Process.hierarchical:
+            print("\n👥 Using hierarchical process")
+            if not any(a.role == "Technical Lead" for a in request.agents):
+                print("➕ Adding Technical Lead agent")
+                manager = create_manager_agent()
+                request.agents.insert(0, manager)  # Add manager as first agent
+            
         for agent_data in request.agents:
             print(f"\n👤 Creating agent: {agent_data.role}")
             # Get LLM from agent data or default to gpt-4o-mini
             agent_llm = getattr(llm, agent_data.llm_model) if hasattr(agent_data, 'llm_model') else llm.OpenAIGPT4
             
+            # For hierarchical process, manager gets all tools
+            agent_tools_for_role = agent_tools
+            if request.process == Process.hierarchical and agent_data.role != "Technical Lead":
+                # Filter tools based on agent's specified tools
+                agent_tools_for_role = [
+                    tool for tool in agent_tools 
+                    if any(t.name == tool.name for t in agent_data.tools)
+                ]
+            
             agent = Agent(
                 role=agent_data.role,
                 goal=agent_data.goal,
                 backstory=agent_data.backstory,
-                tools=agent_tools,
+                tools=agent_tools_for_role,
                 verbose=True,
                 llm=agent_llm
             )
-            print(f"  ✅ Agent created with {len(agent_tools)} tools")
+            print(f"  ✅ Agent created with {len(agent_tools_for_role)} tools")
             agents.append(agent)
 
-        # Create tasks
+        # Create tasks with proper dependencies for hierarchical process
         tasks = []
         for task_data in request.tasks:
             print(f"\n📋 Creating task: {task_data.description[:50]}...")
@@ -97,7 +119,8 @@ async def create_crew(
                 error_msg = f"Agent role '{task_data.agent_role}' not found."
                 print(f"  ❌ {error_msg}")
                 raise HTTPException(status_code=400, detail=error_msg)
-                
+            
+            # For hierarchical process, add manager review after each task
             task = Task(
                 description=task_data.description,
                 expected_output=str(task_data.expected_output),
@@ -105,17 +128,30 @@ async def create_crew(
             )
             print(f"  ✅ Task created and assigned to agent: {task_data.agent_role}")
             tasks.append(task)
+            
+            if request.process == Process.hierarchical and agent.role != "Technical Lead":
+                # Add manager review task
+                manager_agent = next(a for a in agents if a.role == "Technical Lead")
+                review_task = Task(
+                    description=f"Review and validate the output of task: {task_data.description}",
+                    expected_output="Validation report and improvement suggestions",
+                    agent=manager_agent
+                )
+                print("  ➕ Added manager review task")
+                tasks.append(review_task)
 
         # Create the crew
         crew = Crew(
             agents=agents,
             tasks=tasks,
-            verbose=True
+            verbose=True,
+            process=request.process  # Pass process type to Crew
         )
         print("\n✨ Crew created successfully!")
         print(f"  - {len(agents)} agents")
         print(f"  - {len(tasks)} tasks")
-        print(f"  - {len(agent_tools)} tools per agent\n")
+        print(f"  - Process: {request.process}")
+        print(f"  - Tools per agent: varies by role\n")
 
         return crew
 

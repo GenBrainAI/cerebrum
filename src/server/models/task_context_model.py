@@ -22,7 +22,6 @@ class TaskContext:
     def add_context(self, type: str, source_id: str, priority: int = 50, metadata: Dict = None) -> ContextReference:
         """Add a context reference to this task context."""
         context_ref = ContextReference(
-            task_id=self.task_id,
             type=type,
             source_id=source_id,
             priority=priority,
