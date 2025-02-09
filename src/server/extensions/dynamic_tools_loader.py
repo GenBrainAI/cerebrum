@@ -1,20 +1,16 @@
 from __future__ import annotations
-import os
 import sys
 import inspect
 import importlib.util
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Type, Union
 from pathlib import Path
 import time
-import json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from uuid import uuid4
 
 from ..tools.tools_catalog import ToolsCatalog, tools_catalog
 from ..models.tools_descriptors import ParameterInfo, ToolMetadata, ToolType, ReturnInfo
-from ..persistence.in_memory_persistence import InMemoryPersistenceModel
-from ..persistence.persistence_model_factory import PersistenceModelFactory
 
 # Create singleton instance of ToolsCatalog
 tools_catalog = ToolsCatalog()
@@ -322,7 +318,16 @@ class DynamicToolsLoader:
                 if method_name.startswith('_'):
                     continue
                 
-                method_qualified_name = f"{qualified_name}.{method_name}"
+                # For calculator instance, use lowercase class name
+                if instance_name == 'calculator':
+                    method_qualified_name = f"{module_name}.{instance_name}.{method_name}"
+                else:
+                    # For class instances, include the class name in the method path
+                    if hasattr(instance, '__class__') and instance.__class__.__name__ != 'type':
+                        method_qualified_name = f"{module_name}.{instance_name}.{instance.__class__.__name__.lower()}.{method_name}"
+                    else:
+                        method_qualified_name = f"{module_name}.{instance_name}.{method_name}"
+                
                 sig = inspect.signature(method)
                 method_docstring = inspect.getdoc(method) or ""
                 
@@ -367,86 +372,92 @@ class DynamicToolsLoader:
             traceback.print_exc()
 
     def load_tools_from_directory(self, directory_path: Union[str, Path]) -> List[str]:
-        """Dynamically load all Python modules in the given directory and register their tools."""
-        directory_path = Path(directory_path)
-        print(f"\n📂 Loading tools from directory: {directory_path}")
-        
-        if not directory_path.exists():
-            print(f"❌ Directory does not exist: {directory_path}")
-            raise FileNotFoundError(f"The directory {directory_path} does not exist.")
-
-        registered_tools = []
-        
-        # Add directory to Python path temporarily
-        print("   Adding directory to Python path...")
-        sys.path.insert(0, str(directory_path))
-        
+        """Load tools from a directory."""
         try:
-            # Create an empty __init__.py if it doesn't exist
+            print(f"\n📂 Loading tools from directory: {directory_path}")
+            directory_path = Path(directory_path)
+            registered_tools = []
+            
+            # Add directory to Python path
+            print("   Adding directory to Python path...")
+            directory_str = str(directory_path)
+            if directory_str not in sys.path:
+                sys.path.insert(0, directory_str)
+            
+            # Create __init__.py if it doesn't exist
+            print("   Creating __init__.py file...")
             init_file = directory_path / "__init__.py"
             if not init_file.exists():
-                print("   Creating __init__.py file...")
                 init_file.touch()
+            
+            # Create package name from directory name
+            package_name = directory_path.name
+            
+            # Load __init__.py first to establish package
+            try:
+                spec = importlib.util.spec_from_file_location(package_name, init_file)
+                if spec is not None and spec.loader is not None:
+                    package = importlib.util.module_from_spec(spec)
+                    sys.modules[package_name] = package
+                    spec.loader.exec_module(package)
+            except Exception as e:
+                print(f"   ⚠️ Warning: Could not load __init__.py: {str(e)}")
             
             print("\n   Scanning for Python files...")
             for file_path in directory_path.glob("*.py"):
-                if file_path.name.startswith("__"):
+                if file_path.name == "__init__.py":
                     continue
                     
-                module_name = file_path.stem
                 print(f"\n   📄 Processing file: {file_path.name}")
+                module_name = f"{package_name}.{file_path.stem}"
+                
                 try:
-                    # Dynamically import the module
                     print(f"      Importing module: {module_name}")
-                    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
-                    if not spec or not spec.loader:
-                        print(f"      ❌ Could not load spec for module {module_name}")
+                    spec = importlib.util.spec_from_file_location(module_name, file_path)
+                    if spec is None or spec.loader is None:
+                        print(f"      ❌ Failed to create module spec for {module_name}")
                         continue
                         
                     module = importlib.util.module_from_spec(spec)
+                    module.__package__ = package_name
                     sys.modules[module_name] = module
                     spec.loader.exec_module(module)
                     self._loaded_modules[module_name] = module
                     print(f"      ✅ Module imported: {module_name}")
-
-                    # Register tools from the module
-                    print(f"      🔍 Scanning module for tools...")
-                    for attr_name in dir(module):
-                        if attr_name.startswith("_"):
+                    
+                    print("      🔍 Scanning module for tools...")
+                    for name, obj in inspect.getmembers(module):
+                        if name.startswith('_'):
                             continue
                             
-                        attr = getattr(module, attr_name)
-                        print(f"         - Found attribute: {attr_name}")
-                        
-                        try:
-                            # Register based on type
-                            if not inspect.isclass(attr) and not inspect.isfunction(attr) and hasattr(attr, '__dict__'):
-                                print(f"           Registering instance: {attr_name}")
-                                self._register_instance(attr, module_name, attr_name, registered_tools)
-                            elif inspect.isclass(attr):
-                                print(f"           Registering class: {attr_name}")
-                                self._register_class(attr, module_name, attr_name, registered_tools)
-                            elif inspect.isfunction(attr):
-                                print(f"           Registering function: {attr_name}")
-                                self._register_function(attr, module_name, attr_name, registered_tools)
-                                
-                        except Exception as e:
-                            print(f"           ❌ Error registering {module_name}.{attr_name}: {str(e)}")
-                            import traceback
-                            traceback.print_exc()
+                        print(f"         - Found attribute: {name}")
+                        if inspect.isfunction(obj):
+                            print(f"           Registering function: {name}")
+                            self._register_function(obj, file_path.stem, name, registered_tools)
+                        elif inspect.isclass(obj):
+                            print(f"           Registering class: {name}")
+                            self._register_class(obj, file_path.stem, name, registered_tools)
+                        elif not inspect.ismodule(obj):
+                            print(f"           Registering instance: {name}")
+                            self._register_instance(obj, file_path.stem, name, registered_tools)
                             
                 except Exception as e:
                     print(f"      ❌ Error loading module {module_name}: {str(e)}")
                     import traceback
                     traceback.print_exc()
-                    
-        finally:
-            # Remove directory from Python path
-            print("\n   Cleaning up Python path...")
-            sys.path.remove(str(directory_path))
             
-        print(f"\n✅ Registered {len(registered_tools)} tools")
-        return registered_tools
+            print("\n   Cleaning up Python path...")
+            if directory_str in sys.path:
+                sys.path.remove(directory_str)
+            
+            print(f"\n✅ Registered {len(registered_tools)} tools")
+            return registered_tools
+            
+        except Exception as e:
+            print(f"❌ Error loading tools from directory: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     def _unregister_module(self, module_name: str):
         """Unregister all tools from a module."""
@@ -479,17 +490,25 @@ class DynamicToolsLoader:
         """Reload a specific module and its tools."""
         print(f"\n🔄 Reloading module: {module_name}")
         
+        # Find the fully qualified module name
+        full_module_name = None
+        for loaded_name in self._loaded_modules:
+            if loaded_name.endswith(f".{module_name}") or loaded_name == module_name:
+                full_module_name = loaded_name
+                break
+        
+        if not full_module_name:
+            print(f"❌ Module {module_name} not found in loaded modules")
+            return []
+            
         # Unregister existing tools
         self._unregister_module(module_name)
         
         # Get module file path
-        if module_name not in self._loaded_modules:
-            print(f"❌ Module {module_name} not found in loaded modules")
-            return []
-            
-        module = self._loaded_modules[module_name]
+        module = self._loaded_modules[full_module_name]
         file_path = inspect.getfile(module)
         directory_path = str(Path(file_path).parent)
+        package_name = Path(directory_path).name
         
         registered_tools = []
         
@@ -500,45 +519,37 @@ class DynamicToolsLoader:
         try:
             # Reload the module
             print(f"   📦 Loading module spec from: {file_path}")
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            spec = importlib.util.spec_from_file_location(full_module_name, file_path)
             if not spec or not spec.loader:
-                print(f"   ❌ Could not load spec for module {module_name}")
+                print(f"   ❌ Could not load spec for module {full_module_name}")
                 return []
                 
             module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
+            module.__package__ = package_name
+            sys.modules[full_module_name] = module
             spec.loader.exec_module(module)
-            self._loaded_modules[module_name] = module
+            self._loaded_modules[full_module_name] = module
             print(f"   ✅ Module reloaded successfully")
             
             # Re-register tools
             print("   🔍 Scanning for tools...")
-            for attr_name in dir(module):
-                if attr_name.startswith("_"):
+            for name, obj in inspect.getmembers(module):
+                if name.startswith('_'):
                     continue
                     
-                attr = getattr(module, attr_name)
-                print(f"      - Found attribute: {attr_name}")
-                
-                try:
-                    # Register based on type
-                    if not inspect.isclass(attr) and not inspect.isfunction(attr) and hasattr(attr, '__dict__'):
-                        print(f"        Registering instance: {attr_name}")
-                        self._register_instance(attr, module_name, attr_name, registered_tools)
-                    elif inspect.isclass(attr):
-                        print(f"        Registering class: {attr_name}")
-                        self._register_class(attr, module_name, attr_name, registered_tools)
-                    elif inspect.isfunction(attr):
-                        print(f"        Registering function: {attr_name}")
-                        self._register_function(attr, module_name, attr_name, registered_tools)
-                        
-                except Exception as e:
-                    print(f"        ❌ Error registering {module_name}.{attr_name}: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
+                print(f"      - Found attribute: {name}")
+                if inspect.isfunction(obj):
+                    print(f"        Registering function: {name}")
+                    self._register_function(obj, module_name, name, registered_tools)
+                elif inspect.isclass(obj):
+                    print(f"        Registering class: {name}")
+                    self._register_class(obj, module_name, name, registered_tools)
+                elif not inspect.ismodule(obj):
+                    print(f"        Registering instance: {name}")
+                    self._register_instance(obj, module_name, name, registered_tools)
                     
         except Exception as e:
-            print(f"❌ Error reloading module {module_name}: {str(e)}")
+            print(f"❌ Error reloading module {full_module_name}: {str(e)}")
             import traceback
             traceback.print_exc()
             

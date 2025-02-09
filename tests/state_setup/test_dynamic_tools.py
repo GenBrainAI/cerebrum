@@ -1,6 +1,7 @@
 import os
 import json
 import pytest
+import pytest_asyncio
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from datetime import datetime
@@ -61,14 +62,15 @@ def mock_crewai_config():
         updated_at=datetime.now()
     )
 
-def test_save_and_load_persistence_state(persistence_model, temp_state_file):
+@pytest.mark.asyncio
+async def test_save_and_load_persistence_state(persistence_model, temp_state_file):
     """Test saving and loading persistence state to/from JSON."""
     # Setup initial state
     with patch('src.state_setup.dynamic_tools.StorageLocation') as mock_storage_location:
         mock_storage_location.return_value.type = StorageType.file
         mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
         mock_storage_location.return_value.state_name = Path(temp_state_file).name
-        setup_dynamic_tools_state(persistence_model, temp_state_file)
+        await setup_dynamic_tools_state(persistence_model, temp_state_file)
     
     # Verify state was saved
     assert Path(temp_state_file).exists()
@@ -89,13 +91,14 @@ def test_save_and_load_persistence_state(persistence_model, temp_state_file):
     assert len(new_model.tasks.list()) == len(persistence_model.tasks.list())
     assert len(new_model.curried_proxies.list()) == len(persistence_model.curried_proxies.list())
 
-def test_setup_dynamic_tools_state_creates_components(persistence_model, temp_state_file):
+@pytest.mark.asyncio
+async def test_setup_dynamic_tools_state_creates_components(persistence_model, temp_state_file):
     """Test that setup_dynamic_tools_state creates all necessary components."""
     with patch('src.state_setup.dynamic_tools.StorageLocation') as mock_storage_location:
         mock_storage_location.return_value.type = StorageType.file
         mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
         mock_storage_location.return_value.state_name = Path(temp_state_file).name
-        result = setup_dynamic_tools_state(persistence_model, temp_state_file)
+        result = await setup_dynamic_tools_state(persistence_model, temp_state_file)
     
     # Verify returned IDs
     assert 'curried_proxy_id' in result
@@ -113,7 +116,8 @@ def test_setup_dynamic_tools_state_creates_components(persistence_model, temp_st
     assert task.framework == "crewai"
     assert task.crewai_config_id is not None
 
-def test_setup_dynamic_tools_state_reuses_components(persistence_model, temp_state_file):
+@pytest.mark.asyncio
+async def test_setup_dynamic_tools_state_reuses_components(persistence_model, temp_state_file):
     """Test that setup_dynamic_tools_state reuses existing components."""
     with patch('src.state_setup.dynamic_tools.StorageLocation') as mock_storage_location:
         mock_storage_location.return_value.type = StorageType.file
@@ -121,10 +125,10 @@ def test_setup_dynamic_tools_state_reuses_components(persistence_model, temp_sta
         mock_storage_location.return_value.state_name = Path(temp_state_file).name
         
         # First setup
-        first_result = setup_dynamic_tools_state(persistence_model, temp_state_file)
+        first_result = await setup_dynamic_tools_state(persistence_model, temp_state_file)
         
         # Second setup
-        second_result = setup_dynamic_tools_state(persistence_model, temp_state_file)
+        second_result = await setup_dynamic_tools_state(persistence_model, temp_state_file)
     
     # Verify same IDs are returned
     assert first_result['curried_proxy_id'] == second_result['curried_proxy_id']
@@ -137,7 +141,8 @@ def test_setup_dynamic_tools_state_reuses_components(persistence_model, temp_sta
     assert len(persistence_model.tasks.list()) == 1
     assert len(persistence_model.crewai_config.list()) == 1  # New assertion for CrewAI config
 
-def test_setup_dynamic_tools_state_handles_missing_state_file(persistence_model, temp_state_file):
+@pytest.mark.asyncio
+async def test_setup_dynamic_tools_state_handles_missing_state_file(persistence_model, temp_state_file):
     """Test that setup works when state file doesn't exist."""
     # Ensure state file doesn't exist
     if Path(temp_state_file).exists():
@@ -147,7 +152,7 @@ def test_setup_dynamic_tools_state_handles_missing_state_file(persistence_model,
         mock_storage_location.return_value.type = StorageType.file
         mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
         mock_storage_location.return_value.state_name = Path(temp_state_file).name
-        result = setup_dynamic_tools_state(persistence_model, temp_state_file)
+        result = await setup_dynamic_tools_state(persistence_model, temp_state_file)
     
     # Verify components were created
     assert 'curried_proxy_id' in result
@@ -157,7 +162,8 @@ def test_setup_dynamic_tools_state_handles_missing_state_file(persistence_model,
     # Verify state file was created
     assert Path(temp_state_file).exists()
 
-def test_setup_dynamic_tools_state_handles_invalid_state_file(persistence_model, temp_state_file):
+@pytest.mark.asyncio
+async def test_setup_dynamic_tools_state_handles_invalid_state_file(persistence_model, temp_state_file):
     """Test that setup handles invalid state file gracefully."""
     # Create invalid state file
     with open(temp_state_file, 'w') as f:
@@ -167,7 +173,7 @@ def test_setup_dynamic_tools_state_handles_invalid_state_file(persistence_model,
         mock_storage_location.return_value.type = StorageType.file
         mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
         mock_storage_location.return_value.state_name = Path(temp_state_file).name
-        result = setup_dynamic_tools_state(persistence_model, temp_state_file)
+        result = await setup_dynamic_tools_state(persistence_model, temp_state_file)
     
     # Verify components were created despite invalid file
     assert 'curried_proxy_id' in result

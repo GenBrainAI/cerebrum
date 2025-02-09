@@ -85,7 +85,7 @@ class VectorStore:
             dimension = 1536  # OpenAI's default embedding dimension
             return [[0.0] * dimension for _ in texts]
 
-    def create_index(self, name: str, description: Optional[str] = None) -> str:
+    async def create_index(self, name: str, description: Optional[str] = None) -> str:
         """Create a new index/collection for specific content."""
         try:
             index_name = f"vs_{name}"
@@ -528,8 +528,21 @@ class VectorStore:
     async def get_filtered_items(self, filters: Dict[str, Any], limit: int = 5) -> List[Dict[str, Any]]:
         """Get items from ChromaDB using filters."""
         try:
-            results = self.collection.get(
-                where=filters.get('filters', {}),
+            # Get or create default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Extract the actual filters
+            where_filters = filters.get('filters', {})
+            if 'file_ids' in where_filters:
+                # Convert file_ids filter to ChromaDB where clause
+                where_filters = {"file_id": {"$in": where_filters['file_ids']}}
+            
+            # Query collection
+            results = collection.get(
+                where=where_filters,
                 limit=limit
             )
             
@@ -586,13 +599,20 @@ class VectorStore:
     async def delete_index(self, index_name: str) -> bool:
         """Delete an index and all its contents."""
         try:
-            if index_name in self.indices:
-                self.client.delete_collection(index_name)
-                del self.indices[index_name]
-                return True
-            return False
+            if index_name not in self.indices:
+                return False
+            
+            # Delete from ChromaDB
+            self.client.delete_collection(index_name)
+            
+            # Remove from indices dictionary
+            del self.indices[index_name]
+            
+            logging.info(f"Deleted index: {index_name}")
+            return True
+            
         except Exception as e:
-            logging.error(f"Error deleting index: {str(e)}")
+            logging.error(f"Error deleting index {index_name}: {str(e)}")
             return False
 
     async def process_directory(self, index_name: str, directory_path: str, 
@@ -635,38 +655,26 @@ class VectorStore:
 
 
     async def get_index_contents(self, index_name: str) -> List[Dict[str, Any]]:
-        """Get all files stored in a specific index."""
+        """Get all contents of an index."""
         try:
-            print(f"\nDEBUG - Getting contents for index: {index_name}")
-            collection = self.client.get_collection(
-                name=index_name,
-                embedding_function=self.embedding_function
-            )
-            print(f"  Got collection. Count: {collection.count()}")
+            if index_name not in self.indices:
+                raise ValueError(f"Index {index_name} not found")
             
-            # Get all documents from the collection
+            collection = self.indices[index_name]
             results = collection.get()
-            print(f"  Retrieved {len(results['ids'])} documents")
             
-            # Convert to our standard format
-            files = []
-            for doc_id, doc, metadata in zip(results['ids'], results['documents'], results['metadatas']):
-                print(f"  Processing document: {doc_id}")
-                print(f"    Metadata: {metadata}")
-                
-                files.append({
-                    'id': doc_id,
-                    'content': doc,
-                    'metadata': metadata
+            contents = []
+            for i, (id, text, metadata) in enumerate(zip(results['ids'], results['documents'], results['metadatas'])):
+                contents.append({
+                    "id": id,
+                    "text": text,
+                    "metadata": metadata
                 })
             
-            print(f"  Returning {len(files)} files")
-            return files
+            return contents
             
         except Exception as e:
-            print(f"  Error getting index contents: {str(e)}")
-            import traceback
-            print(f"  Traceback: {traceback.format_exc()}")
+            logging.error(f"Error getting index contents: {str(e)}")
             return []
 
     async def delete_file_from_index(self, index_name: str, file_id: str) -> bool:
@@ -762,3 +770,65 @@ class VectorStore:
                 "processed": 0,
                 "failed": len(ids)
             }
+
+    async def add_text(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+        """Add text content directly to the vector store."""
+        try:
+            # Generate text ID
+            text_id = hashlib.md5(text.encode()).hexdigest()
+            
+            # Update metadata
+            if metadata is None:
+                metadata = {}
+            
+            metadata.update({
+                'type': 'text',
+                'added_at': datetime.now().isoformat(),
+                'size': len(text.encode('utf-8'))
+            })
+            
+            # Get or create default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Add to collection
+            collection.add(
+                documents=[text],
+                metadatas=[metadata],
+                ids=[text_id]
+            )
+            
+            return text_id
+            
+        except Exception as e:
+            logging.error(f"Error adding text to vector store: {str(e)}")
+            raise
+
+    async def get_content(self, content_id: str) -> Optional[Dict[str, Any]]:
+        """Get content by ID from the vector store."""
+        try:
+            # Get or create default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Get content by ID
+            results = collection.get(
+                ids=[content_id],
+                include=["documents", "metadatas"]
+            )
+            
+            if results["documents"]:
+                return {
+                    "content": results["documents"][0],
+                    "metadata": results["metadatas"][0]
+                }
+            
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error getting content from vector store: {str(e)}")
+            return None

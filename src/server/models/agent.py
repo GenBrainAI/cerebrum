@@ -3,6 +3,17 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
+from enum import Enum
+
+class Process(str, Enum):
+    """Process type for crew execution.
+    
+    Attributes:
+        sequential: Execute tasks in sequence without manager oversight
+        hierarchical: Execute tasks with manager oversight and review
+    """
+    sequential = "sequential"
+    hierarchical = "hierarchical"
 
 class ToolModel(BaseModel):
     """Model for tool configuration."""
@@ -47,7 +58,9 @@ class ToolsProxyCollection(BaseModel):
     objects: List[ObjectToolSpec] = Field(default_factory=list)
 
 class CreateCrewRequest(BaseModel):
+    """Request model for creating a crew with process selection."""
     description: str
+    process: Process = Process.sequential  # Default to sequential process
     agents: List[AgentModel]
     tasks: List[TaskModel]
     tools_proxy_collection: Optional[ToolsProxyCollection] = None
@@ -128,6 +141,7 @@ class CrewAIConfig(BaseModel):
     create_crew: Optional[CreateCrewRequest] = Field(alias="create_crew", default=None)
     created_at: Optional[datetime] = Field(alias="created_at", default=None)
     updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
+    process: Optional[Process] = Field(alias="process", default=Process.sequential)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

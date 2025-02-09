@@ -12,6 +12,7 @@ from openai import OpenAI
 import json
 import chromadb
 from chromadb.utils import embedding_functions
+from datetime import datetime
 
 class ContextDatabase:
     """Enhanced version of the context database with better error handling and performance."""
@@ -60,6 +61,8 @@ class ContextDatabase:
             "model": "text-embedding-3-small",
             "provider": "openai"
         }
+
+        self.contexts = {}  # Dictionary to store contexts by task_id
 
     def _setup_logging(self):
         self.logger = logging.getLogger(__name__)
@@ -304,89 +307,49 @@ class ContextDatabase:
             self.logger.error(f"Embedding update failed: {str(e)}")
             raise
 
-    async def store_context(self, task_id: str, context_type: str, source_id: str, 
-                           metadata: dict, priority: int = 50) -> None:
-        """Store a context reference in the database."""
-        try:
-            # Create a unique ID for this context
-            context_id = f"{task_id}_{context_type}_{source_id}"
-            
-            # Store in ChromaDB with task-specific metadata
-            try:
-                self.collection.add(
-                    ids=[context_id],
-                    documents=[json.dumps(metadata)],  # Store metadata as document
-                    metadatas={
-                        "task_id": task_id,
-                        "type": context_type,
-                        "source_id": source_id,
-                        "priority": priority,
-                        **metadata
-                    }
-                )
-                logging.info(f"Stored context {context_id} for task {task_id}")
-            except Exception as chroma_error:
-                # If ChromaDB fails (e.g. due to OpenAI API error), store without embeddings
-                self.collection.add(
-                    ids=[context_id],
-                    documents=[json.dumps(metadata)],  # Store metadata as document
-                    metadatas={
-                        "task_id": task_id,
-                        "type": context_type,
-                        "source_id": source_id,
-                        "priority": priority,
-                        **metadata
-                    },
-                    embeddings=[[0.0] * 1536]  # Use zero vector as fallback
-                )
-                logging.warning(f"Stored context {context_id} without embeddings due to error: {str(chroma_error)}")
-            
-        except Exception as e:
-            logging.error(f"Error storing context: {str(e)}")
-            raise
-
-    async def get_contexts(self, task_id: str, context_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Get all contexts for a task, optionally filtered by type."""
-        try:
-            # Build where clause
-            where_clause = {"task_id": task_id}
-            if context_types:
-                where_clause["type"] = {"$in": context_types}
-            
-            # Query ChromaDB
-            results = self.collection.get(
-                where=where_clause,
-                include=['metadatas', 'documents']
-            )
-            
-            # Format results
-            contexts = []
-            if results['ids']:
-                for i, ctx_id in enumerate(results['ids']):
-                    metadata = results['metadatas'][i]
-                    try:
-                        # Parse stored metadata from document
-                        stored_metadata = json.loads(results['documents'][i])
-                    except:
-                        stored_metadata = {}
-                    
-                    contexts.append({
-                        "id": ctx_id,
-                        "type": metadata.get("type"),
-                        "source_id": metadata.get("source_id"),
-                        "priority": metadata.get("priority", 50),
-                        "metadata": {**stored_metadata, **metadata}
-                    })
-            
-            # Sort by priority (highest first)
-            contexts.sort(key=lambda x: x.get("priority", 0), reverse=True)
-            
-            logging.info(f"Retrieved {len(contexts)} contexts for task {task_id}")
-            return contexts
-            
-        except Exception as e:
-            logging.error(f"Error getting contexts: {str(e)}")
+    async def store_context(
+        self,
+        task_id: str,
+        context_type: str,
+        source_id: str,
+        metadata: Dict[str, Any],
+        priority: int = 50
+    ) -> str:
+        """Store a context entry."""
+        if task_id not in self.contexts:
+            self.contexts[task_id] = []
+        
+        context_id = f"{task_id}_{context_type}_{source_id}"
+        context = {
+            "id": context_id,
+            "type": context_type,
+            "source_id": source_id,
+            "metadata": metadata,
+            "priority": priority,
+            "created_at": datetime.now()
+        }
+        
+        self.contexts[task_id].append(context)
+        return context_id
+    
+    async def get_contexts(
+        self,
+        task_id: str,
+        context_types: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Get contexts for a task."""
+        if task_id not in self.contexts:
             return []
+        
+        contexts = self.contexts[task_id]
+        if context_types:
+            contexts = [ctx for ctx in contexts if ctx["type"] in context_types]
+        
+        return sorted(contexts, key=lambda x: x["priority"], reverse=True)
+    
+    async def clear(self):
+        """Clear all contexts."""
+        self.contexts = {}
 
     async def delete_context(self, context_id: str) -> bool:
         """Delete a context from the database."""

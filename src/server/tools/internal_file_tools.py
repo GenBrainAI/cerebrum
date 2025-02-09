@@ -78,102 +78,47 @@ class InternalFileTools:
         finally:
             self._execution_metrics.end_time = datetime.now()
         
-    async def save_implementation(self, code: str, tool_name: str) -> Dict[str, Any]:
-        """Save generated tool implementation to file.
-        
-        Args:
-            code: The code to save
-            tool_name: Name of the tool
-            
-        Returns:
-            Dict[str, Any]: Dictionary containing:
-                - file_path: Path to the saved file
-            
-        Raises:
-            IOError: If there is an error saving the file
-        """
-        self._execution_metrics.start_time = datetime.now()
-        self._execution_metrics.input_params = {"code": code, "tool_name": tool_name}
-        
+    def save_implementation(self, code: str, tool_name: str) -> Dict[str, str]:
+        """Save generated tool implementation to file."""
         try:
-            logger.info(f"Attempting to save implementation for tool: {tool_name}")
-            # Create a valid filename from the tool name
-            filename = f"{tool_name.lower().replace(' ', '_')}.py"
-            file_path = os.path.join(self.base_dir, filename)
+            # Ensure the tool name has a .py extension but not double extension
+            if not tool_name.endswith('.py'):
+                tool_name = f"{tool_name}.py"
+            tool_name = tool_name.replace('.py.py', '.py')
             
-            # Create directory if it doesn't exist
+            # Construct the correct path in src/tools directory
+            file_path = os.path.join('src', 'tools', tool_name)
+            
+            # Create directories if they don't exist
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            # Save the code
+            # Save the file
             with open(file_path, 'w') as f:
                 f.write(code)
-                
-            logger.info(f"Successfully saved implementation to: {file_path}")
-            self._execution_metrics.success = True
-            self._execution_metrics.output = file_path
-            return {"file_path": file_path}
             
-        except IOError as e:
+            return {'file_path': file_path}
+        except Exception as e:
             logger.error(f"Error saving implementation: {str(e)}")
-            self._execution_metrics.success = False
-            self._execution_metrics.error = str(e)
             raise
-            
-        except Exception as e:
-            logger.error(f"Unexpected error saving implementation: {str(e)}")
-            self._execution_metrics.success = False
-            self._execution_metrics.error = str(e)
-            raise
-            
-        finally:
-            self._execution_metrics.end_time = datetime.now()
-            
-    async def save_tests(self, code: str, tool_name: str) -> Dict[str, Any]:
-        """Save generated test code to file.
-        
-        Args:
-            code: The test code to save
-            tool_name: Name of the tool
-            
-        Returns:
-            Dict[str, Any]: Dictionary containing:
-                - file_path: Path to the saved test file
-            
-        Raises:
-            IOError: If there is an error saving the file
-        """
-        self._execution_metrics.start_time = datetime.now()
-        self._execution_metrics.input_params = {"code": code, "tool_name": tool_name}
-        
+
+    def save_tests(self, code: str, tool_name: str) -> Dict[str, str]:
+        """Save generated test code to file."""
         try:
-            logger.info(f"Attempting to save tests for tool: {tool_name}")
-            # Create a valid filename from the tool name
-            filename = f"test_{tool_name.lower().replace(' ', '_')}.py"
-            file_path = os.path.join(self.base_dir, "tests", filename)
+            # Ensure the tool name has correct test prefix and .py extension
+            base_name = tool_name.replace('.py', '').replace('test_', '')
+            test_file_name = f"test_{base_name}.py"
             
-            # Create directory if it doesn't exist
+            # Construct the correct path in src/tools/tests directory
+            file_path = test_file_name
+            
+            # Create directories if they don't exist
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            # Save the code
+            # Save the file
             with open(file_path, 'w') as f:
                 f.write(code)
-                
-            logger.info(f"Successfully saved tests to: {file_path}")
-            self._execution_metrics.success = True
-            self._execution_metrics.output = file_path
-            return {"file_path": file_path}
             
-        except IOError as e:
-            logger.error(f"Error saving tests: {str(e)}")
-            self._execution_metrics.success = False
-            self._execution_metrics.error = str(e)
-            raise
-            
+            return {'file_path': file_path}
         except Exception as e:
-            logger.error(f"Unexpected error saving tests: {str(e)}")
-            self._execution_metrics.success = False
-            self._execution_metrics.error = str(e)
+            logger.error(f"Error saving tests: {str(e)}")
             raise
-            
-        finally:
-            self._execution_metrics.end_time = datetime.now()

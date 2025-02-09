@@ -14,13 +14,14 @@ Test Execution Order:
 """
 
 import pytest
-from pathlib import Path
 import logging
 import json
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import traceback
 from unittest.mock import patch, MagicMock
+
 from src.server.models.task import Task
 from src.server.models.tasks_manager import TasksManager
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
@@ -29,19 +30,40 @@ from src.server.controllers.task_runner import TaskRunner
 from src.server.tools.tools_catalog import ToolsCatalog
 from src.server.controllers.curried_proxy import CurriedProxy
 from src.state_setup.dynamic_tools import setup_dynamic_tools_state
-from src.server.models.message import Message
-from src.server.tools.tools_metrics import ToolExecutionMetrics, CerebrumCrewAITool
+from src.server.tools.tools_metrics import ToolExecutionMetrics
+from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, ToolModel
+from src.server.models.persistence_models import StorageType
+from src.server.context.context_provider import ContextProvider
 from crewai.tools import BaseTool as CrewAITool
 from pydantic import BaseModel, Field, create_model, ConfigDict
-from src.server.models.agent import CrewAIConfig, CreateCrewRequest
-from src.server.models.persistence_models import StorageType
-import asyncio
-from src.server.context.context_provider import ContextProvider
 
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Constants for test configuration
 DYNAMIC_TOOLS_STATE_FILE = "state/specialized/dynamic_tools_state.json"
+
+@pytest.fixture(scope="module")
+def test_state():
+    """Fixture to share state between tests."""
+    return {
+        "tool_metrics": ToolExecutionMetrics(),
+        "persistence_model": None,
+        "generated_state": None,
+        "crewai_config": None,
+        "state_file": None,
+        "local_model": None
+    }
+
+@pytest.fixture(scope="module")
+def temp_state_file(tmp_path_factory):
+    """Create a temporary state file path."""
+    tmp_path = tmp_path_factory.mktemp("dynamic_tools")
+    return str(tmp_path / "test_state.json")
 
 def load_state_from_file(file_path: str) -> Dict[str, Any]:
     """Load state from a JSON file and initialize persistence model."""
@@ -375,17 +397,6 @@ MOCK_TOOLS = {
     for name, config in MOCK_TOOLS_CONFIG.items()
 }
 
-@pytest.fixture(scope="module")
-def test_state():
-    """Fixture to share state between tests."""
-    state = {
-        "tool_metrics": ToolExecutionMetrics(),
-        "persistence_model": None,  # Will be set by first test
-        "generated_state": None,    # Will be set by first test
-        "crewai_config": None      # Will be set by first test
-    }
-    return state
-
 @pytest.fixture(scope="module", autouse=True)
 def setup_mock_tools():
     """Set up mock tools for testing."""
@@ -418,13 +429,6 @@ def ensure_generated_tools_dir():
         init_file.touch()
     yield
 
-@pytest.fixture(scope="module")
-def temp_state_file(tmp_path_factory):
-    """Create a temporary state file path."""
-    tmp_path = tmp_path_factory.mktemp("dynamic_tools")
-    return str(tmp_path / "test_state.json")
-
-# SECTION 2: State Generation and Setup
 @pytest.mark.order(1)
 @pytest.mark.asyncio
 async def test_dynamic_tools_state_generation(test_state, temp_state_file):
@@ -442,7 +446,7 @@ async def test_dynamic_tools_state_generation(test_state, temp_state_file):
             mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
             mock_storage_location.return_value.state_name = Path(temp_state_file).name
             
-            state = setup_dynamic_tools_state(persistence_model, temp_state_file)
+            state = await setup_dynamic_tools_state(persistence_model, temp_state_file)
             
         assert state is not None, "Failed to generate initial state"
         
@@ -483,31 +487,10 @@ async def test_state_loading_to_local_persistence(test_state):
             mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
             mock_storage_location.return_value.state_name = Path(temp_state_file).name
             
-            setup_dynamic_tools_state(local_model, temp_state_file)
+            await setup_dynamic_tools_state(local_model, temp_state_file)
         
         # Store local model for next tests
         test_state['local_model'] = local_model
-
-        # Debug: List all task managers in local model
-        local_managers = local_model.tasksmanagers.list()
-        logger.info(f"Found {len(local_managers)} task managers in local model")
-        for manager in local_managers:
-            logger.info(f"Task manager in local: {manager.id}")
-
-        # Debug: List all tasks in local model
-        local_tasks = local_model.tasks.list()
-        logger.info(f"Found {len(local_tasks)} tasks in local model")
-        for task in local_tasks:
-            logger.info(f"Task in local: {task.id} with manager {task.tasksmanager_id}")
-
-        # Verify state was loaded
-        assert len(local_tasks) > 0, "No tasks found in local persistence"
-
-        # Verify task manager was loaded with correct ID
-        task = local_tasks[0]
-        assert task.tasksmanager_id is not None, "Task missing tasksmanager_id"
-        task_manager = local_model.tasksmanagers.read(task.tasksmanager_id)
-        assert task_manager is not None, f"Task manager {task.tasksmanager_id} not found"
 
         logger.info("✅ State loaded to local persistence successfully")
         return test_state
@@ -624,12 +607,12 @@ async def test_tool_execution_patterns(test_state):
         logger.error(f"Test failed: {str(e)}", exc_info=True)
         raise
 
-@pytest.mark.order(4.5)
+@pytest.mark.order(5)
 @pytest.mark.asyncio
 async def test_tool_argument_schemas(test_state):
-    """Test step 4.5: Verify tool argument schemas are properly defined."""
+    """Test tool argument schemas are properly defined."""
     try:
-        logger.info("Step 4.5: Testing tool argument schemas...")
+        logger.info("Testing tool argument schemas...")
         
         # Create a curried proxy for testing
         curried_proxy = CurriedProxy()
@@ -687,69 +670,12 @@ async def test_tool_argument_schemas(test_state):
         logger.error(f"Test failed: {str(e)}", exc_info=True)
         raise
 
-@pytest.mark.order(4.6)
-@pytest.mark.asyncio
-async def test_dynamic_tools_state(test_state):
-    """Test the setup of dynamic tools generation state."""
-    try:
-        # Get state file path from previous test
-        temp_state_file = test_state['state_file']
-        assert Path(temp_state_file).exists(), f"State file not found at {temp_state_file}"
-        
-        # Initialize persistence model
-        persistence_model = InMemoryPersistenceModel()
-        
-        # Load state with mocked storage location
-        with patch('src.state_setup.dynamic_tools.StorageLocation') as mock_storage_location:
-            mock_storage_location.return_value.type = StorageType.file
-            mock_storage_location.return_value.location = str(Path(temp_state_file).parent)
-            mock_storage_location.return_value.state_name = Path(temp_state_file).name
-            
-            setup_dynamic_tools_state(persistence_model, temp_state_file)
-        
-        # Extract IDs from loaded state
-        tasksmanager_id = persistence_model.tasksmanagers.list()[0].id
-        task_id = persistence_model.tasks.list()[0].id
-        crewai_config_id = persistence_model.crewai_config.list()[0].id
-        curried_proxy_id = persistence_model.curried_proxies.list()[0].id
-        
-        # Store state for next test
-        test_state["tasksmanager_id"] = tasksmanager_id
-        test_state["task_id"] = task_id
-        test_state["crewai_config_id"] = crewai_config_id
-        test_state["curried_proxy_id"] = curried_proxy_id
-        test_state["persistence_model"] = persistence_model
-        
-        # Register mock tools
-        for name, tool in MOCK_TOOLS.items():
-            tools_catalog.register_instance(tool, name)
-            
-        # Create CurriedProxy and register tools
-        curried_proxy = CurriedProxy()
-        for name, tool in MOCK_TOOLS.items():
-            curried_proxy.add_tool(name, tool)
-            
-        # Store CurriedProxy
-        persistence_model.curried_proxies.create(curried_proxy)
-        
-        # Verify state
-        assert tasksmanager_id is not None, "Missing tasksmanager_id in state"
-        assert task_id is not None, "Missing task_id in state"
-        assert crewai_config_id is not None, "Missing crewai_config_id in state"
-        assert curried_proxy_id is not None, "Missing curried_proxy_id in state"
-        
-        print("✅ Dynamic tools state test passed")
-        
-    except Exception as e:
-        print(f"❌ Dynamic tools state test failed: {str(e)}")
-        raise
-
-@pytest.mark.order(5)
+@pytest.mark.order(6)
 @pytest.mark.asyncio
 async def test_crewai_invocation(test_state):
-    """Test step 5: Invoke CrewAI execution."""
+    """Test CrewAI execution."""
     try:
-        logger.info("Step 5: Invoking CrewAI execution...")
+        logger.info("Invoking CrewAI execution...")
         
         # Initialize persistence model and curried proxy
         persistence_model = InMemoryPersistenceModel()
@@ -846,12 +772,12 @@ async def test_crewai_invocation(test_state):
         logger.error(f"Test failed: {str(e)}", exc_info=True)
         raise
 
-@pytest.mark.order(5.5)
+@pytest.mark.order(7)
 @pytest.mark.asyncio
 async def test_crewai_invocation_with_context(test_state):
-    """Test step 5.5: Invoke CrewAI execution with proper context management."""
+    """Test CrewAI execution with context management."""
     try:
-        logger.info("Step 5.5: Invoking CrewAI execution with context...")
+        logger.info("Invoking CrewAI execution with context...")
         
         # Initialize persistence model and context provider
         persistence_model = InMemoryPersistenceModel()

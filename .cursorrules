@@ -38,6 +38,9 @@ the curreidproxy should not rgister the tools back to the catalog
 
 the state which is the output of the dynamic tools is saved to disk.
 the state which is in fact the serialization of the persistance contains all the needed defeinitions including the curried proxy id used. and it should work under the assumetion that the catalog loads all the tools perior to the creation of the catalog, then the proxy can take those tools and provide them to be exported to different LLM's and agents.
+
+Curreid proxy is initialized and exports the tools to crewai in the task runner mechanism.
+tools incuding the internal tools are registered as part of the initialization of the tools_catalog global parameter
 ---
 ## Persistence Mechanism
 

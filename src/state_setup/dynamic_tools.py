@@ -6,8 +6,6 @@ from pathlib import Path
 project_root = str(Path(__file__).parents[2])  # Go up two levels to reach project root
 sys.path.append(project_root)
 
-
-
 from typing import Dict, Any
 import uuid
 from datetime import datetime
@@ -22,14 +20,18 @@ from src.server.tools.internal_testing_tools import InternalTestingTools
 from src.server.tools.internal_proxy_tools import InternalProxyTools
 from src.server.tools.url_tools import URLTools
 from src.server.controllers.curried_proxy import CurriedProxy
-from src.server.models.agent import CrewAIConfig
+from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, ToolModel
+from src.server.models.process import Process
 from src.server.models.tasks_manager import TasksManager
 from src.server.models.task import Task
 from src.server.controllers.agents_controller import CreateCrewRequest, AgentModel
 from src.server.models.agent import ToolModel
 from src.server.models.persistence_models import StorageLocation, StorageType
-from src.server.controllers.persistence_controller import save_to_storage
+from src.server.controllers.persistence_controller import save_to_storage, load_from_storage
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.context.context_provider import ContextProvider
+from src.server.context.crew_context_enhancer import CrewContextEnhancer, CrewContextConfig
+from src.server.context.unified_context_manager import UnifiedContextManager
 
 # Setup logging
 logging.basicConfig(
@@ -116,7 +118,7 @@ def load_persistence_state(persistence_model: InMemoryPersistenceModel, file_pat
     try:
         state_location = StorageLocation(
             type=StorageType.file,
-            location="persistent_state",
+            location="state/specialized",
             state_name="dynamic_tools_state.json"
         )
         
@@ -124,15 +126,202 @@ def load_persistence_state(persistence_model: InMemoryPersistenceModel, file_pat
             logger.info(f"No existing state file found at {state_location.location}/{state_location.state_name}")
             return
             
-        # State will be loaded automatically by the persistence model
+        # Load state using the persistence controller
+        state_data = load_from_storage(state_location)
+        persistence_model.from_json(state_data)
         logger.info(f"✅ Loaded persistence state from {state_location.location}/{state_location.state_name}")
     except Exception as e:
         logger.error(f"❌ Failed to load persistence state: {str(e)}")
 
-def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state_file: str = "persistent_state/dynamic_tools_state.json") -> Dict[str, Any]:
+async def add_tool_development_context(task_id: str, persistence_model: InMemoryPersistenceModel) -> None:
+    """Add tool development specific context to the task."""
+    try:
+        context_provider = ContextProvider()
+        
+        # Add system context for tool development guidelines
+        await context_provider.add_system_context(
+            task_id=task_id,
+            name="Tool Development Guidelines",
+            content="""When developing tools, follow these guidelines:
+            1. Use concrete types instead of Any where possible
+            2. Include comprehensive docstrings with parameters and returns
+            3. Implement proper error handling and logging
+            4. Add unit tests for all functionality
+            5. Follow Python best practices and PEP standards""",
+            category="development",
+            priority=90
+        )
+        
+        # Add knowledge base context for tool patterns
+        await context_provider.add_context_to_task(
+            task_id=task_id,
+            type="knowledge",
+            source_id="tool_patterns",
+            priority=80,
+            metadata={
+                "name": "Tool Development Patterns",
+                "content": """Common tool development patterns:
+                1. Use async/await for I/O operations
+                2. Implement proper parameter validation
+                3. Return structured responses
+                4. Include progress tracking for long operations
+                5. Support cancellation where appropriate""",
+                "category": "patterns"
+            }
+        )
+        
+        # Add vector store context for code examples
+        await context_provider.add_context_to_task(
+            task_id=task_id,
+            type="vector",
+            source_id="tool_examples",
+            priority=70,
+            metadata={
+                "name": "Tool Implementation Examples",
+                "description": "Example implementations of various tools",
+                "category": "examples"
+            }
+        )
+        
+        # Add testing context
+        await context_provider.add_context_to_task(
+            task_id=task_id,
+            type="knowledge",
+            source_id="testing_guidelines",
+            priority=85,
+            metadata={
+                "name": "Testing Guidelines",
+                "content": """Testing requirements for tools:
+                1. Unit tests for all public methods
+                2. Integration tests for external dependencies
+                3. Test edge cases and error conditions
+                4. Use pytest fixtures for setup
+                5. Mock external services appropriately""",
+                "category": "testing"
+            }
+        )
+        
+        logger.info(f"Added tool development context to task {task_id}")
+        
+    except Exception as e:
+        logger.error(f"Error adding tool development context: {str(e)}")
+        raise
+
+async def add_test_analysis_context(task_id: str, persistence_model: InMemoryPersistenceModel) -> None:
+    """Add test analysis specific context to the task."""
+    try:
+        context_provider = ContextProvider()
+        
+        # Add test analysis guidelines
+        await context_provider.add_system_context(
+            task_id=task_id,
+            name="Test Analysis Guidelines",
+            content="""When analyzing test failures, follow these steps:
+            1. Identify the type of failure (assertion, error, timeout)
+            2. Analyze test output and stack traces
+            3. Check test coverage and edge cases
+            4. Review test data and fixtures
+            5. Validate test environment setup
+            
+            Common Test Issues:
+            1. Incorrect assertions or expectations
+            2. Missing edge case coverage
+            3. Improper test isolation
+            4. Race conditions in async tests
+            5. Resource cleanup issues""",
+            category="testing",
+            priority=95
+        )
+        
+        # Add test-driven development context
+        await context_provider.add_context_to_task(
+            task_id=task_id,
+            type="knowledge",
+            source_id="tdd_workflow",
+            priority=90,
+            metadata={
+                "name": "Test-Driven Development Workflow",
+                "content": """TDD Workflow Steps:
+                1. Write failing test first
+                2. Implement minimum code to pass
+                3. Refactor while maintaining tests
+                4. Iterate for each feature
+                5. Maintain test suite quality
+                
+                Best Practices:
+                1. Keep tests focused and atomic
+                2. Use descriptive test names
+                3. Follow Arrange-Act-Assert pattern
+                4. Mock external dependencies
+                5. Maintain test data fixtures""",
+                "category": "testing"
+            }
+        )
+        
+        # Add test improvement patterns
+        await context_provider.add_context_to_task(
+            task_id=task_id,
+            type="knowledge",
+            source_id="test_improvement",
+            priority=85,
+            metadata={
+                "name": "Test Improvement Patterns",
+                "content": """Test Improvement Strategies:
+                1. Analyze test coverage gaps
+                2. Add property-based testing
+                3. Implement stress testing
+                4. Add performance benchmarks
+                5. Enhance error messages
+                
+                Continuous Improvement:
+                1. Regular test suite review
+                2. Performance optimization
+                3. Maintenance of test data
+                4. Documentation updates
+                5. CI/CD integration""",
+                "category": "testing"
+            }
+        )
+        
+        logger.info(f"Added test analysis context to task {task_id}")
+        
+    except Exception as e:
+        logger.error(f"Error adding test analysis context: {str(e)}")
+        raise
+
+# Update the Technical Lead's backstory in setup_dynamic_tools_state
+async def create_technical_lead_agent() -> AgentModel:
+    """Create an enhanced Technical Lead agent with test analysis capabilities."""
+    return AgentModel(
+        name="Technical Lead",
+        role="Technical Lead",
+        goal="Oversee the tool development process, ensure high quality implementation, and manage test-driven development",
+        backstory="""Expert technical lead with deep knowledge of software architecture, development practices, and test-driven development.
+        Specializes in:
+        1. Code quality and architecture
+        2. Test suite design and analysis
+        3. Development process optimization
+        4. Technical mentorship
+        5. Quality assurance
+        
+        Experienced in:
+        - Managing complex development workflows
+        - Analyzing and resolving test failures
+        - Implementing test-driven development
+        - Coordinating between development and testing teams
+        - Maintaining high code quality standards""",
+        tools=[ToolModel(name=tool_name, description="Tool for operations") 
+               for tool_name in tools_catalog.list_tools()]
+    )
+
+async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state_file: str = "state/specialized/dynamic_tools_state.json") -> Dict[str, Any]:
     """Set up the dynamic tools state with in-memory persistence and JSON serialization."""
     try:
         print("\n🔄 Setting up dynamic tools state...")
+        
+        # Initialize unified context manager
+        context_manager = UnifiedContextManager()
+        await context_manager.initialize()  # Initialize async components
         
         # Register tools if not already registered
         if not tools_catalog.list_tools():
@@ -142,9 +331,13 @@ def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state
         available_tools = tools_catalog.list_tools()
         print(f"📦 Available tools in catalog: {available_tools}")
 
-        # Then try to load existing state
+        # Try to load existing state
         print("\n🔄 Loading existing state...")
-        load_persistence_state(persistence_model, state_file)
+        try:
+            load_persistence_state(persistence_model, state_file)
+        except Exception as e:
+            print(f"⚠️ Could not load existing state: {str(e)}")
+            print("🆕 Creating new state...")
 
         # Create curried proxy if not exists
         existing_proxies = persistence_model.curried_proxies.list()
@@ -212,56 +405,121 @@ def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state
         # Create CrewAI config if not exists
         existing_configs = persistence_model.crewai_config.list()
         if not existing_configs:
+            # Create enhanced Technical Lead
+            technical_lead = await create_technical_lead_agent()
+            
             crewai_config = CrewAIConfig(
                 id=str(uuid.uuid4()),
                 create_crew=CreateCrewRequest(
                     description="Configuration for the dynamic tools generation crew",
+                    process=Process.hierarchical,
                     agents=[
+                        technical_lead,  # Use enhanced Technical Lead
                         AgentModel(
-                            name="Tools Architect",
-                            role="Lead Tools Architect",
-                            goal="Design robust and reusable tools with clear interfaces",
-                            backstory="Expert in designing modular and maintainable tools",
-                            tools=[ToolModel(name="internal_file_tools", description="Tool for file operations")]
+                            name="File Operations Manager",
+                            role="File Operations Manager",
+                            goal="Manage file operations and ensure consistent file naming across iterations",
+                            backstory="""Expert in file management and version control.
+                            Responsible for:
+                            1. Maintaining consistent file names
+                            2. Managing file updates
+                            3. Preventing duplicate files
+                            4. Coordinating between implementation and test files""",
+                            tools=[
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                            ]
                         ),
                         AgentModel(
-                            name="Implementation Engineer",
+                            name="Tools Developer",
                             role="Tools Developer",
-                            goal="Implement tools following the design specifications and save them to the dist directory",
+                            goal="Implement tools following the design specifications and save them to the correct files",
                             backstory="Skilled in writing clean, efficient, and well-tested code",
-                            tools=[ToolModel(name="internal_file_tools", description="Tool for file operations")]
+                            tools=[
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files")
+                            ]
                         ),
                         AgentModel(
-                            name="Code Saver",
-                            role="Code Extractor",
-                            goal="Extract and save clean code from markdown-formatted implementations",
-                            backstory="Expert in parsing and extracting code from documentation and saving it to the correct location",
-                            tools=[ToolModel(name="internal_file_tools", description="Tool for file operations")]
+                            name="Test Engineer",
+                            role="Test Engineer",
+                            goal="Create and execute tests for the implemented tools",
+                            backstory="Expert in test-driven development and quality assurance",
+                            tools=[
+                                ToolModel(name="internal_testing_tools", description="Tool for testing operations"),
+                                ToolModel(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
+                                ToolModel(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                            ]
                         )
                     ],
                     tasks=[
                         {
-                            "name": "Design Complex Fibonacci Tool",
-                            "description": "Design a tool that calculates Fibonacci sequence for complex numbers, starting with i+i and i+2i. The tool should handle complex number arithmetic and provide clear interfaces for sequence generation.",
-                            "agent_role": "Lead Tools Architect",
-                            "expected_output": "Tool design specification for complex number Fibonacci calculator",
-                            "tools": [ToolModel(name="internal_file_tools", description="Tool for file operations")],
-                            "next": "Implement Complex Fibonacci Tool"
+                            "name": "Setup File Structure",
+                            "description": """Initialize and manage the file structure for the complex Fibonacci implementation.
+                            
+                            Required files:
+                            1. src/tools/complex_fibonacci.py - Main implementation file
+                            2. src/tools/tests/test_complex_fibonacci.py - Test suite file
+                            
+                            Tasks:
+                            1. Create necessary directories
+                            2. Initialize files with basic structure
+                            3. Ensure proper file permissions""",
+                            "agent_role": "File Operations Manager",
+                            "expected_output": "File structure initialized successfully",
+                            "tools": [
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                            ]
                         },
                         {
-                            "name": "Implement Complex Fibonacci Tool",
-                            "description": "Implement the complex number Fibonacci calculator following the design specifications. Provide the implementation in markdown format with explanations.",
+                            "name": "Implement Complex Fibonacci",
+                            "description": """Implement the complex Fibonacci calculator in src/tools/complex_fibonacci.py.
+                            
+                            Initial values:
+                            - First term (z0) = 2i
+                            - Second term (z1) = 3i
+                            
+                            The sequence follows the standard Fibonacci rule where each term is the sum of the previous two terms:
+                            For n >= 2: z[n] = z[n-1] + z[n-2]
+                            
+                            Requirements:
+                            1. Use the EXACT file path: src/tools/complex_fibonacci.py
+                            2. Implement as a single function: complex_fibonacci(n: int) -> complex
+                            3. Return complex numbers (using Python's complex type)
+                            4. Include proper error handling for negative inputs""",
                             "agent_role": "Tools Developer",
-                            "expected_output": "Implemented complex number Fibonacci tool code with explanations in markdown",
-                            "tools": [ToolModel(name="internal_file_tools", description="Tool for file operations")],
-                            "next": "Save Code to Dist"
+                            "expected_output": "Complex Fibonacci implementation saved to src/tools/complex_fibonacci.py",
+                            "tools": [
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files")
+                            ]
                         },
                         {
-                            "name": "Save Code to Dist",
-                            "description": "Extract the Python code from the markdown-formatted implementation and save it using internal_file_tools.save_implementation. Steps: 1) Extract only the actual Python code from the markdown, ignoring explanations and formatting. 2) Call internal_file_tools.save_implementation(code=extracted_code, tool_name='complex_fibonacci_tool'). The function will automatically save the file as 'complex_fibonacci_tool.py' in the dist directory.",
-                            "agent_role": "Code Extractor",
-                            "expected_output": "Clean Python code saved to dist directory",
-                            "tools": [ToolModel(name="internal_file_tools", description="Tool for file operations")]
+                            "name": "Create Tests",
+                            "description": """Create tests for the complex Fibonacci implementation in src/tools/tests/test_complex_fibonacci.py.
+                            
+                            Test requirements:
+                            1. Use the EXACT file path: src/tools/tests/test_complex_fibonacci.py
+                            2. Test the first 5 terms: [2i, 3i, 5i, 8i, 13i]
+                            3. Test error handling for negative inputs
+                            4. Use Python's unittest framework
+                            
+                            Test structure:
+                            - test_basic_sequence: Verify the first 5 terms
+                            - test_negative_input: Verify error handling""",
+                            "agent_role": "Test Engineer",
+                            "expected_output": "Test suite saved to src/tools/tests/test_complex_fibonacci.py",
+                            "tools": [
+                                ToolModel(name="internal_testing_tools", description="Tool for testing operations"),
+                                ToolModel(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
+                                ToolModel(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
+                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
+                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                            ]
                         }
                     ]
                 ),
@@ -289,6 +547,59 @@ def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel, state
             )
             task = persistence_model.tasks.create(task)
             logger.info(f"✨ Created task with ID: {task.id}")
+            
+            # Add tool development context using unified manager
+            await context_manager.add_context_to_task(
+                task_id=task.id,
+                content="""Tool Development Context:
+                1. Follow tool development guide in docs/
+                2. Use type hints and proper documentation
+                3. Implement error handling and testing
+                4. Integrate with context system""",
+                context_type="system",
+                metadata={
+                    "name": "Tool Development Guidelines",
+                    "category": "development",
+                    "priority": 90
+                }
+            )
+            logger.info("📚 Added tool development context")
+            
+            # Add documentation context
+            await context_manager.add_context_to_task(
+                task_id=task.id,
+                content="""Documentation Requirements:
+                1. Comprehensive docstrings
+                2. Usage examples
+                3. Error handling documentation
+                4. Test cases documentation""",
+                context_type="knowledge",
+                metadata={
+                    "name": "Documentation Guidelines",
+                    "domain": "documentation",
+                    "category": "guidelines",
+                    "priority": 85
+                }
+            )
+            logger.info("📝 Added documentation context")
+            
+            # Add test context
+            await context_manager.add_context_to_task(
+                task_id=task.id,
+                content="""Testing Requirements:
+                1. Unit tests for all functionality
+                2. Integration tests for external dependencies
+                3. Edge case testing
+                4. Performance testing""",
+                context_type="knowledge",
+                metadata={
+                    "name": "Testing Guidelines",
+                    "domain": "testing",
+                    "category": "guidelines",
+                    "priority": 80
+                }
+            )
+            logger.info("🧪 Added testing context")
         else:
             task = existing_tasks[0]
             # Update existing task with CrewAI config if not set
@@ -447,7 +758,8 @@ if __name__ == "__main__":
     persistence_model = PersistenceModelFactory.persistence_model("inmemory")
     
     try:
-        result = setup_dynamic_tools_state(persistence_model)
+        import asyncio
+        result = asyncio.run(setup_dynamic_tools_state(persistence_model))
         logger.info("✅ Dynamic tools state setup completed successfully")
         logger.info(f"📊 Result: {result}")
     except Exception as e:
