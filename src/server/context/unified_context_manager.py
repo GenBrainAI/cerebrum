@@ -92,15 +92,41 @@ class UnifiedContextManager:
         self.prepared_data: Dict[str, PreparedData] = {}
         self._load_prepared_data()
         
-        # Initialize documentation asynchronously in initialize method
+        # Initialize documentation
         self._documentation_initialized = False
-    
+        
     async def initialize(self):
-        """Initialize all context components."""
-        await self.context_provider.initialize()
+        """Initialize async components."""
         if not self._documentation_initialized:
             await self._initialize_documentation()
-            self._documentation_initialized = True
+    
+    async def _initialize_documentation(self):
+        """Initialize documentation in knowledge base."""
+        try:
+            # Get documentation path
+            docs_path = Path("docs/tool_development_guide.md")
+            
+            if docs_path.exists() and docs_path.is_file():
+                # Read documentation content
+                content = docs_path.read_text()
+                
+                # Add to knowledge base
+                await self.knowledge_base.add_entry(
+                    content=content,
+                    domain="tool_development",
+                    metadata={
+                        "type": "guide",
+                        "source": str(docs_path)
+                    }
+                )
+                logger.info("Documentation initialized in knowledge base")
+                self._documentation_initialized = True
+            else:
+                logger.warning("Documentation file not found")
+                
+        except Exception as e:
+            logger.error(f"Error initializing documentation: {str(e)}")
+            raise
     
     def _load_prepared_data(self):
         """Load previously prepared data."""
@@ -205,7 +231,7 @@ class UnifiedContextManager:
             
             if context_type == "knowledge":
                 # Add to knowledge base
-                source_id = self.knowledge_base.add_entry(
+                source_id = await self.knowledge_base.add_entry(
                     content=prepared.content,
                     metadata=metadata
                 )
@@ -272,33 +298,6 @@ class UnifiedContextManager:
             logger.error(f"Error getting prepared data: {str(e)}")
             return []
     
-    async def _initialize_documentation(self):
-        """Initialize documentation in knowledge base."""
-        try:
-            # Get documentation path
-            docs_path = Path("docs/tool_development_guide.md")
-            
-            if docs_path.exists() and docs_path.is_file():
-                # Read documentation content
-                content = docs_path.read_text()
-                
-                # Add to knowledge base
-                self.knowledge_base.add_entry(
-                    content=content,
-                    domain="tool_development",
-                    metadata={
-                        "type": "guide",
-                        "source": str(docs_path)
-                    }
-                )
-                logger.info("Documentation initialized in knowledge base")
-            else:
-                logger.warning("Documentation file not found")
-                
-        except Exception as e:
-            logger.error(f"Error initializing documentation: {str(e)}")
-            raise
-    
     async def add_context_to_task(
         self,
         task_id: str,
@@ -312,7 +311,7 @@ class UnifiedContextManager:
             # Add to knowledge base if needed
             source_id = None
             if context_type == "knowledge":
-                source_id = self.knowledge_base.add_entry(content, metadata)
+                source_id = await self.knowledge_base.add_entry(content, metadata)
             elif context_type == "vector":
                 # Add to vector store
                 try:
@@ -363,43 +362,56 @@ class UnifiedContextManager:
         task_id: str,
         context_types: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
-        """Get context for a task."""
+        """Get context for a task.
+        
+        Args:
+            task_id: ID of the task to get contexts for
+            context_types: Optional list of context types to filter by
+            
+        Returns:
+            List[Dict[str, Any]]: List of contexts with their content and metadata
+        """
         try:
-            task_context = self.context_provider.task_context_manager.get_task_context(task_id)
-            if not task_context:
+            # Get contexts from context provider
+            contexts = await self.context_provider.get_task_contexts(task_id, context_types)
+            if not contexts:
                 return []
             
-            contexts = []
-            for context_ref in task_context.contexts:
-                # Filter by type if specified
-                if context_types and context_ref.type not in context_types:
+            # Enrich contexts with content from appropriate stores
+            enriched_contexts = []
+            for context in contexts:
+                try:
+                    if context["type"] == "knowledge":
+                        # Get content from knowledge base
+                        entry = await self.knowledge_base.get_entry(context["source_id"])
+                        if entry:
+                            enriched_contexts.append({
+                                **context,
+                                "content": entry["content"],
+                                "metadata": {
+                                    **context.get("metadata", {}),
+                                    **entry.get("metadata", {})
+                                }
+                            })
+                    elif context["type"] == "vector":
+                        # Get content from vector store
+                        content = await self.vector_store.get_content(context["source_id"])
+                        if content:
+                            enriched_contexts.append({
+                                **context,
+                                "content": content["content"],
+                                "metadata": {
+                                    **context.get("metadata", {}),
+                                    **content.get("metadata", {})
+                                }
+                            })
+                except Exception as e:
+                    logger.error(f"Error enriching context {context['id']}: {str(e)}")
                     continue
-                
-                # Get context data based on type
-                if context_ref.type == "knowledge":
-                    entry = self.knowledge_base.get_entry(context_ref.source_id)
-                    if entry:
-                        contexts.append({
-                            "id": str(context_ref.id),
-                            "type": "knowledge",
-                            "content": entry["content"],
-                            "metadata": {**context_ref.metadata, **entry.get("metadata", {})},
-                            "priority": context_ref.priority
-                        })
-                elif context_ref.type == "vector":
-                    content = await self.vector_store.get_content(context_ref.source_id)
-                    if content:
-                        contexts.append({
-                            "id": str(context_ref.id),
-                            "type": "vector",
-                            "content": content["content"],
-                            "metadata": {**context_ref.metadata, **content.get("metadata", {})},
-                            "priority": context_ref.priority
-                        })
             
             # Sort by priority
-            contexts.sort(key=lambda x: x.get("priority", 0), reverse=True)
-            return contexts
+            enriched_contexts.sort(key=lambda x: x.get("priority", 0), reverse=True)
+            return enriched_contexts
             
         except Exception as e:
             logger.error(f"Error getting task context: {str(e)}")

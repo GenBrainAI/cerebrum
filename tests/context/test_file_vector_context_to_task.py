@@ -125,9 +125,9 @@ class MockContextDB:
         return contexts
 
 class MockTaskContext:
-    def __init__(self):
+    def __init__(self, task_id: str):
         self.context_db = MockContextDB()
-        self.task_id = "test_task"
+        self.task_id = task_id
         self.use_context = True
         self.inherit_manager_context = True
         
@@ -160,7 +160,7 @@ class MockTaskContext:
 async def test_single_context_add_and_retrieve():
     """Test adding a single vector context to a task and retrieving it."""
     # Create mock task context
-    task_context = MockTaskContext()
+    task_context = MockTaskContext("test_task")
     
     # Add vector context
     context_ref = await task_context.add_context(
@@ -246,110 +246,60 @@ async def context_provider() -> ContextProvider:
         "tasksmanager_id": "manager1"
     })
     
-    # Set up mock context DB with strict checking
-    mock_context_db = MagicMock(spec=['store_context', 'get_contexts', 'vector_store'])
+    # Create shared context_db
+    shared_context_db = MockContextDB()
     
-    # Track all method calls
-    stored_contexts: Dict[str, List[Dict[str, Any]]] = {}
-    
-    # Create the store_context mock with tracking
-    store_context_mock = MagicMock()
-    async def mock_store_context(task_id: str, context_type: str, source_id: str, 
-                               metadata: dict, priority: int = 50) -> None:
-        """Mock storing context."""
-        store_context_mock(task_id, context_type, source_id, metadata, priority)
-        
-        if task_id not in stored_contexts:
-            stored_contexts[task_id] = []
-            
-        stored_contexts[task_id].append({
-            "type": context_type,
-            "source_id": source_id,
-            "metadata": metadata,
-            "priority": priority
-        })
-    
-    # Create the get_contexts mock with tracking
-    get_contexts_mock = MagicMock()
-    async def mock_get_contexts(task_id: str, context_types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-        """Get stored contexts for a task."""
-        get_contexts_mock(task_id, context_types)
-        
-        contexts = stored_contexts.get(task_id, [])
-        if context_types:
-            contexts = [c for c in contexts if c["type"] in context_types]
-        return contexts
-    
-    # Set up the mock methods with tracking
-    mock_context_db.store_context = mock_store_context
-    mock_context_db.get_contexts = mock_get_contexts
-    mock_context_db.stored_contexts = stored_contexts
-    
-    # Add call tracking
-    mock_context_db.store_context.mock = store_context_mock
-    mock_context_db.get_contexts.mock = get_contexts_mock
-    
-    # Set up vector store
-    mock_context_db.vector_store = VectorStore(
-        config=VectorStoreConfig(persist_directory="test_vector_store"),
-        base_path="test_persistent_state/vector_store"
-    )
-    
-    # Create a mock task context class
-    class MockTaskContext:
-        def __init__(self):
-            self.context_db = MockContextDB()
-            self.task_id = "test_task"
-            self.use_context = True
-            self.inherit_manager_context = True
-            
-        def update_context_config(self, use_context: bool = None, inherit_manager_context: bool = None):
-            """Update context configuration."""
-            if use_context is not None:
-                self.use_context = use_context
-            if inherit_manager_context is not None:
-                self.inherit_manager_context = inherit_manager_context
-            
-        async def add_context(self, type: str, source_id: str, metadata: Dict, priority: int = 50) -> ContextReference:
-            """Add context to the task."""
-            await self.context_db.store_context(
-                task_id=self.task_id,
-                context_type=type,
-                source_id=source_id,
-                metadata=metadata,
-                priority=priority
-            )
-            return ContextReference(type=type, source_id=source_id, priority=priority)
-        
-        async def get_contexts(self, context_types: List[str] = None) -> List[Dict[str, Any]]:
-            """Get contexts for the task."""
-            return await self.context_db.get_contexts(
-                task_id=self.task_id,
-                context_types=context_types
-            )
-    
-    # Mock task context manager
+    # Create a mock task context manager
     class MockTaskContextManager:
         def __init__(self):
             self.contexts = {}
+            self.context_db = shared_context_db
             
         def get_task_context(self, task_id: str) -> MockTaskContext:
             if task_id not in self.contexts:
-                self.contexts[task_id] = MockTaskContext()
+                task_context = MockTaskContext(task_id)
+                task_context.context_db = self.context_db
+                self.contexts[task_id] = task_context
             return self.contexts[task_id]
             
         def create_task_context(self, task_id: str) -> MockTaskContext:
-            self.contexts[task_id] = MockTaskContext()
+            task_context = MockTaskContext(task_id)
+            task_context.context_db = self.context_db
+            self.contexts[task_id] = task_context
             return self.contexts[task_id]
+            
+        async def add_context_to_task(
+            self,
+            task_id: str,
+            type: str,
+            source_id: str,
+            metadata: Optional[Dict[str, Any]] = None,
+            priority: int = 50
+        ) -> str:
+            """Add a context to a task."""
+            await self.context_db.store_context(
+                task_id=task_id,
+                context_type=type,
+                source_id=source_id,
+                metadata=metadata or {},
+                priority=priority
+            )
+            return str(ContextReference(type=type, source_id=source_id, priority=priority).id)
+            
+        async def get_task_contexts(
+            self,
+            task_id: str,
+            context_types: Optional[List[str]] = None
+        ) -> List[Dict[str, Any]]:
+            """Get all contexts associated with a task."""
+            return await self.context_db.get_contexts(task_id, context_types)
     
     mock_task_context_manager = MockTaskContextManager()
     provider.task_context_manager = mock_task_context_manager
     
     # Inject mocks
     provider.persistence_model = mock_persistence
-    provider.context_db = mock_context_db
-    
-    await provider.initialize()
+    provider.context_db = shared_context_db
     
     return provider
 

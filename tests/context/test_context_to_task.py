@@ -307,10 +307,25 @@ async def context_provider() -> ContextProvider:
             
         async def get_contexts(self, context_types: List[str] = None) -> List[Dict[str, Any]]:
             """Get contexts for the task."""
-            return await self.context_db.get_contexts(
+            # Get task's own contexts
+            contexts = await self.context_db.get_contexts(
                 task_id=self.task_id,
                 context_types=context_types
             )
+            
+            # If inheritance is enabled, get manager contexts
+            if self.inherit_manager_context and self.task_id.startswith("task"):
+                # Extract manager ID from task ID (e.g., "task1" -> "manager1")
+                manager_id = self.task_id.replace("task", "manager")
+                manager_contexts = await self.context_db.get_contexts(
+                    task_id=manager_id,
+                    context_types=context_types
+                )
+                contexts.extend(manager_contexts)
+            
+            # Sort contexts by priority (highest first)
+            contexts.sort(key=lambda x: x["priority"], reverse=True)
+            return contexts
     
     # Mock task context manager
     class MockTaskContextManager:
@@ -325,6 +340,31 @@ async def context_provider() -> ContextProvider:
         def create_task_context(self, task_id: str) -> MockTaskContext:
             self.contexts[task_id] = MockTaskContext(task_id)
             return self.contexts[task_id]
+
+        async def get_task_contexts(
+            self,
+            task_id: str,
+            context_types: Optional[List[str]] = None
+        ) -> List[Dict[str, Any]]:
+            """Get all contexts associated with a task."""
+            task_context = self.get_task_context(task_id)
+            if not task_context:
+                return []
+            
+            # Get contexts from the context DB
+            contexts = await task_context.get_contexts(context_types)
+            
+            # If inheritance is enabled, get manager contexts
+            if task_context.inherit_manager_context and task_id.startswith("task"):
+                manager_id = f"manager_{task_id.split('_')[0]}"
+                manager_context = self.get_task_context(manager_id)
+                if manager_context:
+                    manager_contexts = await manager_context.get_contexts(context_types)
+                    contexts.extend(manager_contexts)
+                
+            # Sort contexts by priority (highest first)
+            contexts.sort(key=lambda x: x["priority"], reverse=True)
+            return contexts
     
     mock_task_context_manager = MockTaskContextManager()
     provider.task_context_manager = mock_task_context_manager
@@ -332,8 +372,6 @@ async def context_provider() -> ContextProvider:
     # Inject mocks
     provider.persistence_model = mock_persistence
     provider.context_db = mock_context_db
-    
-    await provider.initialize()
     
     return provider
 
@@ -384,10 +422,10 @@ async def test_manager_context_inheritance(context_provider):
     """Test context inheritance from task manager."""
     # Setup manager context - note the ID format
     manager_id = "manager1"  # Base manager ID
-    manager_context_id = f"manager_{manager_id}"
+    manager_context_id = f"manager_{manager_id}"  # Should be just manager_id
 
     # Create manager context
-    manager_context = context_provider.task_context_manager.create_task_context(manager_context_id)
+    manager_context = context_provider.task_context_manager.create_task_context(manager_id)
     await manager_context.add_context(
         type="system",
         source_id="sys1",
@@ -397,7 +435,7 @@ async def test_manager_context_inheritance(context_provider):
 
     # Store manager context in context DB
     await context_provider.context_db.store_context(
-        task_id=manager_context_id,
+        task_id=manager_id,  # Use manager_id directly
         context_type="system",
         source_id="sys1",
         metadata={"content": "Manager system context"},

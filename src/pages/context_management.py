@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 import asyncio
 from src.server.context.context_ui import ContextManagerUI
+from server.views.components.sidebar.context_mng_sidebar import render_context_mng_sidebar
 
 # Add project root to Python path
 project_root = str(Path(__file__).parents[2])
@@ -41,9 +42,12 @@ def render_context_page():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        # Define async function to wrap the render call
+        # Define async function to wrap the render calls
         async def render_async():
             try:
+                # Render sidebar first
+                await render_context_mng_sidebar()
+                # Then render main content
                 await context_manager.render()
             except Exception as e:
                 st.error(f"Error in render: {str(e)}")

@@ -47,7 +47,6 @@ class DynamicToolRunner:
         """Initialize the runner and load necessary components."""
         await self.load_state()
         await self.initialize_task_runner()
-        await self.context_manager.initialize()
         
     async def load_state(self):
         """Load state from storage."""

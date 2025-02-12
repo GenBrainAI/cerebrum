@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -97,3 +97,129 @@ class TaskContextManager:
         context = TaskContext(task_id)
         self.task_contexts[task_id] = context
         return context
+
+    async def add_context_to_task(
+        self,
+        task_id: str,
+        type: str,
+        source_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        priority: int = 50
+    ) -> str:
+        """Add a context to a task.
+        
+        Args:
+            task_id: ID of the task to add context to
+            type: Type of context (knowledge, vector, system, etc.)
+            source_id: ID of the source content
+            metadata: Additional metadata about the context
+            priority: Priority of the context (default: 50)
+            
+        Returns:
+            str: ID of the created context reference
+        """
+        # Get or create task context
+        task_context = self.get_task_context(task_id)
+        if not task_context:
+            task_context = self.create_task_context(task_id)
+            
+        # Add context reference
+        context_ref = task_context.add_context(
+            type=type,
+            source_id=source_id,
+            priority=priority,
+            metadata=metadata or {}
+        )
+        
+        return str(context_ref.id)
+        
+    async def get_contexts_by_source(
+        self,
+        source_id: str,
+        type: str
+    ) -> List[Dict[str, Any]]:
+        """Get all contexts that reference a particular source."""
+        contexts = []
+        for task_context in self.task_contexts.values():
+            for context in task_context.contexts:
+                if context.source_id == source_id and context.type == type:
+                    contexts.append({
+                        "id": str(context.id),
+                        "task_id": task_context.task_id,
+                        "type": context.type,
+                        "source_id": context.source_id,
+                        "metadata": context.metadata,
+                        "priority": context.priority
+                    })
+        return contexts
+        
+    async def remove_contexts_by_source(
+        self,
+        source_id: str,
+        type: str
+    ) -> bool:
+        """Remove all contexts that reference a particular source."""
+        removed = False
+        for task_context in self.task_contexts.values():
+            initial_length = len(task_context.contexts)
+            task_context.contexts = [
+                ctx for ctx in task_context.contexts 
+                if not (ctx.source_id == source_id and ctx.type == type)
+            ]
+            if len(task_context.contexts) < initial_length:
+                removed = True
+        return removed
+
+    async def get_task_contexts(
+        self,
+        task_id: str,
+        context_types: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Get all contexts associated with a task.
+        
+        Args:
+            task_id: ID of the task to get contexts for
+            context_types: Optional list of context types to filter by
+            
+        Returns:
+            List[Dict[str, Any]]: List of context dictionaries with their metadata
+        """
+        task_context = self.get_task_context(task_id)
+        if not task_context:
+            return []
+            
+        # Get task's own contexts
+        contexts = []
+        for context in task_context.contexts:
+            if context_types and context.type not in context_types:
+                continue
+            contexts.append({
+                "id": str(context.id),
+                "type": context.type,
+                "source_id": context.source_id,
+                "metadata": context.metadata,
+                "priority": context.priority,
+                "created_at": context.created_at
+            })
+            
+        # If inheritance is enabled, get manager contexts
+        if task_context.inherit_manager_context and task_id.startswith("task"):
+            # Extract manager ID from task ID (e.g., "task1" -> "manager1")
+            manager_id = task_id.replace("task", "manager")
+            manager_context = self.get_task_context(manager_id)
+            if manager_context:
+                for context in manager_context.contexts:
+                    if context_types and context.type not in context_types:
+                        continue
+                    contexts.append({
+                        "id": str(context.id),
+                        "type": context.type,
+                        "source_id": context.source_id,
+                        "metadata": context.metadata,
+                        "priority": context.priority,
+                        "created_at": context.created_at
+                    })
+                    
+        # Sort contexts by priority (highest first)
+        contexts.sort(key=lambda x: x["priority"], reverse=True)
+        return contexts

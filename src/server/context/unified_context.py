@@ -90,12 +90,8 @@ class UnifiedContextState:
             }
         }
         
-        # Initialize context bridges
+        # Initialize context bridges and provider
         self.crew_bridge = None
-        self.context_provider = None
-        
-    async def initialize(self):
-        """Initialize context provider and bridges."""
         self.context_provider = ContextProvider()
         
     async def assign_context_to_cerebrum_task(

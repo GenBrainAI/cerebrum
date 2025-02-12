@@ -40,13 +40,15 @@ class VectorStore:
         """
         self.config = config or VectorStoreConfig()
         self.base_path = Path(base_path)
+        self.base_path.mkdir(parents=True, exist_ok=True)
         
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(
             path=str(self.base_path),
             settings=Settings(
                 anonymized_telemetry=False,
-                allow_reset=True
+                allow_reset=True,
+                is_persistent=True
             )
         )
 
@@ -586,12 +588,23 @@ class VectorStore:
     def _calculate_storage_size(self) -> float:
         """Calculate total storage size in MB."""
         try:
+            # Check if collection has any items
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            if collection.count() == 0:
+                return 0.0
+                
+            # Calculate size only if there are items
             total_size = 0
             for root, _, files in os.walk(self.base_path):
                 for file in files:
                     file_path = Path(root) / file
                     total_size += file_path.stat().st_size
+            
             return total_size / (1024 * 1024)  # Convert to MB
+            
         except Exception as e:
             logging.error(f"Error calculating storage size: {str(e)}")
             return 0.0
@@ -832,3 +845,31 @@ class VectorStore:
         except Exception as e:
             logging.error(f"Error getting content from vector store: {str(e)}")
             return None
+
+    async def get_all_items(self) -> List[Dict[str, Any]]:
+        """Get all items from all collections in the vector store."""
+        try:
+            items = []
+            # Get default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Get all items from collection
+            results = collection.get()
+            
+            if results and results.get('ids'):
+                for i, item_id in enumerate(results['ids']):
+                    items.append({
+                        "id": item_id,
+                        "content": results['documents'][i] if 'documents' in results else "",
+                        "metadata": results['metadatas'][i] if 'metadatas' in results else {},
+                        "created_at": results['metadatas'][i].get('added_at', "") if 'metadatas' in results else ""
+                    })
+            
+            return items
+            
+        except Exception as e:
+            logging.error(f"Error getting all items from vector store: {str(e)}")
+            return []
