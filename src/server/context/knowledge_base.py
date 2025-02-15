@@ -91,14 +91,23 @@ class KnowledgeBase:
             knowledge_id = f"knowledge_{self.next_id}"
             self.next_id += 1
             
+            # Combine tags from both metadata and tags parameter
+            combined_tags = set(tags or [])
+            if metadata and "tags" in metadata:
+                combined_tags.update(metadata.get("tags", []))
+            
+            # Create metadata with domain and combined tags
+            entry_metadata = {
+                **(metadata or {}),
+                "domain": domain,
+                "tags": list(combined_tags)  # Convert back to list
+            }
+            
             self.knowledge[knowledge_id] = {
                 "content": content,
                 "domain": domain,
-                "metadata": {
-                    **(metadata or {}),
-                    "domain": domain
-                },
-                "tags": tags or [],
+                "metadata": entry_metadata,
+                "tags": list(combined_tags),  # Store tags at top level too
                 "created_at": datetime.now().isoformat()
             }
             
@@ -196,23 +205,46 @@ class KnowledgeBase:
         try:
             results = []
             
-            # Use index for domain filtering if available
-            if domain and domain in self.knowledge_index:
-                candidate_ids = set(self.knowledge_index[domain])
-            else:
-                candidate_ids = set(self.knowledge.keys())
+            # Start with all entries
+            candidate_ids = set(self.knowledge.keys())
+            
+            # Filter by domain if specified
+            if domain:
+                domain_ids = set()
+                for knowledge_id, entry in self.knowledge.items():
+                    entry_domain = entry["domain"]
+                    if isinstance(entry_domain, dict):
+                        entry_domain = entry_domain.get("domain", "general")
+                    if entry_domain == domain:
+                        domain_ids.add(knowledge_id)
+                candidate_ids &= domain_ids
             
             # Apply metadata filter
             if metadata_filter:
                 filtered_ids = set()
-                for key, value in metadata_filter.items():
-                    index_key = f"{key}:{value}" if isinstance(value, str) else None
-                    if index_key and index_key in self.knowledge_index:
-                        filtered_ids.update(self.knowledge_index[index_key])
-                if filtered_ids:
-                    candidate_ids &= filtered_ids
+                for knowledge_id in candidate_ids.copy():
+                    entry = self.knowledge[knowledge_id]
+                    matches = True
+                    
+                    for key, value in metadata_filter.items():
+                        if key == "tags" and isinstance(value, list):
+                            # Check if any of the required tags are present
+                            if not any(tag in entry["tags"] for tag in value):
+                                matches = False
+                                break
+                        elif key in entry["metadata"]:
+                            if entry["metadata"][key] != value:
+                                matches = False
+                                break
+                        else:
+                            matches = False
+                            break
+                    
+                    if matches:
+                        filtered_ids.add(knowledge_id)
+                candidate_ids = filtered_ids
             
-            # Process candidates
+            # Process candidates and apply query filter
             for knowledge_id in candidate_ids:
                 entry = self.knowledge[knowledge_id]
                 

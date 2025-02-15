@@ -9,7 +9,7 @@ from ..models.view_state import ViewState
 from ..models.view_types import ViewType
 from ...models.specialized_state import StateType, AgentFrameworkState, StateMetadata
 from ..state.state_manager import ViewStateManager
-from ..components.tree_component import TreeNode
+from ..components.tree_component import TreeComponent
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
@@ -19,6 +19,8 @@ from ...models.message import Message
 from ...controllers.task_runner import TaskRunner
 import streamlit as st
 from uuid import uuid4
+from ..models.tree_node import TreeNode
+
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
     
@@ -110,24 +112,36 @@ class AgenticViewController:
                 return None
             
             # Create root node
-            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Agentic Frameworks", "root")
+            root = TreeNode(
+                id=UUID('00000000-0000-0000-0000-000000000000'),
+                name="Agentic Frameworks",
+                type="root",
+                metadata={},
+                data={}
+            )
             
             # Create framework type nodes
             framework_types = {
                 "crewai": TreeNode(
-                    UUID('11111111-1111-1111-1111-111111111111'), 
-                    "CrewAI", 
-                    "group"
+                    id=UUID('11111111-1111-1111-1111-111111111111'), 
+                    name="CrewAI", 
+                    type="group",
+                    metadata={},
+                    data={}
                 ),
                 "autogen": TreeNode(
-                    UUID('22222222-2222-2222-2222-222222222222'), 
-                    "AutoGen", 
-                    "group"
+                    id=UUID('22222222-2222-2222-2222-222222222222'), 
+                    name="AutoGen", 
+                    type="group",
+                    metadata={},
+                    data={}
                 ),
                 "other": TreeNode(
-                    UUID('33333333-3333-3333-3333-333333333333'), 
-                    "Other", 
-                    "group"
+                    id=UUID('33333333-3333-3333-3333-333333333333'), 
+                    name="Other", 
+                    type="group",
+                    metadata={},
+                    data={}
                 )
             }
             
@@ -141,22 +155,21 @@ class AgenticViewController:
                     # Get agents from the CrewAI config
                     if hasattr(config, 'agents') and config.agents:
                         for agent in config.agents:
-                            agent_node = TreeNode(
-                                UUID(agent.id), 
-                                agent.name,
-                                "agentic"
-                            )
-                            
-                            # Add agent details if available
+                            metadata = {}
                             if hasattr(agent, 'role'):
-                                agent_node.description = f"Role: {agent.role}"
+                                metadata["role"] = agent.role
                             if hasattr(agent, 'goal'):
-                                agent_node.metadata = {"goal": agent.goal}
+                                metadata["goal"] = agent.goal
                             if hasattr(agent, 'backstory'):
-                                agent_node.metadata = {
-                                    **agent_node.metadata, 
-                                    "backstory": agent.backstory
-                                }
+                                metadata["backstory"] = agent.backstory
+                                
+                            agent_node = TreeNode(
+                                id=UUID(agent.id), 
+                                name=agent.name,
+                                type="agentic",
+                                metadata=metadata,
+                                data={}
+                            )
                             
                             # Add to CrewAI group
                             framework_types['crewai'].children.append(agent_node)
@@ -171,7 +184,7 @@ class AgenticViewController:
             # Remove empty framework types
             root.children = [
                 framework for framework in root.children 
-                if framework.children or framework.node_type == "group"
+                if framework.children or framework.type == "group"
             ]
             
             return root

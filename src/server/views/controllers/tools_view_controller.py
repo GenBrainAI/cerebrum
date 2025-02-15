@@ -13,7 +13,8 @@ from ..models.view_state import ViewState
 from ..models.view_types import ViewType
 from ...models.specialized_state import StateType, ToolManagementState, StateMetadata
 from ..state.state_manager import ViewStateManager
-from ..components.tree_component import TreeNode
+from ..models.tree_node import TreeNode
+from ..components.tree_component import TreeComponent
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
@@ -164,40 +165,58 @@ class ToolsCatalogController:
             print("\n🌳 Building tools catalog tree...")
             
             # Create root node
-            root = TreeNode(UUID('00000000-0000-0000-0000-000000000000'), "Tools Catalog", "root")
+            root = TreeNode(
+                id=UUID('00000000-0000-0000-0000-000000000000'),
+                name="Tools Catalog",
+                type="root",
+                metadata={},
+                data={}
+            )
             print("✅ Created root node")
             
             # Create category nodes with fixed UUIDs for consistency
             categories = {
                 "api": TreeNode(
-                    UUID('11111111-1111-1111-1111-111111111111'), 
-                    "API Tools", 
-                    "category"
+                    id=UUID('11111111-1111-1111-1111-111111111111'),
+                    name="API Tools",
+                    type="category",
+                    metadata={},
+                    data={}
                 ),
                 "function": TreeNode(
-                    UUID('22222222-2222-2222-2222-222222222222'), 
-                    "Functions", 
-                    "category"
+                    id=UUID('22222222-2222-2222-2222-222222222222'),
+                    name="Functions",
+                    type="category",
+                    metadata={},
+                    data={}
                 ),
                 "langchain": TreeNode(
-                    UUID('33333333-3333-3333-3333-333333333333'), 
-                    "LangChain Tools", 
-                    "category"
+                    id=UUID('33333333-3333-3333-3333-333333333333'),
+                    name="LangChain Tools",
+                    type="category",
+                    metadata={},
+                    data={}
                 ),
                 "utility": TreeNode(
-                    UUID('44444444-4444-4444-4444-444444444444'), 
-                    "Utility Tools", 
-                    "category"
+                    id=UUID('44444444-4444-4444-4444-444444444444'),
+                    name="Utility Tools",
+                    type="category",
+                    metadata={},
+                    data={}
                 ),
                 "custom": TreeNode(
-                    UUID('55555555-5555-5555-5555-555555555555'), 
-                    "Custom Tools", 
-                    "category"
+                    id=UUID('55555555-5555-5555-5555-555555555555'),
+                    name="Custom Tools",
+                    type="category",
+                    metadata={},
+                    data={}
                 ),
                 "other": TreeNode(
-                    UUID('66666666-6666-6666-6666-666666666666'), 
-                    "Other", 
-                    "category"
+                    id=UUID('66666666-6666-6666-6666-666666666666'),
+                    name="Other",
+                    type="category",
+                    metadata={},
+                    data={}
                 )
             }
             print("✅ Created category nodes")
@@ -225,17 +244,19 @@ class ToolsCatalogController:
             if persisted_tools:
                 for tool in persisted_tools:
                     try:
-                        tool_node = TreeNode(
-                            UUID(tool.id),
-                            tool.name,
-                            "tool"
-                        )
-                        
-                        # Add tool details if available
+                        metadata = {}
                         if hasattr(tool, 'description'):
-                            tool_node.description = tool.description
+                            metadata["description"] = tool.description
                         if hasattr(tool, 'metadata'):
-                            tool_node.metadata = tool.metadata
+                            metadata.update(tool.metadata)
+                            
+                        tool_node = TreeNode(
+                            id=UUID(tool.id),
+                            name=tool.name,
+                            type="tool",
+                            metadata=metadata,
+                            data={}
+                        )
                         
                         # Determine tool category
                         category = 'other'
@@ -267,17 +288,21 @@ class ToolsCatalogController:
                         
                         # Create unique UUID based on tool name
                         tool_uuid = uuid4()
-                        tool_node = TreeNode(
-                            tool_uuid,
-                            tool_name,
-                            "catalog_tool"
-                        )
                         
-                        # Add tool details
+                        # Build metadata
+                        metadata = {}
                         if hasattr(tool, 'description'):
-                            tool_node.description = tool.description
+                            metadata["description"] = tool.description
                         if hasattr(tool, '__doc__') and tool.__doc__:
-                            tool_node.description = tool.__doc__.strip()
+                            metadata["description"] = tool.__doc__.strip()
+                        
+                        tool_node = TreeNode(
+                            id=tool_uuid,
+                            name=tool_name,
+                            type="catalog_tool",
+                            metadata=metadata,
+                            data={}
+                        )
                         
                         # Try to determine category from tool attributes or class name
                         category = 'other'
@@ -311,9 +336,11 @@ class ToolsCatalogController:
             for category_name, category in categories.items():
                 if not category.children:
                     empty_node = TreeNode(
-                        uuid4(),
-                        "No tools available",
-                        "empty"
+                        id=uuid4(),
+                        name="No tools available",
+                        type="empty",
+                        metadata={},
+                        data={}
                     )
                     category.children.append(empty_node)
                     empty_categories.append(category_name)

@@ -1,7 +1,9 @@
-from typing import List, Dict, Optional, Union, Any
-from pydantic import BaseModel, Field
+from typing import Dict, List, Optional, Any
+from uuid import UUID
+import logging
 from datetime import datetime
-from uuid import UUID, uuid4
+from pydantic import BaseModel, Field
+from uuid import uuid4
 
 class ContextReference(BaseModel):
     """Reference to a specific context source."""
@@ -98,6 +100,67 @@ class TaskContextManager:
         self.task_contexts[task_id] = context
         return context
 
+    def sync_task_contexts(self, task_id: str, task: Any) -> None:
+        """Sync task contexts with persistence model."""
+        try:
+            # Get or create task context
+            task_context = self.get_task_context(task_id)
+            if not task_context:
+                task_context = self.create_task_context(task_id)
+            
+            # Update context configuration from task
+            task_context.use_context = getattr(task, 'use_context', True)
+            task_context.inherit_manager_context = getattr(task, 'inherit_manager_context', True)
+            
+            # Sync contexts from task if they exist
+            if hasattr(task, 'contexts') and task.contexts:
+                task_context.contexts = [
+                    ContextReference(**ctx) if isinstance(ctx, dict) else ctx 
+                    for ctx in task.contexts
+                ]
+            
+        except Exception as e:
+            logging.error(f"Error syncing task contexts: {str(e)}")
+
+    def sync_manager_contexts(self, manager_id: str, manager: Any) -> None:
+        """Sync manager contexts with persistence model."""
+        try:
+            # Get or create manager context
+            manager_context = self.get_task_context(manager_id)
+            if not manager_context:
+                manager_context = self.create_task_context(manager_id)
+            
+            # Sync contexts from manager if they exist
+            if hasattr(manager, 'contexts') and manager.contexts:
+                manager_context.contexts = [
+                    ContextReference(**ctx) if isinstance(ctx, dict) else ctx 
+                    for ctx in manager.contexts
+                ]
+            
+        except Exception as e:
+            logging.error(f"Error syncing manager contexts: {str(e)}")
+
+    async def get_manager_contexts(self, manager_id: str) -> List[Dict[str, Any]]:
+        """Get all contexts associated with a tasks manager."""
+        try:
+            manager_context = self.get_task_context(manager_id)
+            if not manager_context:
+                return []
+            
+            return [{
+                "id": str(ctx.id),
+                "type": ctx.type,
+                "source_id": ctx.source_id,
+                "metadata": ctx.metadata,
+                "priority": ctx.priority,
+                "created_at": ctx.created_at,
+                "manager_id": manager_id
+            } for ctx in manager_context.contexts]
+            
+        except Exception as e:
+            logging.error(f"Error getting manager contexts: {str(e)}")
+            return []
+
     async def add_context_to_task(
         self,
         task_id: str,
@@ -139,10 +202,14 @@ class TaskContextManager:
         type: str
     ) -> List[Dict[str, Any]]:
         """Get all contexts that reference a particular source."""
+        print(f"\n🔍 Looking for contexts with source_id={source_id}, type={type}")
         contexts = []
-        for task_context in self.task_contexts.values():
+        for task_id, task_context in self.task_contexts.items():
+            print(f"  Checking task {task_id}")
             for context in task_context.contexts:
+                print(f"    Checking context: source_id={context.source_id}, type={context.type}")
                 if context.source_id == source_id and context.type == type:
+                    print(f"    ✅ Found matching context")
                     contexts.append({
                         "id": str(context.id),
                         "task_id": task_context.task_id,
@@ -151,6 +218,9 @@ class TaskContextManager:
                         "metadata": context.metadata,
                         "priority": context.priority
                     })
+                else:
+                    print(f"    ❌ No match")
+        print(f"  Found {len(contexts)} matching contexts")
         return contexts
         
     async def remove_contexts_by_source(
@@ -223,3 +293,29 @@ class TaskContextManager:
         # Sort contexts by priority (highest first)
         contexts.sort(key=lambda x: x["priority"], reverse=True)
         return contexts
+
+    async def remove_context_from_task(self, task_id: str, context_id: str) -> bool:
+        """Remove a context from a task.
+        
+        Args:
+            task_id: ID of the task to remove context from
+            context_id: ID of the context to remove
+            
+        Returns:
+            bool: True if context was removed successfully, False otherwise
+        """
+        try:
+            # Get task context
+            task_context = self.get_task_context(task_id)
+            if not task_context:
+                return False
+
+            # Convert context_id to UUID if it's a string
+            context_uuid = UUID(context_id) if isinstance(context_id, str) else context_id
+                
+            # Remove from task context
+            return task_context.remove_context(context_uuid)
+            
+        except Exception as e:
+            logging.error(f"Error removing context from task: {str(e)}")
+            return False

@@ -22,6 +22,7 @@ from src.server.context.vector_store import VectorStore
 from ..tools.web_scraper_tool import WebScraperTool
 from ..tools.repo_scraper import RepoScraper
 from src.context_catalog.models import ContextEntry, TreeNode
+from src.server.views.components.tree_select_component import TreeSelectComponent
 
 # Load .env file from project root
 project_root = Path(__file__).parent.parent.parent.parent
@@ -48,6 +49,11 @@ class ContextManagerUI:
         self.code_catalog = CodeCatalog()
         self.knowledge_base = KnowledgeBase()
         self.context_db = ContextDatabase()
+        
+        # Initialize tree component
+        if 'context_tree_component' not in st.session_state:
+            st.session_state.context_tree_component = TreeSelectComponent(self.handle_node_click)
+        self.tree_component = st.session_state.context_tree_component
         
         # Load contexts from persistence model
         try:
@@ -870,8 +876,8 @@ class ContextManagerUI:
                     print(f"  Final index name: {index_name}")
                     
                     print("  Creating index in vector store...")
-                    # Create index with metadata (non-async call)
-                    self.vector_store.create_index(
+                    # Create index with metadata (properly awaited)
+                    await self.vector_store.create_index(
                         clean_name,  # Pass the clean name without vs_ prefix
                         description=f"Index for {clean_name} content"
                     )
@@ -1386,8 +1392,8 @@ class ContextManagerUI:
                     print(f"  Final index name: {index_name}")
                     
                     print("  Creating index in vector store...")
-                    # Create index with metadata (non-async call)
-                    self.vector_store.create_index(
+                    # Create index with metadata (properly awaited)
+                    await self.vector_store.create_index(
                         clean_name,  # Pass the clean name without vs_ prefix
                         description=f"Index for {clean_name} content"
                     )
@@ -1828,3 +1834,12 @@ class ContextManagerUI:
         context = self.context_provider.get_context(context_id)
         if context:
             state["context_view"] = context.metadata.source_type.value.lower()
+
+    def handle_node_click(self, node):
+        """Handle tree node click events."""
+        if node and hasattr(node, 'data') and node.data:
+            if 'id' in node.data:
+                st.session_state.selected_context = node.data['id']
+                st.session_state.context_view = node.data.get('type', 'vector')
+                # Force a rerun to update the UI
+                st.rerun()

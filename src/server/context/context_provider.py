@@ -1,27 +1,20 @@
-import asyncio
 from typing import List, Dict, Any, Optional
-from uuid import UUID
-from datetime import datetime
 import traceback
 import logging
-from ..tools.web_scraper_tool import WebScraperTool
-from ..tools.repo_scraper import RepoScraper
-from os import getenv
 
 # Initialize logger
 logger = logging.getLogger(__name__)
 
-from src.server.context.context_database import ContextDatabase
-from src.server.context.knowledge_base import KnowledgeBase
-from src.server.models.message import Message
-from src.server.models.task_context_model import TaskContextManager, TaskContext, ContextReference
-from src.server.context.system_context import SystemContextManager
-from src.server.persistence.persistence_model_factory import PersistenceModelFactory
-from src.server.models.tasks_manager import TasksManager
-from src.server.models.task import Task
-from src.server.context.context_analytics import ContextAnalytics
-from src.server.context.vector_store import VectorStore
-from src.server.context.code_catalog import CodeCatalog
+from ..context.context_database import ContextDatabase
+from ..context.knowledge_base import KnowledgeBase
+from ..models.message import Message
+from ..models.task_context_model import TaskContextManager, ContextReference
+from ..persistence.persistence_model_factory import PersistenceModelFactory
+from ..context.vector_store import VectorStore
+from ..context.code_catalog import CodeCatalog
+
+# Re-export ContextReference for backwards compatibility
+__all__ = ['ContextProvider', 'ContextReference']
 
 class ContextProvider:
     """Provider for managing and accessing different types of context."""
@@ -36,6 +29,19 @@ class ContextProvider:
             base_path="persistent_state/global_knowledge_base" if is_global else "persistent_state/knowledge_base"
         )
         self.context_db = ContextDatabase()
+        self._persistence_model = None
+        
+    @property
+    def persistence_model(self):
+        """Get persistence model instance when needed."""
+        if self._persistence_model is None:
+            self._persistence_model = PersistenceModelFactory.persistence_model()
+        return self._persistence_model
+
+    @persistence_model.setter
+    def persistence_model(self, value):
+        """Set persistence model - mainly for testing purposes."""
+        self._persistence_model = value
         
     async def get_task_contexts(
         self,
@@ -100,10 +106,55 @@ class ContextProvider:
         )
         
     async def remove_context_from_task(self, task_id: str, context_id: str) -> bool:
-        """Remove a context from a task."""
-        if self.is_global:
-            raise ValueError("Cannot remove task associations from global context")
-        return await self.task_context_manager.remove_context_from_task(task_id, context_id)
+        """Remove a context from a task.
+        
+        Args:
+            task_id: ID of the task to remove context from
+            context_id: ID of the context to remove
+            
+        Returns:
+            bool: True if context was removed successfully, False otherwise
+        """
+        try:
+            # 1. Remove from task context manager
+            removed = await self.task_context_manager.remove_context_from_task(task_id, context_id)
+            if not removed:
+                return False
+                
+            # 2. Remove from persistence model
+            task = self.persistence_model.tasks.read(task_id)
+            if task:
+                # Remove context from task's contexts list
+                if hasattr(task, 'contexts') and task.contexts:
+                    task.contexts = [
+                        ctx for ctx in task.contexts 
+                        if str(ctx.get('id', '')) != str(context_id)
+                    ]
+                    
+                    # Update task in persistence model
+                    self.persistence_model.tasks.update(task_id, task)
+                
+            # 3. Remove from context database if it exists
+            if self.context_db:
+                await self.context_db.remove_context(task_id, context_id)
+                
+            # 4. Remove from vector store if it's a vector context
+            try:
+                if self.vector_store:
+                    await self.vector_store.remove_context(context_id)
+            except Exception as e:
+                print(f"Warning: Could not remove from vector store: {e}")
+                
+            # 5. Save state to ensure persistence
+            if hasattr(self.persistence_model, 'save_state'):
+                await self.persistence_model.save_state()
+                
+            return True
+                
+        except Exception as e:
+            logging.error(f"Error removing context from task: {str(e)}")
+            traceback.print_exc()
+            return False
         
     async def remove_context_from_manager(self, manager_id: str, context_id: str) -> bool:
         """Remove a context from a tasks manager."""
@@ -158,12 +209,37 @@ class ContextProvider:
             
     async def get_all_contexts(self) -> List[Dict[str, Any]]:
         """Get all contexts in the system."""
+        print("\n🔍 Getting all contexts from the system")
         contexts = []
         
+        # Get vector store contexts first
+        try:
+            print("  Getting vector store contexts...")
+            # Get all indices
+            indices = await self.vector_store.list_indices()
+            for idx in indices:
+                if idx["name"].startswith("vs_"):
+                    print(f"    Found vector store: {idx['name']}")
+                    contexts.append({
+                        "id": idx["name"],
+                        "type": "vector",
+                        "content": f"Vector store index with {idx['count']} documents",
+                        "metadata": {
+                            "name": idx["name"].replace("vs_", ""),
+                            "description": idx["description"],
+                            "document_count": idx["count"]
+                        }
+                    })
+        except Exception as e:
+            print(f"❌ Error getting vector store contexts: {str(e)}")
+            logging.error(f"Error getting vector store contexts: {str(e)}")
+            
         # Get knowledge base contexts
         try:
+            print("  Getting knowledge base contexts...")
             kb_contexts = await self.knowledge_base.get_knowledge()
             for ctx in kb_contexts:
+                print(f"    Found knowledge base context: {ctx['id']}")
                 contexts.append({
                     "id": ctx["id"],
                     "type": "knowledge",
@@ -172,26 +248,15 @@ class ContextProvider:
                     "created_at": ctx["created_at"]
                 })
         except Exception as e:
-            logger.error(f"Error getting knowledge base contexts: {str(e)}")
-            
-        # Get vector store contexts
-        try:
-            vs_contexts = await self.vector_store.get_all_items()
-            for ctx in vs_contexts:
-                contexts.append({
-                    "id": ctx["id"],
-                    "type": "vector",
-                    "content": ctx["content"],
-                    "metadata": ctx["metadata"],
-                    "created_at": ctx.get("created_at", "unknown")
-                })
-        except Exception as e:
-            logger.error(f"Error getting vector store contexts: {str(e)}")
+            print(f"❌ Error getting knowledge base contexts: {str(e)}")
+            logging.error(f"Error getting knowledge base contexts: {str(e)}")
             
         # Get code catalog contexts
         try:
+            print("  Getting code catalog contexts...")
             code_contexts = self.code_catalog.get_all_files()
             for ctx in code_contexts:
+                print(f"    Found code context: {ctx['path']}")
                 contexts.append({
                     "id": ctx["path"],
                     "type": "code",
@@ -203,8 +268,10 @@ class ContextProvider:
                     }
                 })
         except Exception as e:
-            logger.error(f"Error getting code catalog contexts: {str(e)}")
+            print(f"❌ Error getting code catalog contexts: {str(e)}")
+            logging.error(f"Error getting code catalog contexts: {str(e)}")
             
+        print(f"\n✅ Found total of {len(contexts)} contexts")
         return contexts
 
     async def add_system_context(

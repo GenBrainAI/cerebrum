@@ -1,6 +1,7 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import UUID, uuid4
-from ..components.tree_component import TreeNode
+from ..models.tree_node import TreeNode
+from ..components.tree_component import TreeComponent
 
 class AgentTreeProvider:
     """Manages agentic configuration trees."""
@@ -14,12 +15,26 @@ class AgentTreeProvider:
         root = TreeNode(
             id=uuid4(),
             name="Agent Configurations",
-            node_type="root"
+            type="root",
+            metadata={},
+            data={}
         )
         
         # Create main sections
-        roles = TreeNode(id=uuid4(), name="Agent Roles", node_type="section")
-        workflows = TreeNode(id=uuid4(), name="Workflows", node_type="section")
+        roles = TreeNode(
+            id=uuid4(), 
+            name="Agent Roles", 
+            type="section",
+            metadata={},
+            data={}
+        )
+        workflows = TreeNode(
+            id=uuid4(), 
+            name="Workflows", 
+            type="section",
+            metadata={},
+            data={}
+        )
         
         # Add agent roles
         agent_roles = self._get_agent_roles()
@@ -27,8 +42,9 @@ class AgentTreeProvider:
             role_node = TreeNode(
                 id=uuid4(),
                 name=role["name"],
-                node_type="role",
-                metadata=role
+                type="role",
+                metadata=role,
+                data={}
             )
             roles.children.append(role_node)
             
@@ -38,8 +54,9 @@ class AgentTreeProvider:
             workflow_node = TreeNode(
                 id=uuid4(),
                 name=workflow["name"],
-                node_type="workflow",
-                metadata=workflow
+                type="workflow",
+                metadata=workflow,
+                data={}
             )
             workflows.children.append(workflow_node)
             
