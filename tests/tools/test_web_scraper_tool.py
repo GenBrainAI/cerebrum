@@ -114,7 +114,7 @@ async def test_content_filtering(mock_async_playwright, mock_playwright):
     
     # Check metadata
     assert result['metadata']['title'] == 'Main Title'
-    assert result['metadata']['description'] == ['Test description']
+    assert result['metadata']['description'] == 'Test description'
 
 @pytest.mark.asyncio
 async def test_rate_limiting(mock_playwright, mock_observability):
@@ -230,7 +230,7 @@ async def test_extract_tool_metadata(mock_async_playwright, mock_playwright):
     result = await scraper.scrape_page("https://python.langchain.com/docs/integrations/tools/python_repl")
     
     assert result['metadata']['title'] == "Python REPL Tool"
-    assert result['metadata']['description'] == ["Tool for executing Python commands"]
+    assert result['metadata']['description'] == "Tool for executing Python commands"
 
 if __name__ == '__main__':
     asyncio.run(test_scrape_langchain_tools(mock_playwright()))

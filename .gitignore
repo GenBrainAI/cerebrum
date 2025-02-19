@@ -173,6 +173,8 @@ state/specialized/tool_management/**
 state/specialized/agent_framework/**
 state/specialized/task_generation/**
 state/sessions/**
+test_cerebrum_data/
+test_storage/
 
 
 

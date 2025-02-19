@@ -227,20 +227,20 @@ class WebScraperTool:
         """Extract metadata from the page."""
         metadata = {
             'title': page_title or '',
-            'description': ''
+            'description': []
         }
         
         try:
             # Get meta description
             meta_desc = soup.find('meta', attrs={'name': 'description'})
             if meta_desc:
-                metadata['description'] = meta_desc.get('content', '')
+                metadata['description'] = [meta_desc.get('content', '')]
             
             # If no meta description, try OpenGraph description
             if not metadata['description']:
                 og_desc = soup.find('meta', attrs={'property': 'og:description'})
                 if og_desc:
-                    metadata['description'] = og_desc.get('content', '')
+                    metadata['description'] = [og_desc.get('content', '')]
             
             # If still no description, try to create one from content
             if not metadata['description']:
