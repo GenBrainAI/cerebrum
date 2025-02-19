@@ -1,6 +1,7 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import UUID, uuid4
-from ..components.tree_component import TreeNode
+from ..models.tree_node import TreeNode
+from ..components.tree_component import TreeComponent
 
 class ToolsTreeProvider:
     """Organizes tools catalog into tree structure."""
@@ -14,14 +15,34 @@ class ToolsTreeProvider:
         root = TreeNode(
             id=uuid4(),
             name="Tools Catalog",
-            node_type="root"
+            type="root",
+            metadata={},
+            data={}
         )
         
         # Create category nodes
         categories = {
-            "api": TreeNode(id=uuid4(), name="API Tools", node_type="category"),
-            "python": TreeNode(id=uuid4(), name="Python Tools", node_type="category"),
-            "system": TreeNode(id=uuid4(), name="System Tools", node_type="category")
+            "api": TreeNode(
+                id=uuid4(), 
+                name="API Tools", 
+                type="category",
+                metadata={},
+                data={}
+            ),
+            "python": TreeNode(
+                id=uuid4(), 
+                name="Python Tools", 
+                type="category",
+                metadata={},
+                data={}
+            ),
+            "system": TreeNode(
+                id=uuid4(), 
+                name="System Tools", 
+                type="category",
+                metadata={},
+                data={}
+            )
         }
         
         # Add tools to categories
@@ -32,8 +53,9 @@ class ToolsTreeProvider:
                 tool_node = TreeNode(
                     id=uuid4(),
                     name=tool["name"],
-                    node_type="tool",
-                    metadata=tool
+                    type="tool",
+                    metadata=tool,
+                    data={}
                 )
                 category.children.append(tool_node)
                 

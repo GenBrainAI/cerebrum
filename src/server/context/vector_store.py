@@ -40,13 +40,15 @@ class VectorStore:
         """
         self.config = config or VectorStoreConfig()
         self.base_path = Path(base_path)
+        self.base_path.mkdir(parents=True, exist_ok=True)
         
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(
             path=str(self.base_path),
             settings=Settings(
                 anonymized_telemetry=False,
-                allow_reset=True
+                allow_reset=True,
+                is_persistent=True
             )
         )
 
@@ -129,15 +131,36 @@ class VectorStore:
 
     async def list_indices(self) -> List[Dict[str, Any]]:
         """List all available indices/collections."""
-        self._reload_indices()  # Reload before listing
-        collections = self.client.list_collections()
-        indices = [{
-            "name": col.name,
-            "description": col.metadata.get("description", ""),
-            "count": col.count()
-        } for col in collections if col.name.startswith("vs_")]
-        logging.info(f"Listed {len(indices)} indices: {[idx['name'] for idx in indices]}")
-        return indices
+        try:
+            self._reload_indices()  # Reload before listing
+            collections = self.client.list_collections()
+            indices = []
+            
+            # Process each collection
+            for col in collections:
+                if col.name.startswith("vs_"):
+                    try:
+                        count = col.count()
+                        indices.append({
+                            "name": col.name,
+                            "description": col.metadata.get("description", ""),
+                            "count": count
+                        })
+                    except Exception as e:
+                        logging.error(f"Error getting collection stats for {col.name}: {str(e)}")
+                        # Still include the collection even if stats fail
+                        indices.append({
+                            "name": col.name,
+                            "description": col.metadata.get("description", ""),
+                            "count": 0
+                        })
+            
+            logging.info(f"Listed {len(indices)} indices: {[idx['name'] for idx in indices]}")
+            return indices
+            
+        except Exception as e:
+            logging.error(f"Error listing indices: {str(e)}")
+            return []
 
     async def get_stats(self) -> Dict[str, Any]:
         """Get statistics about the vector store."""
@@ -180,20 +203,17 @@ class VectorStore:
     async def add_file_to_index(self, index_name: str, file_path_or_obj: Any, 
                                metadata: Optional[Dict[str, Any]] = None,
                                progress_callback: Optional[Callable[[str, int, int], None]] = None) -> List[str]:
-        """Add file content to a specific index with chunking.
-        
-        Args:
-            index_name: Name of the index to add to
-            file_path_or_obj: File path or file-like object
-            metadata: Optional metadata for the file
-            progress_callback: Optional callback function(status_message, current, total)
-        """
+        """Add file content to a specific index with chunking."""
         try:
             if index_name not in self.indices:
-                raise ValueError(f"Index {index_name} not found")
-            
-            collection = self.indices[index_name]
-            
+                collection = self.client.get_or_create_collection(
+                    name=index_name,
+                    embedding_function=self.embedding_function
+                )
+                self.indices[index_name] = collection
+            else:
+                collection = self.indices[index_name]
+
             # Update progress
             if progress_callback:
                 progress_callback("Reading file...", 0, 100)
@@ -233,89 +253,67 @@ class VectorStore:
                     else:
                         with open(file_path, 'r', encoding='utf-8') as f:
                             text = f.read()
+            
             except Exception as e:
                 logging.error(f"Error reading file: {str(e)}")
                 raise
-
-            if progress_callback:
-                progress_callback("Chunking text...", 0, 100)
-
-            # Split into chunks
-            chunks = self._chunk_text(text)
-            successful_ids = []
             
-            # Ensure we have a file_id in metadata
-            if metadata is None:
-                metadata = {}
-            if 'file_id' not in metadata:
-                metadata['file_id'] = hashlib.md5(text.encode()).hexdigest()
+            # Generate chunks
+            chunks = self._chunk_text(text, self.config.chunk_size, self.config.chunk_overlap)
+            if not chunks:
+                raise ValueError("No valid chunks generated from file")
             
-            if progress_callback:
-                progress_callback("Adding root chunk...", 0, len(chunks) + 1)
-
-            # Add root chunk first
-            root_id = f"{metadata['file_id']}_root"
+            # Generate unique IDs for chunks
+            chunk_ids = []
+            original_text_length = len(text)
+            total_chunks = len(chunks)
+            
+            # Create root chunk with full metadata
+            root_id = hashlib.md5(text.encode()).hexdigest()
             root_metadata = {
-                **metadata,
+                **(metadata or {}),
                 "is_root": True,
-                "total_chunks": len(chunks),
-                "original_text_length": len(text)
+                "total_chunks": total_chunks,
+                "original_text_length": original_text_length,
+                "chunk_size": self.config.chunk_size,
+                "chunk_overlap": self.config.chunk_overlap,
+                "created_at": datetime.now().isoformat()
             }
             
-            # Add root chunk to collection
+            # Add root chunk
             collection.add(
                 ids=[root_id],
-                documents=[text[:min(len(text), 1000)]],  # Store first 1000 chars as preview
+                documents=[text[:self.config.chunk_size]],  # Store first chunk size of text
                 metadatas=[root_metadata]
             )
-            successful_ids.append(root_id)
+            chunk_ids.append(root_id)
             
-            # Process each chunk with progress updates
+            # Add individual chunks with their metadata
             for i, chunk in enumerate(chunks):
-                try:
-                    if progress_callback:
-                        progress_callback(f"Processing chunk {i+1}/{len(chunks)}", 
-                                       i+1, len(chunks))
-                    
-                    # Generate unique ID for this chunk
-                    chunk_id = f"{metadata['file_id']}_{i}"
-                    
-                    # Add chunk-specific metadata
-                    chunk_metadata = {
-                        **metadata,
-                        "is_root": False,
-                        "chunk_index": i,
-                        "total_chunks": len(chunks),
-                        "chunk_size": len(chunk)
-                    }
-                    
-                    # Add to collection
-                    collection.add(
-                        ids=[chunk_id],
-                        documents=[chunk],
-                        metadatas=[chunk_metadata]
-                    )
-                    
-                    successful_ids.append(chunk_id)
-                    logging.info(f"Added chunk {i+1}/{len(chunks)} to index {index_name}")
-                    
-                    # Allow other tasks to run
-                    await asyncio.sleep(0)
-                    
-                except Exception as e:
-                    logging.error(f"Error processing chunk {i+1}/{len(chunks)}: {str(e)}")
-                    continue
+                chunk_id = hashlib.md5(f"{root_id}_{i}".encode()).hexdigest()
+                chunk_metadata = {
+                    **(metadata or {}),
+                    "is_root": False,
+                    "chunk_index": i,
+                    "total_chunks": total_chunks,
+                    "root_id": root_id,
+                    "created_at": datetime.now().isoformat()
+                }
+                
+                collection.add(
+                    ids=[chunk_id],
+                    documents=[chunk],
+                    metadatas=[chunk_metadata]
+                )
+                chunk_ids.append(chunk_id)
+                
+                if progress_callback:
+                    progress_callback(f"Processing chunk {i+1}/{total_chunks}", i+1, total_chunks)
             
-            if not successful_ids:
-                raise Exception("No chunks were successfully processed")
-            
-            if progress_callback:
-                progress_callback("Complete!", len(chunks), len(chunks))
-            
-            return successful_ids
+            return chunk_ids
             
         except Exception as e:
-            logging.error(f"Error adding file to index {index_name}: {str(e)}")
+            logging.error(f"Error adding file to index: {str(e)}")
             raise
 
     async def add_items(self, embeddings: List[List[float]], metadatas: List[Dict[str, Any]], 
@@ -379,19 +377,7 @@ class VectorStore:
                 else:
                     # Handle other file types as before
                     content = file_path_or_obj.read()
-                    if isinstance(content, bytes):
-                        try:
-                            text = content.decode('utf-8')
-                        except UnicodeDecodeError:
-                            import chardet
-                            detected = chardet.detect(content)
-                            if detected['encoding']:
-                                text = content.decode(detected['encoding'])
-                            else:
-                                raise ValueError("Could not detect file encoding")
-                    else:
-                        text = str(content)
-                        
+                    text = content.decode('utf-8') if isinstance(content, bytes) else str(content)
                 # Generate file ID from content
                 file_hash = hashlib.md5(text.encode()).hexdigest()
                 
@@ -587,11 +573,20 @@ class VectorStore:
         """Calculate total storage size in MB."""
         try:
             total_size = 0
-            for root, _, files in os.walk(self.base_path):
-                for file in files:
-                    file_path = Path(root) / file
-                    total_size += file_path.stat().st_size
-            return total_size / (1024 * 1024)  # Convert to MB
+            base_path = Path(self.base_path)
+            
+            # Check if directory exists
+            if not base_path.exists():
+                return 0.0
+            
+            # Calculate size recursively
+            for path in base_path.rglob('*'):
+                if path.is_file():
+                    total_size += path.stat().st_size
+            
+            # Convert to MB
+            return total_size / (1024 * 1024)
+            
         except Exception as e:
             logging.error(f"Error calculating storage size: {str(e)}")
             return 0.0
@@ -832,3 +827,31 @@ class VectorStore:
         except Exception as e:
             logging.error(f"Error getting content from vector store: {str(e)}")
             return None
+
+    async def get_all_items(self) -> List[Dict[str, Any]]:
+        """Get all items from all collections in the vector store."""
+        try:
+            items = []
+            # Get default collection
+            collection = self.client.get_or_create_collection(
+                name=self.config.collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Get all items from collection
+            results = collection.get()
+            
+            if results and results.get('ids'):
+                for i, item_id in enumerate(results['ids']):
+                    items.append({
+                        "id": item_id,
+                        "content": results['documents'][i] if 'documents' in results else "",
+                        "metadata": results['metadatas'][i] if 'metadatas' in results else {},
+                        "created_at": results['metadatas'][i].get('added_at', "") if 'metadatas' in results else ""
+                    })
+            
+            return items
+            
+        except Exception as e:
+            logging.error(f"Error getting all items from vector store: {str(e)}")
+            return []

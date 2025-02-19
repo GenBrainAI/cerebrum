@@ -224,22 +224,72 @@ class WebScraperTool:
         return code_blocks
 
     def _extract_metadata(self, soup: BeautifulSoup, page_title: str, selectors: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Extract metadata from the page."""
         metadata = {
-            'title': page_title,
+            'title': page_title or '',
             'description': []
         }
-        meta_desc = soup.find('meta', attrs={'name': 'description'})
-        if meta_desc:
-            metadata['description'].append(meta_desc.get('content', ''))
+        
+        try:
+            # Get meta description
+            meta_desc = soup.find('meta', attrs={'name': 'description'})
+            if meta_desc:
+                metadata['description'] = [meta_desc.get('content', '')]
+            
+            # If no meta description, try OpenGraph description
+            if not metadata['description']:
+                og_desc = soup.find('meta', attrs={'property': 'og:description'})
+                if og_desc:
+                    metadata['description'] = [og_desc.get('content', '')]
+            
+            # If still no description, try to create one from content
+            if not metadata['description']:
+                # Try to get first paragraph or heading
+                first_content = soup.find(['p', 'h1', 'h2', 'h3'])
+                if first_content:
+                    metadata['description'] = first_content.get_text(strip=True)
+            
+            # Handle custom selectors
+            if selectors:
+                for key, selector in selectors.items():
+                    try:
+                        elements = soup.select(selector)
+                        if elements:
+                            # Join multiple elements with space
+                            metadata[key] = ' '.join(el.text.strip() for el in elements if el.text.strip())
+                        else:
+                            metadata[key] = ''
+                    except Exception as e:
+                        self._log_error(f"Error extracting selector {key}: {str(e)}")
+                        metadata[key] = ''
+            
+            # Ensure all metadata values are strings and not empty
+            for key, value in metadata.items():
+                if isinstance(value, list):
+                    metadata[key] = ' '.join(str(v) for v in value)
+                elif not isinstance(value, (str, int, float, bool)):
+                    metadata[key] = str(value)
+                elif value is None:
+                    metadata[key] = ''
+            
+            return metadata
+            
+        except Exception as e:
+            self._log_error(f"Error extracting metadata: {str(e)}")
+            # Return basic metadata if extraction fails
+            return {
+                'title': page_title or '',
+                'description': ''
+            }
 
-        if selectors:
-            for key, selector in selectors.items():
-                elements = soup.select(selector)
-                metadata[key] = [el.text.strip() for el in elements if el.text.strip()]
-
-        return metadata
+    def _log_error(self, message: str):
+        """Log error message if observability is enabled."""
+        if self.observability:
+            self.observability.add_entry(message, ObservabilityLevel.ERROR)
+        print(f"Error: {message}")
 
     async def scrape_page(self, url: str, metadata_selectors: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Scrape a single page."""
         if not self._is_allowed_domain(url):
             if self.observability:
                 self.observability.add_entry(f"Domain not allowed: {url}", ObservabilityLevel.ERROR)
@@ -266,8 +316,10 @@ class WebScraperTool:
                 code_blocks = self._extract_code_blocks(soup)
                 metadata = self._extract_metadata(soup, page_title, metadata_selectors)
 
+                # Add path to result - this was missing and causing the error
                 result = {
                     'url': url,
+                    'path': url,
                     'content': content,
                     'code_blocks': code_blocks,
                     'metadata': metadata

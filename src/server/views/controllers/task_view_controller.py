@@ -10,7 +10,7 @@ from ..models.view_state import ViewState
 from ..models.view_types import ViewType
 from ...models.specialized_state import StateType, TaskGenerationState, StateMetadata
 from ..state.state_manager import ViewStateManager
-from ..components.tree_component import TreeNode
+from ..models.tree_node import TreeNode
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
@@ -47,7 +47,9 @@ class TaskHierarchyController:
             root = TreeNode(
                 id=UUID('00000000-0000-0000-0000-000000000000'),
                 name="Task Hierarchy",
-                node_type="root"
+                type="root",
+                metadata={},
+                data={}
             )
             
             # Get all task managers
@@ -58,7 +60,9 @@ class TaskHierarchyController:
                 tm_node = TreeNode(
                     id=UUID(tm.id) if isinstance(tm.id, str) else tm.id,
                     name=tm.name,
-                    node_type="manager"
+                    type="manager",
+                    metadata={},
+                    data={}
                 )
                 
                 # Get tasks for this manager
@@ -70,11 +74,12 @@ class TaskHierarchyController:
                     task_node = TreeNode(
                         id=UUID(task.id) if isinstance(task.id, str) else task.id,
                         name=task.name,
-                        node_type="task",
+                        type="task",
                         metadata={
                             "description": task.description,
                             "tasksmanager_id": task.tasksmanager_id
-                        }
+                        },
+                        data={}
                     )
                     tm_node.children.append(task_node)
                 

@@ -321,7 +321,6 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
         
         # Initialize unified context manager
         context_manager = UnifiedContextManager()
-        await context_manager.initialize()  # Initialize async components
         
         # Register tools if not already registered
         if not tools_catalog.list_tools():

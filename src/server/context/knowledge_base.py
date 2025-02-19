@@ -19,7 +19,39 @@ class KnowledgeBase:
         # Load existing knowledge if available
         self.knowledge = {}
         self.next_id = 1
+        
+        # Initialize knowledge index for efficient querying
+        self.knowledge_index = {}
+        
         self._load_knowledge()
+        self._build_index()
+    
+    def _build_index(self):
+        """Build knowledge index for efficient querying."""
+        self.knowledge_index = {}
+        for knowledge_id, entry in self.knowledge.items():
+            # Index by domain
+            domain = entry["domain"]
+            if isinstance(domain, dict):
+                domain = domain.get("domain", "general")
+            if domain not in self.knowledge_index:
+                self.knowledge_index[domain] = []
+            self.knowledge_index[domain].append(knowledge_id)
+            
+            # Index by tags
+            for tag in entry["tags"]:
+                if tag not in self.knowledge_index:
+                    self.knowledge_index[tag] = []
+                self.knowledge_index[tag].append(knowledge_id)
+                
+            # Index by metadata categories
+            if "metadata" in entry and isinstance(entry["metadata"], dict):
+                for key, value in entry["metadata"].items():
+                    if isinstance(value, str):
+                        index_key = f"{key}:{value}"
+                        if index_key not in self.knowledge_index:
+                            self.knowledge_index[index_key] = []
+                        self.knowledge_index[index_key].append(knowledge_id)
     
     def _load_knowledge(self):
         """Load knowledge from disk if available."""
@@ -29,6 +61,7 @@ class KnowledgeBase:
                     data = json.load(f)
                     self.knowledge = data.get('knowledge', {})
                     self.next_id = data.get('next_id', 1)
+                self._build_index()
         except Exception as e:
             logger.error(f"Error loading knowledge base: {str(e)}")
             # Keep default empty state if load fails
@@ -41,10 +74,50 @@ class KnowledgeBase:
                     'knowledge': self.knowledge,
                     'next_id': self.next_id
                 }, f, indent=2)
+            self._build_index()
         except Exception as e:
             logger.error(f"Error saving knowledge base: {str(e)}")
             raise
     
+    async def add_entry(
+        self,
+        content: str,
+        domain: str = "general",
+        metadata: Optional[Dict[str, Any]] = None,
+        tags: Optional[List[str]] = None
+    ) -> str:
+        """Add knowledge to the knowledge base."""
+        try:
+            knowledge_id = f"knowledge_{self.next_id}"
+            self.next_id += 1
+            
+            # Combine tags from both metadata and tags parameter
+            combined_tags = set(tags or [])
+            if metadata and "tags" in metadata:
+                combined_tags.update(metadata.get("tags", []))
+            
+            # Create metadata with domain and combined tags
+            entry_metadata = {
+                **(metadata or {}),
+                "domain": domain,
+                "tags": list(combined_tags)  # Convert back to list
+            }
+            
+            self.knowledge[knowledge_id] = {
+                "content": content,
+                "domain": domain,
+                "metadata": entry_metadata,
+                "tags": list(combined_tags),  # Store tags at top level too
+                "created_at": datetime.now().isoformat()
+            }
+            
+            self._save_knowledge()
+            return knowledge_id
+            
+        except Exception as e:
+            logger.error(f"Error adding knowledge entry: {str(e)}")
+            raise
+
     async def add_knowledge(
         self,
         content: str,
@@ -53,7 +126,7 @@ class KnowledgeBase:
         tags: Optional[List[str]] = None
     ) -> str:
         """Add knowledge to the knowledge base."""
-        return self.add_entry(content, domain, metadata, tags)
+        return await self.add_entry(content, domain, metadata, tags)
 
     async def get_knowledge(
         self,
@@ -93,36 +166,6 @@ class KnowledgeBase:
             logger.error(f"Error getting knowledge entry: {str(e)}")
             return None
 
-    def add_entry(
-        self,
-        content: str,
-        domain: str = "general",
-        metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None
-    ) -> str:
-        """Add knowledge to the knowledge base."""
-        try:
-            knowledge_id = f"knowledge_{self.next_id}"
-            self.next_id += 1
-            
-            self.knowledge[knowledge_id] = {
-                "content": content,
-                "domain": domain,
-                "metadata": {
-                    **(metadata or {}),
-                    "domain": domain
-                },
-                "tags": tags or [],
-                "created_at": datetime.now().isoformat()
-            }
-            
-            self._save_knowledge()
-            return knowledge_id
-            
-        except Exception as e:
-            logger.error(f"Error adding knowledge entry: {str(e)}")
-            raise
-    
     def update_entry(self, knowledge_id: str, content: str) -> bool:
         """Update a knowledge entry's content."""
         try:
@@ -162,31 +205,48 @@ class KnowledgeBase:
         try:
             results = []
             
-            for knowledge_id, entry in self.knowledge.items():
-                # Apply domain filter if provided
-                if domain and entry["domain"] != domain:
-                    continue
-                
-                # Apply metadata filter if provided
-                if metadata_filter:
+            # Start with all entries
+            candidate_ids = set(self.knowledge.keys())
+            
+            # Filter by domain if specified
+            if domain:
+                domain_ids = set()
+                for knowledge_id, entry in self.knowledge.items():
+                    entry_domain = entry["domain"]
+                    if isinstance(entry_domain, dict):
+                        entry_domain = entry_domain.get("domain", "general")
+                    if entry_domain == domain:
+                        domain_ids.add(knowledge_id)
+                candidate_ids &= domain_ids
+            
+            # Apply metadata filter
+            if metadata_filter:
+                filtered_ids = set()
+                for knowledge_id in candidate_ids.copy():
+                    entry = self.knowledge[knowledge_id]
                     matches = True
+                    
                     for key, value in metadata_filter.items():
-                        if key not in entry["metadata"]:
-                            matches = False
-                            break
-                        
-                        # Handle list values (like tags)
-                        if isinstance(value, list):
-                            if not any(v in entry["metadata"][key] for v in value):
+                        if key == "tags" and isinstance(value, list):
+                            # Check if any of the required tags are present
+                            if not any(tag in entry["tags"] for tag in value):
                                 matches = False
                                 break
-                        # Handle scalar values
-                        elif entry["metadata"][key] != value:
+                        elif key in entry["metadata"]:
+                            if entry["metadata"][key] != value:
+                                matches = False
+                                break
+                        else:
                             matches = False
                             break
-                            
-                    if not matches:
-                        continue
+                    
+                    if matches:
+                        filtered_ids.add(knowledge_id)
+                candidate_ids = filtered_ids
+            
+            # Process candidates and apply query filter
+            for knowledge_id in candidate_ids:
+                entry = self.knowledge[knowledge_id]
                 
                 # Apply query filter if provided
                 if query and query.lower() not in entry["content"].lower():
@@ -201,13 +261,10 @@ class KnowledgeBase:
                     "created_at": entry["created_at"]
                 })
             
-            # Sort by creation time (newest first)
-            results.sort(key=lambda x: x["created_at"], reverse=True)
-            
-            # Apply limit if specified
+            # Apply limit
             if limit is not None:
                 results = results[:limit]
-            
+                
             return results
             
         except Exception as e:
@@ -258,7 +315,7 @@ class KnowledgeBase:
             imported_count = 0
             for entry in import_data.get("entries", []):
                 try:
-                    self.add_entry(
+                    await self.add_entry(
                         content=entry["content"],
                         domain=entry["domain"],
                         metadata=entry["metadata"],

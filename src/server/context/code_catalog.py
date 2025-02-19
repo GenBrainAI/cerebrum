@@ -566,3 +566,24 @@ class CodeCatalog:
         except Exception as e:
             logging.error(f"Error removing repository {repo_name}: {str(e)}")
             return False
+
+    def get_all_files(self) -> List[Dict[str, Any]]:
+        """Get all files in the catalog with their content and metadata."""
+        try:
+            files = []
+            for path, info in self.file_index.items():
+                files.append({
+                    "path": path,
+                    "content": info.get("content", ""),
+                    "size": info.get("size", 0),
+                    "last_modified": info.get("last_modified", ""),
+                    "type": info.get("type", "unknown"),
+                    "imports": info.get("imports", []),
+                    "classes": info.get("classes", []),
+                    "functions": info.get("functions", []),
+                    "doc_strings": info.get("doc_strings", {})
+                })
+            return files
+        except Exception as e:
+            self.logger.error(f"Error getting all files: {str(e)}")
+            return []

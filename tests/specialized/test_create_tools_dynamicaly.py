@@ -781,8 +781,7 @@ async def test_crewai_invocation_with_context(test_state):
         
         # Initialize persistence model and context provider
         persistence_model = InMemoryPersistenceModel()
-        context_provider = ContextProvider(persistence_model)
-        await context_provider.initialize()
+        context_provider = ContextProvider()
         
         # Create curried proxy with tools
         curried_proxy = CurriedProxy()

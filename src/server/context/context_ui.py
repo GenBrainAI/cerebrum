@@ -21,6 +21,8 @@ from src.server.context.context_provider import ContextProvider
 from src.server.context.vector_store import VectorStore
 from ..tools.web_scraper_tool import WebScraperTool
 from ..tools.repo_scraper import RepoScraper
+from src.context_catalog.models import ContextEntry, TreeNode
+from src.server.views.components.tree_select_component import TreeSelectComponent
 
 # Load .env file from project root
 project_root = Path(__file__).parent.parent.parent.parent
@@ -29,21 +31,29 @@ load_dotenv(project_root / '.env')
 class ContextManagerUI:
     """Enhanced UI component for managing and visualizing the context system."""
     
-    def __init__(self):
+    def __init__(self, skip_init=False):
         """Initialize context management UI components."""
         # Initialize session state if needed
         if 'persistence_model' not in st.session_state:
             st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
             
-        # Initialize components
+        # Initialize global components
+        self.global_context_provider = ContextProvider()
+        self.global_vector_store = VectorStore()
+        self.global_code_catalog = CodeCatalog()
+        self.global_knowledge_base = KnowledgeBase(base_path="persistent_state/global_knowledge_base")
+        
+        # Initialize state-specific components
         self.context_provider = ContextProvider()
         self.vector_store = VectorStore()
         self.code_catalog = CodeCatalog()
         self.knowledge_base = KnowledgeBase()
         self.context_db = ContextDatabase()
         
-        # Initialize context provider
-        asyncio.run(self.context_provider.initialize())
+        # Initialize tree component
+        if 'context_tree_component' not in st.session_state:
+            st.session_state.context_tree_component = TreeSelectComponent(self.handle_node_click)
+        self.tree_component = st.session_state.context_tree_component
         
         # Load contexts from persistence model
         try:
@@ -83,6 +93,10 @@ class ContextManagerUI:
         # Initialize dialog state
         if 'show_dialog_for_task' not in st.session_state:
             st.session_state.show_dialog_for_task = None
+            
+        # Initialize catalog view state
+        if 'catalog_view' not in st.session_state:
+            st.session_state.catalog_view = 'state'  # 'state' or 'global'
         
     @property
     def persistence_model(self):
@@ -90,21 +104,11 @@ class ContextManagerUI:
         return PersistenceModelFactory.persistence_model()
     
     def get_current_state(self) -> Dict[str, Any]:
-        """Get current state of all context components."""
+        """Get the current UI state from session state."""
         return {
-            "context_db": {
-                # Add context DB state data
-                "collections": self.context_db.get_collection_stats()
-            },
-            "code_catalog": {
-                "files": len(self.code_catalog.file_index),
-                "dependencies": len(self.code_catalog.dependencies)
-            },
-            "knowledge_base": {
-                "entries": len(self.knowledge_base.knowledge_index.get("entries", {})),
-                "domains": len(self.knowledge_base.knowledge_index.get("domains", {})),
-                "tags": len(self.knowledge_base.knowledge_index.get("tags", {}))
-            }
+            "selected_context": st.session_state.get("selected_context"),
+            "context_view": st.session_state.get("context_view", "knowledge"),
+            "show_new_context_form": st.session_state.get("show_new_context_form", False)
         }
         
     def render_header(self):
@@ -255,6 +259,7 @@ class ContextManagerUI:
         """Get system statistics."""
         import os
         import json
+        import time
         from datetime import datetime
         
         # Custom JSON encoder to handle datetime objects
@@ -268,68 +273,59 @@ class ContextManagerUI:
         current_time = time.time()
         if current_time - st.session_state.last_memory_update > 5:
             try:
+                print("\nCalculating component sizes:")
+                
                 # Knowledge base size
                 kb_path = Path(self.knowledge_base.base_path)
                 kb_size = sum(f.stat().st_size for f in kb_path.rglob('*') if f.is_file()) / (1024 * 1024)  # MB
+                print(f"\nKnowledge Base Path: {kb_path}")
+                print(f"Knowledge Base Size: {kb_size:.2f} MB")
                 
                 # Code catalog size
                 cc_path = Path("persistent_state/context/code_catalog")
                 cc_size = sum(f.stat().st_size for f in cc_path.rglob('*') if f.is_file()) / (1024 * 1024)  # MB
+                print(f"\nCode Catalog Path: {cc_path}")
+                print(f"Code Catalog Size: {cc_size:.2f} MB")
                 
                 # Vector store size
                 vs_path = Path("persistent_state/context/vector_store")
                 vs_size = sum(f.stat().st_size for f in vs_path.rglob('*') if f.is_file()) / (1024 * 1024)  # MB
-                
-                # Debug prints
-                # st.sidebar.write("Disk Usage (MB):")
-                # st.sidebar.write(f"Knowledge Base: {int(kb_size)}")
-                # st.sidebar.write(f"Code Catalog: {int(cc_size)}")
-                # st.sidebar.write(f"Vector Store: {int(vs_size)}")
+                print(f"\nVector Store Path: {vs_path}")
+                print(f"Vector Store Size: {vs_size:.2f} MB")
                 
                 total_size = int(kb_size + cc_size + vs_size)
+                print(f"\nTotal Size: {total_size} MB")
                 
             except Exception as e:
+                print(f"\nError calculating sizes: {str(e)}")
                 st.sidebar.write(f"Error calculating sizes: {str(e)}")
                 total_size = 0
                 
             st.session_state.cached_memory_usage = total_size
             st.session_state.last_memory_update = current_time
-        
-        stats = {
-            "total_files": len(self.code_catalog.file_index),
-            "total_entries": len(self.knowledge_base.knowledge_index.get("entries", {})),
-            "total_chunks": 0,  # To be implemented with vector store
-            "memory_usage": st.session_state.cached_memory_usage
+            
+        return {
+            "storage_size": st.session_state.cached_memory_usage
         }
-        
-        return stats
     
     async def render_knowledge_view(self):
         """Render the knowledge base management view."""
-        # Initialize session state for knowledge view
-        if 'knowledge_filter_type' not in st.session_state:
-            st.session_state.knowledge_filter_type = "All"
-        if 'selected_filter_task' not in st.session_state:
-            st.session_state.selected_filter_task = None
-        if 'selected_filter_tm' not in st.session_state:
-            st.session_state.selected_filter_tm = None
-
         st.subheader("Knowledge Base Management")
-
-        # Add Delete All button at the top
-        if st.button("Delete All Knowledge Base Items", type="secondary"):
-            if st.warning("⚠️ This will delete ALL knowledge base items. Are you sure?"):
-                try:
-                    # Clear knowledge base directly
-                    self.knowledge_base.knowledge_index = {"entries": {}, "domains": {}, "tags": {}}
-                    self.knowledge_base._save_index()
-                    st.success("All knowledge base items deleted!")
-                    time.sleep(0.5)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error deleting knowledge base items: {str(e)}")
-
-        # Get available tasks and managers first
+        
+        # Add view selector
+        view = st.radio(
+            "Select View",
+            ["State-Specific", "Global Catalog"],
+            key="knowledge_view_selector",
+            horizontal=True,
+            index=0 if st.session_state.catalog_view == 'state' else 1
+        )
+        st.session_state.catalog_view = 'state' if view == "State-Specific" else 'global'
+        
+        # Get appropriate knowledge base
+        kb = self.knowledge_base if st.session_state.catalog_view == 'state' else self.global_knowledge_base
+        
+        # Get persistence model for task associations
         persistence_model = PersistenceModelFactory.persistence_model()
         tasks = persistence_model.tasks.list()
         tasksmanagers = persistence_model.tasksmanagers.list()
@@ -355,48 +351,47 @@ class ContextManagerUI:
                 ["documentation", "code", "research", "tutorial", "other"]
             )
 
-        # Task Association Section
-        st.subheader("Task Association")
-        associate_type = st.radio(
-            "Associate with:",
-            ["None", "Task", "Tasks Manager"]
-        )
+        # Task Association Section (only for state-specific view)
+        if st.session_state.catalog_view == 'state':
+            st.subheader("Task Association")
+            associate_type = st.radio(
+                "Associate with:",
+                ["None", "Task", "Tasks Manager"]
+            )
 
-        task_id = None
-        tasksmanager_id = None
+            task_id = None
+            tasksmanager_id = None
 
-        if associate_type == "Task":
-            if task_options:
-                selected_task = st.selectbox(
-                    "Select Task",
-                    options=list(task_options.keys()),
-                    key="add_task_select"
-                )
-                if selected_task:
-                    task_id = task_options[selected_task]
-            else:
-                st.info("No tasks available")
+            if associate_type == "Task":
+                if task_options:
+                    selected_task = st.selectbox(
+                        "Select Task",
+                        options=list(task_options.keys()),
+                        key="add_task_select"
+                    )
+                    if selected_task:
+                        task_id = task_options[selected_task]
+                else:
+                    st.info("No tasks available")
 
-        elif associate_type == "Tasks Manager":
-            if tm_options:
-                selected_tm = st.selectbox(
-                    "Select Tasks Manager",
-                    options=list(tm_options.keys()),
-                    key="add_tm_select"
-                )
-                if selected_tm:
-                    tasksmanager_id = tm_options[selected_tm]
-            else:
-                st.info("No task managers available")
+            elif associate_type == "Tasks Manager":
+                if tm_options:
+                    selected_tm = st.selectbox(
+                        "Select Tasks Manager",
+                        options=list(tm_options.keys()),
+                        key="add_tm_select"
+                    )
+                    if selected_tm:
+                        tasksmanager_id = tm_options[selected_tm]
+                else:
+                    st.info("No task managers available")
 
-        # File upload option
+        # File upload section
+        st.subheader("File Upload")
         uploaded_file = st.file_uploader(
-            "Upload File (optional)",
+            "Upload File",
             type=["txt", "md", "py", "json", "yaml", "pdf", "doc", "docx"]
         )
-                
-        # Initialize meta_dict outside the upload block
-        meta_dict = {}
         
         if uploaded_file:
             try:
@@ -409,6 +404,9 @@ class ContextManagerUI:
                 else:
                     content = uploaded_file.getvalue().decode()
                 
+                # Update content area with file contents
+                st.text_area("File Contents (editable)", value=content, key="file_content")
+                
                 # Create metadata with filename
                 tags_list = [t.strip() for t in tags.split(",") if t.strip()]
                 meta_dict = {
@@ -420,135 +418,118 @@ class ContextManagerUI:
                 }
             except Exception as e:
                 st.error(f"Error reading file: {str(e)}")
-                
+
+        # Add button
         if st.button("Add Knowledge Entry"):
             try:
+                # Get content from file content area if it exists
+                if "file_content" in st.session_state:
+                    content = st.session_state.file_content
+                
+                # Prepare metadata
                 tags_list = [t.strip() for t in tags.split(",") if t.strip()]
+                metadata = {
+                    "description": description,
+                    "source_type": source_type,
+                    "tags": tags_list,
+                    "added_at": datetime.now().isoformat()
+                }
                 
-                # Update meta_dict instead of creating new one
-                if not meta_dict:  # Only create new if not already set by file upload
-                    meta_dict = {
-                        "description": description,
-                        "source_type": source_type,
-                        "tags": tags_list,
-                        "added_at": datetime.now().isoformat()
-                    }
+                if uploaded_file:
+                    metadata["filename"] = uploaded_file.name
                 
-                # Add to knowledge base with task association
-                entry_id = await self.knowledge_base.add_knowledge_with_task(
+                # Add to knowledge base
+                entry_id = await kb.add_knowledge(
                     content=content,
                     domain=domain,
-                    metadata=meta_dict,
-                    task_id=task_id,
-                    tasksmanager_id=tasksmanager_id,
+                    metadata=metadata,
                     tags=tags_list
                 )
                 
-                # Also add to vector store for semantic search
-                embeddings = self.context_db.vector_store._safe_embed([content])
-                await self.context_db.vector_store.add_items(
-                    embeddings=embeddings,
-                    metadatas=[{
-                        **meta_dict,
-                        "task_id": task_id,
-                        "tasksmanager_id": tasksmanager_id
-                    }],
-                    contents=[content]
-                )
+                # Handle task associations for state-specific view
+                if st.session_state.catalog_view == 'state':
+                    if task_id:
+                        await self.context_provider.add_context_to_task(
+                            task_id=task_id,
+                            type="knowledge",
+                            source_id=entry_id,
+                            metadata=metadata
+                        )
+                    elif tasksmanager_id:
+                        await self.context_provider.add_context_to_manager(
+                            manager_id=tasksmanager_id,
+                            type="knowledge",
+                            source_id=entry_id,
+                            metadata=metadata
+                        )
                 
-                st.success(f"Knowledge entry added successfully!")
+                st.success("Knowledge entry added successfully!")
+                time.sleep(0.5)
+                st.rerun()
+                
             except Exception as e:
-                st.error(f"Error adding knowledge: {str(e)}")
+                st.error(f"Error adding knowledge entry: {str(e)}")
 
-        # Knowledge browse section
-        st.markdown("---")
-        st.subheader("Browse Knowledge")
+        # Display existing entries
+        st.subheader("Existing Knowledge Entries")
         
-        def on_filter_change():
-            """Callback for filter type change"""
-            # Reset selected filters when type changes
-            st.session_state.selected_filter_task = None
-            st.session_state.selected_filter_tm = None
-        
-        # Add task/tasksmanager filter
-        filter_by = st.radio(
-            "Filter by:",
-            ["All", "Task", "Tasks Manager", "Domain & Tags"],
-            key="knowledge_filter_type",
-            on_change=on_filter_change
-        )
-
-        entries = []
-        if filter_by == "Task":
-            if task_options:
-                selected_task = st.selectbox(
-                    "Select Task",
-                    options=[""] + list(task_options.keys()),
-                    key="selected_filter_task"
-                )
-                if selected_task:
-                    entries = self.knowledge_base.get_task_knowledge(task_options[selected_task])
-            else:
-                st.info("No tasks available to filter by")
-        elif filter_by == "Tasks Manager":
-            if tm_options:
-                selected_tm = st.selectbox(
-                    "Select Tasks Manager",
-                    options=[""] + list(tm_options.keys()),
-                    key="selected_filter_tm"
-                )
-                if selected_tm:
-                    entries = self.knowledge_base.get_tasksmanager_knowledge(tm_options[selected_tm])
-            else:
-                st.info("No task managers available to filter by")
-        else:
-            # Existing domain and tag filtering
-            col1, col2 = st.columns(2)
-            with col1:
-                selected_domain = st.selectbox(
-                    "Filter by Domain",
-                    options=["All"] + list(self.knowledge_base.knowledge_index.get("domains", {}).keys()),
-                    key="selected_domain"
-                )
-            with col2:
-                selected_tags = st.multiselect(
-                    "Filter by Tags",
-                    options=list(self.knowledge_base.knowledge_index.get("tags", {}).keys()),
-                    key="selected_tags"
-                )
+        # Get entries from appropriate knowledge base
+        try:
+            entries = await kb.get_knowledge()
             
-            entries = self.knowledge_base.get_knowledge(
-                domain=None if selected_domain == "All" else selected_domain,
-                tags=selected_tags if selected_tags else None
-            )
-
-        # Display entries
-        for entry in entries:
-            entry_id = entry.get('id')
-            metadata = entry.get('metadata', {})
-            
-            # Get title from metadata
-            title = metadata.get('title', 'Untitled')
-            
-            with st.expander(f"{title}"):
-                col1, col2 = st.columns([3, 1])
+            if not entries:
+                st.info("No knowledge entries found")
+                return
                 
-                with col1:
+            for entry in entries:
+                with st.expander(f"📚 {entry['domain']} - {entry['metadata'].get('description', 'No description')}"):
+                    st.write("Content:")
                     st.markdown(entry['content'])
-                    st.write("Tags:", ", ".join(metadata.get('tags', [])))
-                    st.write("Added:", metadata.get('added_at', 'Unknown'))
-                    st.write("Domain:", entry.get('domain', 'Unknown'))
-                
-                with col2:
-                    st.empty()  # Add some spacing
-                    if st.button("🗑️", key=f"delete_{entry_id}"):
+                    
+                    st.write("Metadata:")
+                    st.json(entry['metadata'])
+                    
+                    if entry['tags']:
+                        st.write("Tags:", ", ".join(entry['tags']))
+                    
+                    st.write(f"Created: {entry['created_at']}")
+                    
+                    # Show task associations for state-specific entries
+                    if st.session_state.catalog_view == 'state':
+                        contexts = await self.context_provider.get_contexts_by_source(
+                            source_id=entry['id'],
+                            type="knowledge"
+                        )
+                        if contexts:
+                            st.write("Associated with:")
+                            for ctx in contexts:
+                                if ctx.get('task_id'):
+                                    task = next((t for t in tasks if t.id == ctx['task_id']), None)
+                                    if task:
+                                        st.write(f"- Task: {task.name}")
+                                elif ctx.get('manager_id'):
+                                    manager = next((m for m in tasksmanagers if m.id == ctx['manager_id']), None)
+                                    if manager:
+                                        st.write(f"- Manager: {manager.name}")
+                    
+                    # Delete button
+                    if st.button("🗑️ Delete", key=f"delete_{entry['id']}"):
                         try:
-                            await self.knowledge_base.delete_knowledge(entry_id)
+                            await kb.delete_knowledge(entry['id'])
+                            # Also remove task associations for state-specific entries
+                            if st.session_state.catalog_view == 'state':
+                                await self.context_provider.remove_contexts_by_source(
+                                    source_id=entry['id'],
+                                    type="knowledge"
+                                )
                             st.success("Entry deleted!")
                             time.sleep(0.5)
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error: {str(e)}")
+                            st.error(f"Error deleting entry: {str(e)}")
+                            
+        except Exception as e:
+            st.error(f"Error loading knowledge entries: {str(e)}")
 
     async def render_code_view(self):
         """Render the code analysis view."""
@@ -895,8 +876,8 @@ class ContextManagerUI:
                     print(f"  Final index name: {index_name}")
                     
                     print("  Creating index in vector store...")
-                    # Create index with metadata (non-async call)
-                    self.vector_store.create_index(
+                    # Create index with metadata (properly awaited)
+                    await self.vector_store.create_index(
                         clean_name,  # Pass the clean name without vs_ prefix
                         description=f"Index for {clean_name} content"
                     )
@@ -1411,8 +1392,8 @@ class ContextManagerUI:
                     print(f"  Final index name: {index_name}")
                     
                     print("  Creating index in vector store...")
-                    # Create index with metadata (non-async call)
-                    self.vector_store.create_index(
+                    # Create index with metadata (properly awaited)
+                    await self.vector_store.create_index(
                         clean_name,  # Pass the clean name without vs_ prefix
                         description=f"Index for {clean_name} content"
                     )
@@ -1508,6 +1489,9 @@ class ContextManagerUI:
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         
+                        successful_scrapes = 0
+                        failed_scrapes = 0
+                        
                         # Process each URL
                         for i, url_to_scrape in enumerate(urls_to_scrape):
                             try:
@@ -1520,34 +1504,48 @@ class ContextManagerUI:
                                     metadata = {
                                         'url': url_to_scrape,
                                         'title': result.get('metadata', {}).get('title', ''),
-                                        'description': result.get('metadata', {}).get('description', []),
+                                        'description': result.get('metadata', {}).get('description', ''),  # Already string from web_scraper
                                         'scraped_at': current_time,
                                         'added_at': current_time,
                                         'type': 'web_content'
                                     }
                                     
-                                    # Add to vector store
-                                    print(f"\nDEBUG - Adding file to vector store:")
-                                    print(f"  Selected index: {selected_index}")
-                                    print(f"  File path: {result['path']}")
-                                    print(f"  Metadata: {metadata}")
+                                    # Ensure all metadata values are strings
+                                    for key, value in metadata.items():
+                                        if isinstance(value, list):
+                                            metadata[key] = ' '.join(str(v) for v in value)
+                                        elif not isinstance(value, (str, int, float, bool)):
+                                            metadata[key] = str(value)
                                     
-                                    # Add to vector store (keep the vs_ prefix)
+                                    # Add to vector store
                                     await self.vector_store.add_file_to_index(
-                                        index_name=selected_index,  # Keep the vs_ prefix
+                                        index_name=selected_index,
                                         file_path_or_obj=io.StringIO(result['content']),
                                         metadata=metadata,
                                         progress_callback=lambda msg, cur, tot: status_text.text(msg)
                                     )
-                                    print("  File added successfully")
+                                    successful_scrapes += 1
                                 
                                 progress_bar.progress((i + 1) / len(urls_to_scrape))
                                 
                             except Exception as e:
+                                failed_scrapes += 1
                                 st.error(f"Error processing {url_to_scrape}: {str(e)}")
                                 continue
                         
-                        st.success("Web scraping completed!")
+                        # Show final status
+                        if successful_scrapes > 0:
+                            st.success(f"Successfully scraped {successful_scrapes} pages")
+                        if failed_scrapes > 0:
+                            st.warning(f"Failed to scrape {failed_scrapes} pages")
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        if successful_scrapes > 0:
+                            time.sleep(0.5)
+                            st.rerun()
                         
                 except Exception as e:
                     st.error(f"Error during web scraping: {str(e)}")
@@ -1757,3 +1755,108 @@ class ContextManagerUI:
                 min_value=0,
                 value=3600
             )
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get the current status of the context manager."""
+        try:
+            # Get current state
+            state = self.get_current_state()
+            
+            # Get total contexts
+            total_contexts = 0
+            if self.context_provider:
+                contexts = self.context_provider.get_all_contexts()
+                total_contexts = len(contexts) if contexts else 0
+            
+            return {
+                "loaded": True,
+                "active_context": state.get("selected_context"),
+                "context_type": state.get("context_view", "knowledge"),
+                "total_contexts": total_contexts
+            }
+        except Exception as e:
+            print(f"Error getting context manager status: {str(e)}")
+            return {
+                "loaded": False,
+                "error": str(e)
+            }
+
+    def get_context_tree(self) -> Optional[TreeNode]:
+        """Get the hierarchical tree of contexts organized by type."""
+        try:
+            if not self.context_provider:
+                return None
+                
+            # Create root node
+            root = TreeNode(name="Contexts", data=None)
+            
+            # Get all contexts
+            contexts = self.context_provider.get_all_contexts()
+            if not contexts:
+                return root
+                
+            # Group contexts by type
+            type_groups: Dict[str, List[ContextEntry]] = {}
+            for context in contexts:
+                source_type = context.metadata.source_type.value
+                if source_type not in type_groups:
+                    type_groups[source_type] = []
+                type_groups[source_type].append(context)
+            
+            # Create type nodes
+            for source_type, type_contexts in type_groups.items():
+                type_node = TreeNode(name=source_type, data=None)
+                root.add_child(type_node)
+                
+                # Add context nodes under type
+                for context in type_contexts:
+                    context_node = TreeNode(
+                        name=context.metadata.purpose,
+                        data=context
+                    )
+                    type_node.add_child(context_node)
+                    
+                    # Add associated task managers and tasks
+                    if hasattr(context, "task_managers"):
+                        for manager in context.task_managers:
+                            manager_node = TreeNode(
+                                name=manager.name,
+                                data=manager
+                            )
+                            context_node.add_child(manager_node)
+                            
+                            # Add tasks under manager
+                            for task in manager.tasks:
+                                task_node = TreeNode(
+                                    name=task.name,
+                                    data=task
+                                )
+                                manager_node.add_child(task_node)
+            
+            return root
+            
+        except Exception as e:
+            print(f"Error building context tree: {str(e)}")
+            return None
+
+    def set_active_context(self, context_id: str) -> None:
+        """Set the active context."""
+        if not self.context_provider:
+            return
+            
+        state = self.get_current_state()
+        state["selected_context"] = context_id
+        
+        # Get context type and update view
+        context = self.context_provider.get_context(context_id)
+        if context:
+            state["context_view"] = context.metadata.source_type.value.lower()
+
+    def handle_node_click(self, node):
+        """Handle tree node click events."""
+        if node and hasattr(node, 'data') and node.data:
+            if 'id' in node.data:
+                st.session_state.selected_context = node.data['id']
+                st.session_state.context_view = node.data.get('type', 'vector')
+                # Force a rerun to update the UI
+                st.rerun()

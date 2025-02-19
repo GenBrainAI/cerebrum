@@ -1,7 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 from ...models.task import Task
-from ..components.tree_component import TreeNode
+from ..models.tree_node import TreeNode
+from ..components.tree_component import TreeComponent
 
 class TaskTreeProvider:
     """Converts task hierarchies to TreeNode structures."""
@@ -19,7 +20,9 @@ class TaskTreeProvider:
             root = TreeNode(
                 id=uuid4(),
                 name="All Tasks",
-                node_type="root"
+                type="root",
+                metadata={},
+                data={}
             )
         else:
             task = self.persistence_model.tasks.read(root_task_id)
@@ -34,12 +37,13 @@ class TaskTreeProvider:
         return TreeNode(
             id=UUID(task.id) if isinstance(task.id, str) else task.id,
             name=task.name,
-            node_type="task",
+            type="task",
             metadata={
                 "description": task.description,
                 "status": getattr(task, "status", "pending"),
                 "priority": getattr(task, "priority", "medium")
-            }
+            },
+            data={}
         )
         
     def _build_task_tree(self, parent: TreeNode, tasks: List[Task]):

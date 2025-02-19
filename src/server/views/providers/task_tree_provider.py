@@ -1,7 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 from ...models.task import Task
-from ..components.tree_component import TreeNode
+from ..models.tree_node import TreeNode
+from ..components.tree_component import TreeComponent
 
 class TaskTreeProvider:
     """Converts task hierarchies to TreeNode structures."""

@@ -1,72 +1,87 @@
 import streamlit as st
 from typing import Callable, Optional, List, Dict, Any
 from uuid import UUID
-
-class TreeNode:
-    """Tree node component for hierarchical data structures."""
-    
-    def __init__(self, id: UUID, name: str, node_type: str, metadata: Optional[Dict[str, Any]] = None):
-        self.id = id
-        self.name = name
-        self.node_type = node_type
-        self.metadata = metadata or {}
-        self.children: List[TreeNode] = []
-        self.expanded: bool = True  # Default to expanded
-        
-    def traverse(self):
-        """Generator to traverse all nodes in the tree."""
-        yield self
-        for child in self.children:
-            yield from child.traverse()
-            
-    def find_node(self, node_id: UUID) -> Optional['TreeNode']:
-        """Find node by ID in the tree."""
-        if self.id == node_id:
-            return self
-        for child in self.children:
-            found = child.find_node(node_id)
-            if found:
-                return found
-        return None
+from ..models.tree_node import TreeNode  # Import the Pydantic TreeNode model
 
 class TreeComponent:
     """Reusable tree visualization component."""
     
     def __init__(self, on_node_click: Optional[Callable[[TreeNode], None]] = None):
         self.on_node_click = on_node_click
-        
-    def render_node(self, node: TreeNode, level: int = 0):
-        """Render a single node."""
-        # Create indentation
-        
-        # Choose icon based on node type
-        icon = {
-            "root": "🗃️", #concider this as well 🗂️
-            "category": "📂",
-            "agent": "🤖",
-            "agentic": "🤖",
-            "group": "👥",
-            "task": "📋",
-            "tool": "🔧"
-        }.get(node.node_type, "📄")
-        
-        # Create unique key for the node
-        node_key = f"tree_node_{node.id}_{level}"
-        
-        # Render node with click handler
-        if st.button(f"{icon} {node.name}", key=node_key):
-            if self.on_node_click:
-                self.on_node_click(node)
-        
-        # Render children if expanded
-        if node.expanded:
-            for child in node.children:
-                self.render_node(child, level + 1)
     
-    def render(self, root_node: Optional[TreeNode], in_sidebar: bool = True):
-        """Render the entire tree."""
-        if not root_node:
-            st.warning("No tree data available")
-            return
+    def render(self, root_node: Optional[TreeNode], key: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Render the tree component."""
+        try:
+            if not root_node:
+                return None
             
-        self.render_node(root_node)
+            # Initialize session state for expanded nodes if not exists
+            if f"{key}_expanded" not in st.session_state:
+                st.session_state[f"{key}_expanded"] = set()
+            
+            # Render the root node and its children recursively
+            return self._render_node(root_node, 0, key)
+            
+        except Exception as e:
+            import traceback
+            print(f"Error rendering tree: {str(e)}")
+            print(f"Error traceback: {traceback.format_exc()}")
+            return None
+    
+    def _render_node(self, node: TreeNode, level: int, key: str) -> Optional[Dict[str, Any]]:
+        """Render a single node and its children."""
+        try:
+            # Create indentation based on level
+            indent = "    " * level
+            
+            # Choose icon based on node type
+            icon = {
+                "root": "🗃️",
+                "category": "📂",
+                "agent": "🤖",
+                "agentic": "🤖",
+                "group": "👥",
+                "task": "📋",
+                "tool": "🔧"
+            }.get(node.type, "📄")
+            
+            # Create unique key for this node
+            node_key = f"{key}_{node.id}_{level}"
+            
+            # Create expand/collapse button
+            if node.children:
+                is_expanded = node_key in st.session_state[f"{key}_expanded"]
+                expander = st.button(
+                    f"{'▼' if is_expanded else '▶'} {icon} {node.name}",
+                    key=f"exp_{node_key}"
+                )
+                if expander:
+                    if is_expanded:
+                        st.session_state[f"{key}_expanded"].remove(node_key)
+                    else:
+                        st.session_state[f"{key}_expanded"].add(node_key)
+                    st.rerun()
+            else:
+                # Leaf node - just show the icon and name
+                if st.button(f"{indent}{icon} {node.name}", key=node_key):
+                    if self.on_node_click:
+                        return {
+                            "id": str(node.id),
+                            "type": node.type,
+                            "data": node.data
+                        }
+            
+            # Render children if expanded
+            if node.children and node_key in st.session_state[f"{key}_expanded"]:
+                for child in node.children:
+                    result = self._render_node(child, level + 1, key)
+                    if result:
+                        return result
+            
+            return None
+            
+        except Exception as e:
+            import traceback
+            print(f"Error rendering node: {str(e)}")
+            print(f"Error traceback: {traceback.format_exc()}")
+            return None
