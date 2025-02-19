@@ -1489,6 +1489,9 @@ class ContextManagerUI:
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         
+                        successful_scrapes = 0
+                        failed_scrapes = 0
+                        
                         # Process each URL
                         for i, url_to_scrape in enumerate(urls_to_scrape):
                             try:
@@ -1501,34 +1504,48 @@ class ContextManagerUI:
                                     metadata = {
                                         'url': url_to_scrape,
                                         'title': result.get('metadata', {}).get('title', ''),
-                                        'description': result.get('metadata', {}).get('description', []),
+                                        'description': result.get('metadata', {}).get('description', ''),  # Already string from web_scraper
                                         'scraped_at': current_time,
                                         'added_at': current_time,
                                         'type': 'web_content'
                                     }
                                     
-                                    # Add to vector store
-                                    print(f"\nDEBUG - Adding file to vector store:")
-                                    print(f"  Selected index: {selected_index}")
-                                    print(f"  File path: {result['path']}")
-                                    print(f"  Metadata: {metadata}")
+                                    # Ensure all metadata values are strings
+                                    for key, value in metadata.items():
+                                        if isinstance(value, list):
+                                            metadata[key] = ' '.join(str(v) for v in value)
+                                        elif not isinstance(value, (str, int, float, bool)):
+                                            metadata[key] = str(value)
                                     
-                                    # Add to vector store (keep the vs_ prefix)
+                                    # Add to vector store
                                     await self.vector_store.add_file_to_index(
-                                        index_name=selected_index,  # Keep the vs_ prefix
+                                        index_name=selected_index,
                                         file_path_or_obj=io.StringIO(result['content']),
                                         metadata=metadata,
                                         progress_callback=lambda msg, cur, tot: status_text.text(msg)
                                     )
-                                    print("  File added successfully")
+                                    successful_scrapes += 1
                                 
                                 progress_bar.progress((i + 1) / len(urls_to_scrape))
                                 
                             except Exception as e:
+                                failed_scrapes += 1
                                 st.error(f"Error processing {url_to_scrape}: {str(e)}")
                                 continue
                         
-                        st.success("Web scraping completed!")
+                        # Show final status
+                        if successful_scrapes > 0:
+                            st.success(f"Successfully scraped {successful_scrapes} pages")
+                        if failed_scrapes > 0:
+                            st.warning(f"Failed to scrape {failed_scrapes} pages")
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        if successful_scrapes > 0:
+                            time.sleep(0.5)
+                            st.rerun()
                         
                 except Exception as e:
                     st.error(f"Error during web scraping: {str(e)}")
