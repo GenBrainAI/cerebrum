@@ -239,7 +239,7 @@ class ContextProvider:
             print("  Getting knowledge base contexts...")
             kb_contexts = await self.knowledge_base.get_knowledge()
             for ctx in kb_contexts:
-                print(f"    Found knowledge base context: {ctx['id']}")
+                # print(f"    Found knowledge base context: {ctx['id']}")
                 contexts.append({
                     "id": ctx["id"],
                     "type": "knowledge",

@@ -10,6 +10,8 @@ import json
 from ...components.tree_select_component import TreeSelectComponent
 from uuid import UUID
 import traceback
+from ....persistence.state_persistence_manager import StatePersistenceManager
+import time
 
 class ContextManagementSidebar:
     """Sidebar component for context management."""
@@ -17,6 +19,12 @@ class ContextManagementSidebar:
     def __init__(self, context_manager=None):
         print("\n🔍 Initializing ContextManagementSidebar")
         self.context_manager = context_manager
+        if context_manager:
+            print(f"  Context manager loaded: {context_manager is not None}")
+            print(f"  Context provider loaded: {context_manager.context_provider is not None}")
+            print(f"  Global context provider loaded: {context_manager.global_context_provider is not None}")
+            print(f"  Persistence model loaded: {context_manager.persistence_model is not None}")
+        self.state_persistence = StatePersistenceManager()
         self.storage_type_indicators = {
             SourceType.KNOWLEDGE_BASE: "📚",
             SourceType.VECTOR_STORE: "🔢",
@@ -43,6 +51,11 @@ class ContextManagementSidebar:
         # Initialize tree component with session state
         self.tree_component._expanded_nodes = st.session_state.context_tree_state['expanded']
         self.tree_component._selected_nodes = st.session_state.context_tree_state['selected']
+        
+        # Initialize save status in session state if not exists
+        if 'save_status' not in st.session_state:
+            st.session_state.save_status = None
+            st.session_state.last_save_time = None
         
         # Debug session state
         print("\n📊 Current Session State:")
@@ -80,15 +93,30 @@ class ContextManagementSidebar:
                 try:
                     state_name = self.get_current_state_name()
                     print(f"  Current state name: {state_name}")
-                    st.markdown(f"🟢 **{state_name} Context Loaded**")
+                    print(f"  Current save status: {st.session_state.save_status}")
+                    
+                    # Show state status with save indicator
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"🟢 **{state_name} Context Loaded**")
+                    with col2:
+                        if st.session_state.save_status == "pending":
+                            st.markdown("💾 *Saving...*")
+                        elif st.session_state.save_status == "saved" and st.session_state.last_save_time:
+                            time_diff = time.time() - st.session_state.last_save_time
+                            if time_diff < 5:  # Show saved status for 5 seconds
+                                st.markdown("✅ *Saved*")
+                            else:
+                                st.session_state.save_status = None
                     
                     contexts = await self._get_context_associations()
                     if contexts:
                         print(f"  Found {len(contexts)} context associations")
                         st.markdown(f"**Context Associations:** {len(contexts)}")
-                        
+                    
                 except Exception as e:
                     print(f"❌ Error getting state info: {str(e)}")
+                    print(f"  Stack trace: {traceback.format_exc()}")
                     st.markdown("🔴 Error loading state")
             else:
                 print("❌ No context manager loaded")
@@ -174,7 +202,6 @@ class ContextManagementSidebar:
         )
         
         try:
-            print("  Creating category nodes...")
             # Create category nodes with fixed IDs
             vector_node = TreeNode(
                 id=VECTOR_ID,
@@ -201,7 +228,6 @@ class ContextManagementSidebar:
             root.add_child(knowledge_node)
             root.add_child(code_node)
             
-            print("\n  Getting global contexts...")
             # Get all global data sources
             global_contexts = await self.context_manager.global_context_provider.get_all_contexts()
             print(f"  Found {len(global_contexts)} global contexts")
@@ -211,13 +237,10 @@ class ContextManagementSidebar:
             task_info = {}
             manager_info = {}
             
-            print("\n  Getting task associations...")
             if not self.context_manager.global_context_provider.is_global:
                 persistence_model = self.context_manager.persistence_model
                 tasks = persistence_model.tasks.list()
                 managers = persistence_model.tasksmanagers.list()
-                
-                print(f"  Found {len(tasks)} tasks and {len(managers)} managers")
                 
                 # Build lookups
                 task_info = {t.id: t for t in tasks}
@@ -225,16 +248,12 @@ class ContextManagementSidebar:
                 
                 # Get all task associations for each source
                 for ctx in global_contexts:
-                    print(f"\n  Getting associations for context {ctx['id']} ({ctx['type']})")
                     source_assocs = await self.context_manager.context_provider.get_contexts_by_source(
                         source_id=ctx["id"],
                         type=ctx["type"]
                     )
                     if source_assocs:
-                        print(f"    Found {len(source_assocs)} associations")
                         task_associations[ctx["id"]] = source_assocs
-                    else:
-                        print("    No associations found")
             
             # Group contexts by type
             type_contexts = {
@@ -246,17 +265,14 @@ class ContextManagementSidebar:
             for ctx in global_contexts:
                 type_contexts[ctx["type"]].append(ctx)
             
-            print("\n  Processing Vector Store contexts...")
             # Process Vector Store contexts
             for ctx in type_contexts["vector"]:
-                print(f"\n    Processing vector store: {ctx['id']}")
                 index_name = ctx["metadata"].get("name", ctx["id"])
                 doc_count = ctx["metadata"].get("document_count", 0)
-                print(f"    Name: {index_name}, Documents: {doc_count}")
                 
                 # Use consistent ID based on the context ID
                 index_node = TreeNode(
-                    id=UUID(f"00000000-0000-4000-8000-{abs(hash(ctx['id'])) % 0xFFFFFFFFF:012x}"),  # Generate stable UUID from hash
+                    id=UUID(f"00000000-0000-4000-8000-{abs(hash(ctx['id'])) % 0xFFFFFFFFF:012x}"),
                     name=index_name,
                     type="index",
                     metadata={
@@ -264,16 +280,18 @@ class ContextManagementSidebar:
                         "description": f"{doc_count} documents",
                         "actions": [{"name": "view", "icon": "📄", "tooltip": "View contents"}]
                     },
-                    data={"type": "index", "id": ctx["id"]}  # Store original ID in data
+                    data={"type": "index", "id": ctx["id"]}
                 )
                 vector_node.add_child(index_node)
                 
                 # Add task connections if any
                 assocs = task_associations.get(ctx["id"], [])
                 if assocs:
-                    print(f"    Found {len(assocs)} task connections")
+                    print(f"    Found {len(assocs)} task connections for {index_name}")
+                    # Generate a stable UUID for connections node based on context ID
+                    connections_uuid = UUID(f"00000000-0000-4000-8000-{abs(hash(ctx['id'] + '_connections')) % 0xFFFFFFFFF:012x}")
                     connections_node = TreeNode(
-                        id=UUID(f"{ctx['id']}-connections"),  # Consistent ID for connections node
+                        id=connections_uuid,
                         name="Task Connections",
                         type="connections",
                         metadata={"icon": "📎"},
@@ -297,7 +315,6 @@ class ContextManagementSidebar:
                     for manager_id, manager_assocs in manager_tasks.items():
                         manager = manager_info.get(manager_id)
                         if manager:
-                            print(f"      Adding manager node: {manager.name}")
                             manager_node = TreeNode(
                                 id=UUID(manager_id) if isinstance(manager_id, str) else manager_id,
                                 name=manager.name,
@@ -312,7 +329,6 @@ class ContextManagementSidebar:
                                 if assoc.get("task_id"):
                                     task = task_info.get(assoc["task_id"])
                                     if task:
-                                        print(f"        Adding task node: {task.name}")
                                         task_node = TreeNode(
                                             id=UUID(task.id) if isinstance(task.id, str) else task.id,
                                             name=task.name,
@@ -329,7 +345,6 @@ class ContextManagementSidebar:
                     for assoc in standalone_tasks:
                         task = task_info.get(assoc["task_id"])
                         if task:
-                            print(f"      Adding standalone task node: {task.name}")
                             task_node = TreeNode(
                                 id=UUID(task.id) if isinstance(task.id, str) else task.id,
                                 name=task.name,
@@ -341,8 +356,6 @@ class ContextManagementSidebar:
                                 data={"type": "task", "id": task.id}
                             )
                             connections_node.add_child(task_node)
-                else:
-                    print("    No task connections found")
             
             print("\n✅ Context tree built successfully")
             return root
@@ -355,29 +368,73 @@ class ContextManagementSidebar:
     async def _get_context_associations(self) -> List[Dict[str, Any]]:
         """Get all context associations from current state."""
         try:
+            print("\n🔍 Getting context associations")
             # Get all tasks and managers
             persistence_model = self.context_manager.persistence_model
+            print(f"  Persistence model available: {persistence_model is not None}")
+            
             tasks = persistence_model.tasks.list()
             managers = persistence_model.tasksmanagers.list()
+            print(f"  Found {len(tasks)} tasks and {len(managers)} managers")
+            
+            # Sync contexts from persistence model
+            print("\n🔄 Syncing contexts from persistence model")
+            for task in tasks:
+                print(f"  Syncing contexts for task: {task.name}")
+                self.context_manager.context_provider.sync_task_contexts(task.id, task)
+            
+            for manager in managers:
+                print(f"  Syncing contexts for manager: {manager.name}")
+                self.context_manager.context_provider.sync_task_contexts(manager.id, manager)
+            
+            # Debug task and manager details
+            for task in tasks:
+                print(f"  Task: {task.name} (ID: {task.id})")
+            for manager in managers:
+                print(f"  Manager: {manager.name} (ID: {manager.id})")
             
             associations = []
             
-            # Get contexts for each task
+            # Get contexts for each task with detailed logging
             for task in tasks:
+                print(f"\n  Getting contexts for task: {task.name}")
                 contexts = await self.context_manager.context_provider.get_task_contexts(task.id)
                 if contexts:
+                    print(f"    Found {len(contexts)} contexts:")
+                    for ctx in contexts:
+                        print(f"      - Context ID: {ctx.get('id')}, Type: {ctx.get('type')}")
                     associations.extend(contexts)
+                else:
+                    print(f"    No contexts found for task {task.name}")
             
-            # Get contexts for each manager
+            # Get contexts for each manager with detailed logging
             for manager in managers:
+                print(f"\n  Getting contexts for manager: {manager.name}")
                 contexts = await self.context_manager.context_provider.get_manager_contexts(manager.id)
                 if contexts:
+                    print(f"    Found {len(contexts)} contexts:")
+                    for ctx in contexts:
+                        print(f"      - Context ID: {ctx.get('id')}, Type: {ctx.get('type')}")
                     associations.extend(contexts)
-                    
+                else:
+                    print(f"    No contexts found for manager {manager.name}")
+            
+            print(f"\n  Total associations found: {len(associations)}")
+            if associations:
+                print("  Association details:")
+                for assoc in associations:
+                    print(f"    - {assoc}")
+            
+            # Only save if we found associations
+            if associations and self.context_manager.persistence_model:
+                print("\n🔄 Saving state with context associations")
+                await self.state_persistence.save_state(self.context_manager.persistence_model)
+            
             return associations
             
         except Exception as e:
-            print(f"Error getting context associations: {str(e)}")
+            print(f"❌ Error getting context associations: {str(e)}")
+            print(f"  Stack trace: {traceback.format_exc()}")
             return []
     
     def _get_task_info(self, task_id: str) -> Optional[Dict[str, Any]]:

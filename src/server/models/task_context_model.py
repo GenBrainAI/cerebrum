@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from pydantic import BaseModel, Field
 from uuid import uuid4
+import traceback
 
 class ContextReference(BaseModel):
     """Reference to a specific context source."""
@@ -103,23 +104,43 @@ class TaskContextManager:
     def sync_task_contexts(self, task_id: str, task: Any) -> None:
         """Sync task contexts with persistence model."""
         try:
+            print(f"\n🔄 Syncing task contexts for {task_id}")
             # Get or create task context
             task_context = self.get_task_context(task_id)
             if not task_context:
+                print("  Creating new task context")
                 task_context = self.create_task_context(task_id)
+            else:
+                print("  Using existing task context")
             
             # Update context configuration from task
+            print("  Checking task attributes:")
+            print(f"    has use_context: {hasattr(task, 'use_context')}")
+            print(f"    has inherit_manager_context: {hasattr(task, 'inherit_manager_context')}")
             task_context.use_context = getattr(task, 'use_context', True)
             task_context.inherit_manager_context = getattr(task, 'inherit_manager_context', True)
+            print(f"    use_context: {task_context.use_context}")
+            print(f"    inherit_manager_context: {task_context.inherit_manager_context}")
             
             # Sync contexts from task if they exist
+            print("  Checking task contexts:")
+            print(f"    has contexts attribute: {hasattr(task, 'contexts')}")
+            if hasattr(task, 'contexts'):
+                print(f"    contexts value: {task.contexts}")
+            
             if hasattr(task, 'contexts') and task.contexts:
+                print(f"  Found {len(task.contexts)} contexts to sync")
                 task_context.contexts = [
                     ContextReference(**ctx) if isinstance(ctx, dict) else ctx 
                     for ctx in task.contexts
                 ]
+                print("  Contexts synced successfully")
+            else:
+                print("  No contexts found to sync")
             
         except Exception as e:
+            print(f"❌ Error syncing task contexts: {str(e)}")
+            print(f"  Stack trace: {traceback.format_exc()}")
             logging.error(f"Error syncing task contexts: {str(e)}")
 
     def sync_manager_contexts(self, manager_id: str, manager: Any) -> None:
@@ -193,6 +214,27 @@ class TaskContextManager:
             priority=priority,
             metadata=metadata or {}
         )
+
+        # Get task from persistence model and update its contexts
+        try:
+            from ..persistence.persistence_model_factory import PersistenceModelFactory
+            persistence_model = PersistenceModelFactory.persistence_model()
+            if persistence_model:
+                task = persistence_model.tasks.read(task_id)
+                if task:
+                    # Initialize contexts list if needed
+                    if not hasattr(task, 'contexts') or task.contexts is None:
+                        task.contexts = []
+                    
+                    # Add context reference to task
+                    task.contexts.append(context_ref.dict())
+                    
+                    # Update task in persistence model
+                    persistence_model.tasks.update(task_id, task)
+                    print(f"✅ Added context {context_ref.id} to task {task_id} in persistence model")
+        except Exception as e:
+            print(f"❌ Error updating task in persistence model: {str(e)}")
+            print(f"Stack trace: {traceback.format_exc()}")
         
         return str(context_ref.id)
         
@@ -202,14 +244,14 @@ class TaskContextManager:
         type: str
     ) -> List[Dict[str, Any]]:
         """Get all contexts that reference a particular source."""
-        print(f"\n🔍 Looking for contexts with source_id={source_id}, type={type}")
+        # print(f"\n🔍 Looking for contexts with source_id={source_id}, type={type}")
         contexts = []
         for task_id, task_context in self.task_contexts.items():
-            print(f"  Checking task {task_id}")
+            # print(f"  Checking task {task_id}")
             for context in task_context.contexts:
-                print(f"    Checking context: source_id={context.source_id}, type={context.type}")
+                # print(f"    Checking context: source_id={context.source_id}, type={context.type}")
                 if context.source_id == source_id and context.type == type:
-                    print(f"    ✅ Found matching context")
+                    # print(f"    ✅ Found matching context")
                     contexts.append({
                         "id": str(context.id),
                         "task_id": task_context.task_id,
@@ -219,8 +261,9 @@ class TaskContextManager:
                         "priority": context.priority
                     })
                 else:
-                    print(f"    ❌ No match")
-        print(f"  Found {len(contexts)} matching contexts")
+                    # print(f"    ❌ No match")
+                    pass
+        # print(f"  Found {len(contexts)} matching contexts")
         return contexts
         
     async def remove_contexts_by_source(
