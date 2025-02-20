@@ -43,6 +43,8 @@ class TaskHierarchyController:
     async def get_task_tree(self):
         """Get the task hierarchy as a tree structure."""
         try:
+            print("\n🌳 Building task hierarchy tree...")
+            
             # Create root node
             root = TreeNode(
                 id=UUID('00000000-0000-0000-0000-000000000000'),
@@ -51,11 +53,14 @@ class TaskHierarchyController:
                 metadata={},
                 data={}
             )
+            print("✅ Created root node")
             
             # Get all task managers
             task_managers = self.global_persistence.tasksmanagers.list()
+            print(f"📊 Found {len(task_managers)} task managers")
             
             for tm in task_managers:
+                print(f"\n👥 Processing task manager: {tm.name} ({tm.id})")
                 # Create task manager node
                 tm_node = TreeNode(
                     id=UUID(tm.id) if isinstance(tm.id, str) else tm.id,
@@ -67,10 +72,12 @@ class TaskHierarchyController:
                 
                 # Get tasks for this manager
                 tasks = [t for t in self.global_persistence.tasks.list() 
-                        if t.tasksmanager_id == tm.id]
+                        if hasattr(t, 'tasksmanager_id') and t.tasksmanager_id == tm.id]
+                print(f"📋 Found {len(tasks)} tasks for manager {tm.name}")
                 
                 # Add tasks as children
                 for task in tasks:
+                    print(f"  - Adding task: {task.name} ({task.id})")
                     task_node = TreeNode(
                         id=UUID(task.id) if isinstance(task.id, str) else task.id,
                         name=task.name,
@@ -83,13 +90,24 @@ class TaskHierarchyController:
                     )
                     tm_node.children.append(task_node)
                 
-                # Add task manager node to root
-                root.children.append(tm_node)
+                # Only add manager node if it has tasks
+                if tm_node.children:
+                    print(f"✅ Adding manager node with {len(tm_node.children)} tasks")
+                    root.children.append(tm_node)
+                else:
+                    print(f"⚠️ Skipping manager node - no tasks found")
+            
+            print(f"\n🎯 Final tree structure:")
+            print(f"  Root children: {len(root.children)}")
+            for child in root.children:
+                print(f"  - {child.name}: {len(child.children)} tasks")
             
             return root
             
         except Exception as e:
             self.logger.error(f"Error building task tree: {str(e)}")
+            import traceback
+            self.logger.error(f"Stack trace: {traceback.format_exc()}")
             return None
 
     async def initialize(self):

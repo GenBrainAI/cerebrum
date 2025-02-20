@@ -2,6 +2,7 @@
 import streamlit as st
 from ...models.view_state import ViewState
 from ...models.view_types import ViewType
+from .utils import truncate_tree_node_names
 
 class TaskHierarchySidebar:
     """Sidebar component for task hierarchy view."""
@@ -43,6 +44,9 @@ class TaskHierarchySidebar:
                 if tree_data:
                     print(f"Tree data received: {len(tree_data.children)} root children")
                     try:
+                        # Apply smart name truncation
+                        truncate_tree_node_names(tree_data)
+                        
                         result = self.controller.tree_component.render(
                             tree_data,
                             key="task_tree_sidebar"
