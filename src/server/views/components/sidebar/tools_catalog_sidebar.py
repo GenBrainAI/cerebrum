@@ -114,6 +114,28 @@ class ToolsCatalogSidebar:
             if self.controller:
                 tree_data = await self.controller.get_tools_tree()
                 if tree_data:
+                    # Smart truncation for class.function_name pattern
+                    def truncate_long_names(node):
+                        if len(node.name) > 35:
+                            # Split by dot to separate class and function names
+                            parts = node.name.split('.')
+                            if len(parts) > 1:
+                                # Get class name initials
+                                class_name = parts[0]
+                                class_abbrev = '.'.join(p[0] for p in class_name.split('_'))
+                                # Get the function name part
+                                func_name = parts[-1]
+                                if len(func_name) > 25:  # Leave some space for the class abbreviation
+                                    func_name = "..." + func_name[-25:]
+                                node.name = f"[{class_abbrev}]{func_name}"
+                            else:
+                                # If no class name pattern, just truncate
+                                node.name = "..." + node.name[-35:]
+                        for child in node.children:
+                            truncate_long_names(child)
+                    
+                    truncate_long_names(tree_data)
+                    
                     result = self.controller.tree_component.render(
                         tree_data,
                         key="tools_tree_sidebar"
