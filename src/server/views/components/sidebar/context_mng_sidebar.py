@@ -12,6 +12,7 @@ from uuid import UUID
 import traceback
 from ....persistence.state_persistence_manager import StatePersistenceManager
 import time
+from .utils import truncate_tree_node_names
 
 class ContextManagementSidebar:
     """Sidebar component for context management."""
@@ -133,6 +134,9 @@ class ContextManagementSidebar:
                         print(f"  Tree built successfully with {len(tree_data.children)} root children")
                         print("  Tree structure:")
                         self._print_tree_structure(tree_data)
+                        
+                        # Apply smart name truncation
+                        truncate_tree_node_names(tree_data)
                         
                         print("\n🎯 Rendering tree with TreeSelectComponent")
                         print(f"  Component state before render:")

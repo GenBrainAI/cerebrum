@@ -225,134 +225,87 @@ class ToolsCatalogController:
             for category in categories.values():
                 root.children.append(category)
             
-            # Try to get tools from both sources
+            # Get tools from persistence
             try:
+                print("\n📦 Getting persisted tools...")
                 persisted_tools = self.global_persistence.tools.list()
-                print(f"\n📦 Found {len(persisted_tools)} persisted tools")
-            except Exception as e:
-                print(f"❌ Error getting persisted tools: {str(e)}")
-                persisted_tools = []
-            
-            try:
-                catalog_tool_names = tools_catalog.list_tools()
-                print(f"📦 Found {len(catalog_tool_names)} catalog tools")
-            except Exception as e:
-                print(f"❌ Error getting catalog tools: {str(e)}")
-                catalog_tool_names = []
-            
-            # Process persisted tools if any
-            if persisted_tools:
+                print(f"✅ Found {len(persisted_tools)} persisted tools")
+                
+                # Add persisted tools to categories
                 for tool in persisted_tools:
-                    try:
-                        metadata = {}
-                        if hasattr(tool, 'description'):
-                            metadata["description"] = tool.description
-                        if hasattr(tool, 'metadata'):
-                            metadata.update(tool.metadata)
-                            
+                    print(f"  Processing tool: {tool.name}")
+                    category_name = getattr(tool, 'category', 'other')
+                    if category_name in categories:
                         tool_node = TreeNode(
-                            id=UUID(tool.id),
+                            id=UUID(tool.id) if isinstance(tool.id, str) else tool.id,
                             name=tool.name,
                             type="tool",
-                            metadata=metadata,
+                            metadata={
+                                "description": getattr(tool, 'description', ''),
+                                "source": "persistence"
+                            },
                             data={}
                         )
-                        
-                        # Determine tool category
-                        category = 'other'
-                        if hasattr(tool, 'tool_type'):
-                            tool_type = tool.tool_type.lower()
-                            if tool_type in categories:
-                                category = tool_type
-                        elif hasattr(tool, 'metadata') and tool.metadata.get('type'):
-                            meta_type = tool.metadata['type'].lower()
-                            if meta_type in categories:
-                                category = meta_type
-                        
-                        # Add tool to appropriate category
-                        categories[category].children.append(tool_node)
-                        print(f"✅ Added persisted tool '{tool.name}' to {category} category")
-                        
-                    except Exception as e:
-                        print(f"❌ Error processing persisted tool {tool.id}: {str(e)}")
+                        categories[category_name].children.append(tool_node)
+                        print(f"  ✅ Added to {category_name} category")
+                    else:
+                        print(f"  ⚠️ Unknown category: {category_name}")
+                
+            except Exception as e:
+                print(f"❌ Error getting persisted tools: {str(e)}")
+                import traceback
+                print(f"Stack trace: {traceback.format_exc()}")
             
-            # Process catalog tools if any
-            if catalog_tool_names:
+            # Get tools from catalog
+            try:
+                print("\n📦 Getting catalog tools...")
+                from ....tools_catalog import tools_catalog
+                catalog_tool_names = tools_catalog.list_tools()
+                print(f"✅ Found {len(catalog_tool_names)} catalog tools")
+                
+                # Add catalog tools to categories
                 for tool_name in catalog_tool_names:
-                    try:
-                        # Get tool instance
-                        tool = tools_catalog.get_tool_instance(tool_name)
-                        if not tool:
-                            print(f"⚠️ Could not get instance for tool '{tool_name}'")
-                            continue
-                        
-                        # Create unique UUID based on tool name
-                        tool_uuid = uuid4()
-                        
-                        # Build metadata
-                        metadata = {}
-                        if hasattr(tool, 'description'):
-                            metadata["description"] = tool.description
-                        if hasattr(tool, '__doc__') and tool.__doc__:
-                            metadata["description"] = tool.__doc__.strip()
-                        
-                        tool_node = TreeNode(
-                            id=tool_uuid,
-                            name=tool_name,
-                            type="catalog_tool",
-                            metadata=metadata,
-                            data={}
-                        )
-                        
-                        # Try to determine category from tool attributes or class name
-                        category = 'other'
-                        if hasattr(tool, 'tool_type'):
-                            tool_type = tool.tool_type.lower()
-                            if tool_type in categories:
-                                category = tool_type
-                        elif hasattr(tool, 'category'):
-                            cat_type = tool.category.lower()
-                            if cat_type in categories:
-                                category = cat_type
-                        elif 'langchain' in str(tool.__class__.__module__).lower():
-                            category = 'langchain'
-                        elif callable(tool):
-                            category = 'function'
-                        
-                        # Add tool to appropriate category
-                        categories[category].children.append(tool_node)
-                        print(f"✅ Added catalog tool '{tool_name}' to {category} category")
-                        
-                    except Exception as e:
-                        print(f"❌ Error processing catalog tool {tool_name}: {str(e)}")
-            
-            # Sort tools within each category
-            for category in categories.values():
-                category.children.sort(key=lambda x: x.name)
-            print("\n📋 Sorted tools within categories")
-            
-            # Add empty state indicators to categories
-            empty_categories = []
-            for category_name, category in categories.items():
-                if not category.children:
-                    empty_node = TreeNode(
+                    print(f"  Processing tool: {tool_name}")
+                    # Determine category based on tool name or type
+                    category_name = 'function'  # Default to function category
+                    if tool_name.startswith('api_'):
+                        category_name = 'api'
+                    elif tool_name.startswith('lc_'):
+                        category_name = 'langchain'
+                    elif tool_name.startswith('util_'):
+                        category_name = 'utility'
+                    
+                    tool_node = TreeNode(
                         id=uuid4(),
-                        name="No tools available",
-                        type="empty",
-                        metadata={},
+                        name=tool_name,
+                        type="tool",
+                        metadata={
+                            "source": "catalog"
+                        },
                         data={}
                     )
-                    category.children.append(empty_node)
-                    empty_categories.append(category_name)
+                    categories[category_name].children.append(tool_node)
+                    print(f"  ✅ Added to {category_name} category")
+                
+            except Exception as e:
+                print(f"❌ Error getting catalog tools: {str(e)}")
+                import traceback
+                print(f"Stack trace: {traceback.format_exc()}")
             
-            if empty_categories:
-                print(f"ℹ️ Empty categories: {', '.join(empty_categories)}")
+            # Remove empty categories
+            root.children = [cat for cat in root.children if cat.children]
             
-            print("✅ Tools catalog tree built successfully")
+            print("\n🎯 Final tree structure:")
+            print(f"  Categories: {len(root.children)}")
+            for category in root.children:
+                print(f"  - {category.name}: {len(category.children)} tools")
+            
             return root
             
         except Exception as e:
             print(f"❌ Error building tools tree: {str(e)}")
+            import traceback
+            print(f"Stack trace: {traceback.format_exc()}")
             return None
             
     async def handle_chat(self, message: str) -> str:

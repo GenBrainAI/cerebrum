@@ -2,6 +2,7 @@
 import streamlit as st
 from ...models.view_state import ViewState
 from ...models.view_types import ViewType
+from .utils import truncate_tree_node_names
 
 class AgenticConfigSidebar:
     """Sidebar component for agentic configuration view."""
@@ -43,6 +44,9 @@ class AgenticConfigSidebar:
             if self.controller:
                 tree_data = await self.controller.get_agent_tree()
                 if tree_data:
+                    # Apply smart name truncation
+                    truncate_tree_node_names(tree_data)
+                    
                     result = self.controller.tree_component.render(
                         tree_data,
                         key="agentic_tree_sidebar"
