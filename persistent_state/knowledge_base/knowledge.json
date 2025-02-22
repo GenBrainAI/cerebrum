@@ -600,7 +600,129 @@
       },
       "tags": [],
       "created_at": "2025-02-19T22:47:53.211910"
+    },
+    "knowledge_47": {
+      "content": "Documentation Requirements:\n                1. Comprehensive docstrings\n                2. Usage examples\n                3. Error handling documentation\n                4. Test cases documentation",
+      "domain": {
+        "name": "Documentation Guidelines",
+        "domain": "documentation",
+        "category": "guidelines",
+        "priority": 85
+      },
+      "metadata": {
+        "domain": {
+          "name": "Documentation Guidelines",
+          "domain": "documentation",
+          "category": "guidelines",
+          "priority": 85
+        },
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-02-22T23:46:50.292342"
+    },
+    "knowledge_48": {
+      "content": "Testing Requirements:\n                1. Unit tests for all functionality\n                2. Integration tests for external dependencies\n                3. Edge case testing\n                4. Performance testing",
+      "domain": {
+        "name": "Testing Guidelines",
+        "domain": "testing",
+        "category": "guidelines",
+        "priority": 80
+      },
+      "metadata": {
+        "domain": {
+          "name": "Testing Guidelines",
+          "domain": "testing",
+          "category": "guidelines",
+          "priority": 80
+        },
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-02-22T23:46:50.293698"
+    },
+    "knowledge_49": {
+      "content": "Documentation Requirements:\n                1. Comprehensive docstrings\n                2. Usage examples\n                3. Error handling documentation\n                4. Test cases documentation",
+      "domain": {
+        "name": "Documentation Guidelines",
+        "domain": "documentation",
+        "category": "guidelines",
+        "priority": 85
+      },
+      "metadata": {
+        "domain": {
+          "name": "Documentation Guidelines",
+          "domain": "documentation",
+          "category": "guidelines",
+          "priority": 85
+        },
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-02-22T23:47:00.887681"
+    },
+    "knowledge_50": {
+      "content": "Testing Requirements:\n                1. Unit tests for all functionality\n                2. Integration tests for external dependencies\n                3. Edge case testing\n                4. Performance testing",
+      "domain": {
+        "name": "Testing Guidelines",
+        "domain": "testing",
+        "category": "guidelines",
+        "priority": 80
+      },
+      "metadata": {
+        "domain": {
+          "name": "Testing Guidelines",
+          "domain": "testing",
+          "category": "guidelines",
+          "priority": 80
+        },
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-02-22T23:47:00.888639"
+    },
+    "knowledge_51": {
+      "content": "# Langchain Tool Creation Guide\n        Tools in Langchain must:\n        1. Implement _run and _arun methods\n        2. Include proper type hints\n        3. Handle errors appropriately\n        4. Support async operations\n        5. Include comprehensive documentation\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "langchain_tools_guide",
+        "description": "Guide for creating Langchain tools",
+        "tags": [
+          "tools",
+          "langchain",
+          "guide"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "tools",
+        "langchain",
+        "guide"
+      ],
+      "created_at": "2025-02-22T23:47:23.212618"
+    },
+    "knowledge_52": {
+      "content": "\n        from langchain.tools import BaseTool\n        from pydantic import BaseModel, Field\n        \n        class CalculatorInput(BaseModel):\n            operation: str = Field(description=\"The math operation to perform\")\n            numbers: List[float] = Field(description=\"Numbers to operate on\")\n            \n        class CalculatorTool(BaseTool):\n            name = \"calculator\"\n            description = \"Perform mathematical calculations\"\n            args_schema = CalculatorInput\n            \n            def _run(self, operation: str, numbers: List[float]) -> float:\n                if operation == \"add\":\n                    return sum(numbers)\n                elif operation == \"multiply\":\n                    return math.prod(numbers)\n                raise ValueError(f\"Unknown operation: {operation}\")\n                \n            async def _arun(self, operation: str, numbers: List[float]) -> float:\n                return self._run(operation, numbers)\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "tool_example",
+        "description": "Example Langchain tool implementation",
+        "tags": [
+          "tools",
+          "langchain",
+          "example"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "tools",
+        "langchain",
+        "example"
+      ],
+      "created_at": "2025-02-22T23:47:23.214486"
     }
   },
-  "next_id": 47
+  "next_id": 53
 }
