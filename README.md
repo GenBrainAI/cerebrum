@@ -4,12 +4,13 @@
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-green)](https://fastapi.tiangolo.com/)
 
-Cerebrum is an advanced AI task orchestration and management system designed to handle complex, hierarchical task execution with robust state management and monitoring capabilities.
+Cerebrum is an advanced AI task orchestration and management system designed to handle complex, hierarchical task execution with robust state management and monitoring capabilities. It represents a revolutionary approach to AI framework development, offering a self-evolving system that grows and adapts through natural conversation.
 
 ## 🌟 Features
 
+- **Self-Evolution**: System learns and adapts through natural conversation
 - **Task Orchestration**: Hierarchical task management with dependency tracking
-- **Parallel Processing**: Efficient execution of concurrent tasks
+- **Multi-Framework Integration**: Seamless integration with CrewAI, LangChain, and custom frameworks
 - **State Management**: Robust state persistence and recovery
 - **Real-time Monitoring**: Comprehensive execution statistics and visualization
 - **Error Handling**: Sophisticated retry mechanisms and failure recovery
@@ -52,29 +53,46 @@ Visit `http://localhost:8080/docs` to access the Swagger documentation.
 
 ## 🏗️ Architecture
 
+Cerebrum's architecture is designed with three primary goals:
+1. Enabling natural interaction and self-evolution
+2. Maintaining robust security and stability
+3. Supporting seamless integration with existing enterprise systems
+
+For a comprehensive understanding of Cerebrum's architecture, please refer to our [Architecture Documentation](architecture.md).
+
 ### Core Components
 
-1. **Task Management**
-   - Task definition and creation
-   - Dependency management
-   - Execution strategies
+1. **Core Engine**
+   - Central orchestrator for all operations
+   - Dynamic tool management
+   - State coordination
+   - Task orchestration
 
 2. **State Management**
-   - State persistence
+   - Multi-layer state management
+   - State isolation
    - Recovery mechanisms
-   - Version control
+   - Transaction management
 
-3. **Execution Engine**
-   - Parallel processing
-   - Resource management
-   - Error handling
+3. **Task Management**
+   - Hierarchical task organization
+   - Multiple execution strategies
+   - Dependency handling
+   - Progress tracking
 
-4. **Monitoring System**
-   - Real-time statistics
-   - Performance metrics
-   - Visualization tools
+4. **Integration Layer**
+   - Multi-framework support
+   - API adapters
+   - Framework connectors
+   - Resource sharing
 
-## �� Documentation
+5. **Self-Evolution Mechanism**
+   - Capability discovery
+   - Pattern learning
+   - Automated improvement
+   - Safety validation
+
+## 📚 Documentation
 
 ### Customer Management
 
@@ -148,6 +166,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Links
 
+- [Architecture Documentation](architecture.md)
 - [Documentation](docs/)
 - [Issue Tracker](https://github.com/yourusername/cerebrum/issues)
 - [Project Wiki](https://github.com/yourusername/cerebrum/wiki)
