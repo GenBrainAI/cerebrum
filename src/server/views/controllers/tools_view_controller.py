@@ -18,7 +18,7 @@ from ..components.tree_component import TreeComponent
 from ...utils.state_loader import StateLoader
 from ...persistence.in_memory_persistence import InMemoryPersistenceModel
 from ..components.tree_select_component import TreeSelectComponent
-from ...tools.tools_catalog import tools_catalog
+from ...extensions.dynamic_tools_loader import tools_loader
 from ...models.message import Message
 from ..components.tool_dialog import ToolDialog
 from ...controllers.task_runner import TaskRunner
@@ -26,7 +26,6 @@ import logging
 import json
 from pathlib import Path
 import streamlit as st
-from ...extensions.dynamic_tools_loader import tools_loader
 
 class ToolsCatalogController:
     """Controller for tools catalog view with specialized state support."""
@@ -92,10 +91,10 @@ class ToolsCatalogController:
                 # Debug tools catalog state
                 print("\n🔍 Checking tools catalog state...")
                 try:
-                    catalog_tools = tools_catalog.list_tools()
+                    catalog_tools = tools_loader.load_tools_from_directory(tools_loader.default_tools_dir)
                     print(f"📦 Found {len(catalog_tools)} tools in catalog:")
-                    for tool in catalog_tools:
-                        print(f"  - {tool}")
+                    for tool_name in catalog_tools:
+                        print(f"  - {tool_name}")
                 except Exception as e:
                     print(f"❌ Error listing catalog tools: {str(e)}")
                 
@@ -204,15 +203,36 @@ class ToolsCatalogController:
                     metadata={},
                     data={}
                 ),
-                "custom": TreeNode(
+                "github": TreeNode(
                     id=UUID('55555555-5555-5555-5555-555555555555'),
-                    name="Custom Tools",
+                    name="GitHub Tools",
+                    type="category",
+                    metadata={},
+                    data={}
+                ),
+                "file": TreeNode(
+                    id=UUID('66666666-6666-6666-6666-666666666666'),
+                    name="File Tools",
+                    type="category",
+                    metadata={},
+                    data={}
+                ),
+                "web": TreeNode(
+                    id=UUID('77777777-7777-7777-7777-777777777777'),
+                    name="Web Tools",
+                    type="category",
+                    metadata={},
+                    data={}
+                ),
+                "internal": TreeNode(
+                    id=UUID('88888888-8888-8888-8888-888888888888'),
+                    name="Internal Tools",
                     type="category",
                     metadata={},
                     data={}
                 ),
                 "other": TreeNode(
-                    id=UUID('66666666-6666-6666-6666-666666666666'),
+                    id=UUID('99999999-9999-9999-9999-999999999999'),
                     name="Other",
                     type="category",
                     metadata={},
@@ -225,61 +245,46 @@ class ToolsCatalogController:
             for category in categories.values():
                 root.children.append(category)
             
-            # Get tools from persistence
-            try:
-                print("\n📦 Getting persisted tools...")
-                persisted_tools = self.global_persistence.tools.list()
-                print(f"✅ Found {len(persisted_tools)} persisted tools")
-                
-                # Add persisted tools to categories
-                for tool in persisted_tools:
-                    print(f"  Processing tool: {tool.name}")
-                    category_name = getattr(tool, 'category', 'other')
-                    if category_name in categories:
-                        tool_node = TreeNode(
-                            id=UUID(tool.id) if isinstance(tool.id, str) else tool.id,
-                            name=tool.name,
-                            type="tool",
-                            metadata={
-                                "description": getattr(tool, 'description', ''),
-                                "source": "persistence"
-                            },
-                            data={}
-                        )
-                        categories[category_name].children.append(tool_node)
-                        print(f"  ✅ Added to {category_name} category")
-                    else:
-                        print(f"  ⚠️ Unknown category: {category_name}")
-                
-            except Exception as e:
-                print(f"❌ Error getting persisted tools: {str(e)}")
-                import traceback
-                print(f"Stack trace: {traceback.format_exc()}")
-            
             # Get tools from catalog
             try:
                 print("\n📦 Getting catalog tools...")
-                from ....tools_catalog import tools_catalog
-                catalog_tool_names = tools_catalog.list_tools()
-                print(f"✅ Found {len(catalog_tool_names)} catalog tools")
+                # First load tools from directory to ensure they're registered
+                tools_loader.load_tools_from_directory(tools_loader.default_tools_dir)
+                # Then get the list of tools from the catalog
+                catalog_tools = tools_loader.tools_catalog.list_tools()
+                print(f"✅ Found {len(catalog_tools)} catalog tools")
                 
                 # Add catalog tools to categories
-                for tool_name in catalog_tool_names:
+                for tool_name in catalog_tools:
                     print(f"  Processing tool: {tool_name}")
-                    # Determine category based on tool name or type
-                    category_name = 'function'  # Default to function category
-                    if tool_name.startswith('api_'):
+                    
+                    # Determine category based on tool name
+                    category_name = 'other'
+                    if 'github' in tool_name.lower():
+                        category_name = 'github'
+                    elif 'file' in tool_name.lower():
+                        category_name = 'file'
+                    elif 'web' in tool_name.lower() or 'url' in tool_name.lower():
+                        category_name = 'web'
+                    elif 'internal' in tool_name.lower():
+                        category_name = 'internal'
+                    elif 'api' in tool_name.lower():
                         category_name = 'api'
-                    elif tool_name.startswith('lc_'):
+                    elif 'langchain' in tool_name.lower():
                         category_name = 'langchain'
-                    elif tool_name.startswith('util_'):
+                    elif 'util' in tool_name.lower():
                         category_name = 'utility'
+                    
+                    # Get tool metadata
+                    tool_metadata = tools_loader.tools_catalog.get_tool_metadata(tool_name)
+                    description = tool_metadata.description if tool_metadata else ''
                     
                     tool_node = TreeNode(
                         id=uuid4(),
                         name=tool_name,
                         type="tool",
                         metadata={
+                            "description": description,
                             "source": "catalog"
                         },
                         data={}
@@ -289,6 +294,51 @@ class ToolsCatalogController:
                 
             except Exception as e:
                 print(f"❌ Error getting catalog tools: {str(e)}")
+                import traceback
+                print(f"Stack trace: {traceback.format_exc()}")
+            
+            # Get tools from persistence
+            try:
+                print("\n📦 Getting persisted tools...")
+                persisted_tools = self.global_persistence.tools.list()
+                print(f"✅ Found {len(persisted_tools)} persisted tools")
+                
+                # Add persisted tools to categories
+                for tool in persisted_tools:
+                    print(f"  Processing tool: {tool.name}")
+                    
+                    # Determine category based on tool name
+                    category_name = 'other'
+                    if 'github' in tool.name.lower():
+                        category_name = 'github'
+                    elif 'file' in tool.name.lower():
+                        category_name = 'file'
+                    elif 'web' in tool.name.lower() or 'url' in tool.name.lower():
+                        category_name = 'web'
+                    elif 'internal' in tool.name.lower():
+                        category_name = 'internal'
+                    elif 'api' in tool.name.lower():
+                        category_name = 'api'
+                    elif 'langchain' in tool.name.lower():
+                        category_name = 'langchain'
+                    elif 'util' in tool.name.lower():
+                        category_name = 'utility'
+                    
+                    tool_node = TreeNode(
+                        id=UUID(tool.id) if isinstance(tool.id, str) else tool.id,
+                        name=tool.name,
+                        type="tool",
+                        metadata={
+                            "description": getattr(tool, 'description', ''),
+                            "source": "persistence"
+                        },
+                        data={}
+                    )
+                    categories[category_name].children.append(tool_node)
+                    print(f"  ✅ Added to {category_name} category")
+                
+            except Exception as e:
+                print(f"❌ Error getting persisted tools: {str(e)}")
                 import traceback
                 print(f"Stack trace: {traceback.format_exc()}")
             

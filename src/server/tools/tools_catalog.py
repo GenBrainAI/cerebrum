@@ -4,6 +4,11 @@ import inspect
 import docstring_parser
 from os import getenv
 from dotenv import load_dotenv
+import logging
+from enum import Enum
+import traceback
+
+# Third-party tools
 from crewai.tools.base_tool import BaseTool as CrewAITool
 from crewai_tools import (
     WebsiteSearchTool,
@@ -11,23 +16,27 @@ from crewai_tools import (
     SerperDevTool
 )
 from langchain.tools import BaseTool as LangChainTool
-from ..tools.file_tool import FileTool
-from ..tools.github_tool import GitHubTool
-from ..tools.microservices_tool import MicroservicesTool
-from ..tools.sms_tool import SMSTool
-from ..tools.web_scraper_tool import WebScraperTool
-from ..models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
-from ..models.toolset import Tool
-import logging
-from enum import Enum
-from src.server.tools.url_tools import URLTools
-from ..tools.internal_file_tools import InternalFileTools
-from ..tools.internal_credentials_tools import InternalCredentialsTools
-from ..tools.internal_testing_tools import InternalTestingTools
-from ..tools.internal_proxy_tools import InternalProxyTools
 
+# Internal tools
+from src.server.tools.file_tool import FileTool
+from src.server.tools.github_tool import GitHubTool
+from src.server.tools.microservices_tool import MicroservicesTool
+from src.server.tools.sms_tool import SMSTool
+from src.server.tools.web_scraper_tool import WebScraperTool
+from src.server.tools.url_tools import URLTools
+from src.server.tools.internal_file_tools import InternalFileTools
+from src.server.tools.internal_credentials_tools import InternalCredentialsTools
+from src.server.tools.internal_testing_tools import InternalTestingTools
+from src.server.tools.internal_proxy_tools import InternalProxyTools
+
+# Models
+from src.server.models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
+from src.server.models.toolset import Tool
+
+# Load environment variables
 load_dotenv()
 
+# Initialize logger
 logger = logging.getLogger(__name__)
 
 class ToolType(str, Enum):
@@ -203,12 +212,12 @@ class ToolsCatalog:
         
         return registered_names
 
-    def register_tool(self, tool_name: str, metadata: Union[ToolMetadata, Any]) -> None:
+    def register_tool(self, tool_name: str, metadata: Union[ToolMetadata, Dict, Any]) -> None:
         """Register a tool with the catalog.
 
         Args:
             tool_name: Name of the tool
-            metadata: Either a ToolMetadata instance or an object to create metadata from
+            metadata: Either a ToolMetadata instance, a metadata dictionary, or an object to create metadata from
         """
         self._logger.info(f"Registering tool: {metadata}")
         self._logger.debug(f"Tool type: {type(metadata)}")
@@ -216,6 +225,30 @@ class ToolsCatalog:
         try:
             if isinstance(metadata, ToolMetadata):
                 self._tools[tool_name] = metadata
+            elif isinstance(metadata, dict):
+                # Convert dictionary format to ToolMetadata
+                parameters = []
+                for param in metadata.get('parameters', []):
+                    parameters.append(ParameterInfo(
+                        name=param['name'],
+                        type_hint=param['type'],
+                        required=param.get('required', True),
+                        description=param.get('description', f"Parameter {param['name']}"),
+                        default=param.get('default')
+                    ))
+                
+                self._tools[tool_name] = ToolMetadata(
+                    name=tool_name,
+                    tool_type=metadata.get('tool_type', ToolType.PYTHON_FUNCTION),
+                    description=metadata.get('description', ''),
+                    parameters=parameters,
+                    original_obj=metadata.get('original_obj'),
+                    returns=ReturnInfo(
+                        type_hint=metadata.get('return_type', 'Any'),
+                        description=metadata.get('return_description', 'Return value')
+                    ),
+                    async_tool=metadata.get('async_tool', False)
+                )
             else:
                 base_metadata = self._create_instance_metadata(metadata, tool_name)
                 self._tools[tool_name] = base_metadata
@@ -415,51 +448,134 @@ class ToolsCatalog:
 
     def _initialize_default_tools(self):
         """Initialize default tools."""
+        print("\n🔧 Initializing default tools...")
         try:
             # Initialize default tools only if they haven't been initialized
             if not self.DEFAULT_TOOLS:
-                # Register internal tools
-                internal_file_tools = InternalFileTools()
-                internal_credentials_tools = InternalCredentialsTools()
-                internal_testing_tools = InternalTestingTools()
-                internal_proxy_tools = InternalProxyTools()
+                registered_tools = []
                 
-                # Register instances and their methods
-                self.register_instance(internal_file_tools, "internal_file_tools")
-                self.register_instance(internal_credentials_tools, "internal_credentials_tools")
-                self.register_instance(internal_testing_tools, "internal_testing_tools")
-                self.register_instance(internal_proxy_tools, "internal_proxy_tools")
+                # Register internal tools
+                print("\n📦 Registering internal tools...")
+                try:
+                    internal_file_tools = InternalFileTools()
+                    names = self.register_instance(internal_file_tools, "internal_file_tools")
+                    print(f"✅ Registered InternalFileTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register InternalFileTools: {str(e)}")
+                
+                try:
+                    internal_credentials_tools = InternalCredentialsTools()
+                    names = self.register_instance(internal_credentials_tools, "internal_credentials_tools")
+                    print(f"✅ Registered InternalCredentialsTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register InternalCredentialsTools: {str(e)}")
+                
+                try:
+                    internal_testing_tools = InternalTestingTools()
+                    names = self.register_instance(internal_testing_tools, "internal_testing_tools")
+                    print(f"✅ Registered InternalTestingTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register InternalTestingTools: {str(e)}")
+                
+                try:
+                    internal_proxy_tools = InternalProxyTools()
+                    names = self.register_instance(internal_proxy_tools, "internal_proxy_tools")
+                    print(f"✅ Registered InternalProxyTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register InternalProxyTools: {str(e)}")
                 
                 # Register CrewAI tools
-                website_tool = WebsiteSearchTool()
-                serper_tool = SerperDevTool()
-                file_read_tool = FileReadTool()
-                web_scraper_tool = WebScraperTool()
-                self.register_ai_tool(website_tool, "WebsiteSearchTool")
-                self.register_ai_tool(serper_tool, "SerperDevTool")
-                self.register_ai_tool(file_read_tool, "FileReadTool")
-                self.register_instance(web_scraper_tool, "WebScraperTool")
+                print("\n📦 Registering CrewAI tools...")
+                try:
+                    website_tool = WebsiteSearchTool()
+                    name = self.register_ai_tool(website_tool, "WebsiteSearchTool")
+                    print(f"✅ Registered WebsiteSearchTool")
+                    registered_tools.append(name)
+                except Exception as e:
+                    print(f"❌ Failed to register WebsiteSearchTool: {str(e)}")
+                
+                try:
+                    serper_tool = SerperDevTool()
+                    name = self.register_ai_tool(serper_tool, "SerperDevTool")
+                    print(f"✅ Registered SerperDevTool")
+                    registered_tools.append(name)
+                except Exception as e:
+                    print(f"❌ Failed to register SerperDevTool: {str(e)}")
+                
+                try:
+                    file_read_tool = FileReadTool()
+                    name = self.register_ai_tool(file_read_tool, "FileReadTool")
+                    print(f"✅ Registered FileReadTool")
+                    registered_tools.append(name)
+                except Exception as e:
+                    print(f"❌ Failed to register FileReadTool: {str(e)}")
+                
+                try:
+                    web_scraper_tool = WebScraperTool()
+                    names = self.register_instance(web_scraper_tool, "WebScraperTool")
+                    print(f"✅ Registered WebScraperTool with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register WebScraperTool: {str(e)}")
                 
                 # Register custom tools
-                file_tool = FileTool()
-                microservices_tool = MicroservicesTool()
-                sms_tool = SMSTool()
-                self.register_instance(file_tool, "FileTool")
-                self.register_instance(microservices_tool, "MicroservicesTool")
-                self.register_instance(sms_tool, "SMSTool")
+                print("\n📦 Registering custom tools...")
+                try:
+                    file_tool = FileTool()
+                    names = self.register_instance(file_tool, "FileTool")
+                    print(f"✅ Registered FileTool with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register FileTool: {str(e)}")
+                
+                try:
+                    microservices_tool = MicroservicesTool()
+                    names = self.register_instance(microservices_tool, "MicroservicesTool")
+                    print(f"✅ Registered MicroservicesTool with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register MicroservicesTool: {str(e)}")
+                
+                try:
+                    sms_tool = SMSTool()
+                    names = self.register_instance(sms_tool, "SMSTool")
+                    print(f"✅ Registered SMSTool with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register SMSTool: {str(e)}")
                 
                 # Register GitHub tool if credentials are available
+                print("\n📦 Checking GitHub credentials...")
                 github_token = getenv("GITHUB_TOKEN")
                 repo_name = getenv("GITHUB_REPO")
                 if github_token and repo_name:
-                    github_tool = GitHubTool(github_token, repo_name)
-                    self.register_instance(github_tool, "GitHubTool")
+                    try:
+                        print(f"  Found credentials for repo: {repo_name}")
+                        github_tool = GitHubTool(github_token, repo_name)
+                        names = self.register_instance(github_tool, "GitHubTool")
+                        print(f"✅ Registered GitHubTool with {len(names)} methods")
+                        registered_tools.extend(names)
+                    except Exception as e:
+                        print(f"❌ Failed to register GitHubTool: {str(e)}")
+                else:
+                    print("⚠️ GitHub credentials not found, skipping GitHubTool")
                 
                 # Register URL tools
-                url_tools = URLTools()
-                self.register_instance(url_tools, "URLTools")
+                print("\n📦 Registering URL tools...")
+                try:
+                    url_tools = URLTools()
+                    names = self.register_instance(url_tools, "URLTools")
+                    print(f"✅ Registered URLTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register URLTools: {str(e)}")
                 
                 # Store current tools as defaults
+                print("\n📦 Storing default tools...")
                 self.DEFAULT_TOOLS = {
                     'tools': self._tools.copy(),
                     'instances': self._tool_instances.copy(),
@@ -468,8 +584,14 @@ class ToolsCatalog:
                     'openapi': self._openapi_tools.copy(),
                     'ai_tools': self._ai_tools.copy()
                 }
+                
+                print(f"\n✅ Successfully registered {len(registered_tools)} tools:")
+                for tool in registered_tools:
+                    print(f"  - {tool}")
+                
         except Exception as e:
             logger.error(f"Failed to initialize default tools: {str(e)}")
+            traceback.print_exc()
             raise
 
     def _type_to_string(self, type_hint: Any) -> str:

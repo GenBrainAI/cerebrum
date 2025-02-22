@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Check if a name argument was provided
+if [ $# -eq 0 ]; then
+    echo "Error: Please provide a name for your Cerebrum instance"
+    echo "Usage: ./clone_cerebrum \"my cool cerebrum instance name\""
+    exit 1
+fi
+
+# Store the provided name
+CEREBRUM_NAME="$1"
+
+# Convert the name to a valid directory name (replace spaces with underscores and remove special characters)
+DIR_NAME=$(echo "$CEREBRUM_NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
+
+# Clone the repository
+echo "🧠 Cloning Cerebrum into $DIR_NAME..."
+git clone git@github.com:GenBrainAI/cerebrum.git "$DIR_NAME"
+
+if [ $? -ne 0 ]; then
+    echo "❌ Failed to clone repository"
+    exit 1
+fi
+
+# Change into the directory
+cd "$DIR_NAME"
+
+# Create a .env file with the instance name
+echo "🔧 Setting up environment..."
+echo "CEREBRUM_INSTANCE_NAME=\"$CEREBRUM_NAME\"" > .env
+
+# Initialize git
+echo "🔄 Reinitializing git repository..."
+rm -rf .git
+git init
+git add .
+git commit -m "Initial commit for $CEREBRUM_NAME"
+
+echo "✅ Successfully created Cerebrum instance: $CEREBRUM_NAME"
+echo "📂 Location: $(pwd)"
+echo "🚀 To get started, cd into $DIR_NAME and follow the setup instructions in README.md" 
