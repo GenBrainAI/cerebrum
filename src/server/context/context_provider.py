@@ -215,8 +215,48 @@ class ContextProvider:
         # Get vector store contexts first
         try:
             print("  Getting vector store contexts...")
+            # Force reload indices to ensure we have the latest
+            self.vector_store._reload_indices()
+            print(f"  Vector store indices after reload: {self.vector_store.indices}")
+            
             # Get all indices
             indices = await self.vector_store.list_indices()
+            print(f"  Raw indices from list_indices: {[idx['name'] for idx in indices]}")
+            
+            # Check ChromaDB collections directly
+            collections = self.vector_store.client.list_collections()
+            print(f"  Raw ChromaDB collections: {[c.name for c in collections]}")
+            
+            # Check if there are any collections with vs_ prefix
+            vs_collections = [c for c in collections if c.name.startswith('vs_')]
+            print(f"  ChromaDB collections with vs_ prefix: {[c.name for c in vs_collections]}")
+            
+            # If we have vs_ collections but no indices, try to add them manually
+            if vs_collections and not indices:
+                print("  Adding missing vs_ collections to indices...")
+                for collection in vs_collections:
+                    try:
+                        # Add to indices dictionary
+                        self.vector_store.indices[collection.name] = self.vector_store.client.get_collection(
+                            name=collection.name,
+                            embedding_function=self.vector_store.embedding_function
+                        )
+                        # Add to contexts list
+                        contexts.append({
+                            "id": collection.name,
+                            "type": "vector",
+                            "content": f"Vector store index with documents",
+                            "metadata": {
+                                "name": collection.name.replace("vs_", ""),
+                                "description": collection.metadata.get("description", ""),
+                                "document_count": collection.count()
+                            }
+                        })
+                        print(f"    Added missing vector store: {collection.name}")
+                    except Exception as e:
+                        print(f"    Error adding collection {collection.name}: {str(e)}")
+            
+            # Process indices from list_indices
             for idx in indices:
                 if idx["name"].startswith("vs_"):
                     print(f"    Found vector store: {idx['name']}")

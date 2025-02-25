@@ -119,12 +119,21 @@ class VectorStore:
         try:
             self.indices.clear()  # Clear existing indices
             collections = self.client.list_collections()
-            for collection in collections:
-                if collection.name.startswith('vs_'):
+            print(f"DEBUG - _reload_indices found collections: {[c.name for c in collections]}")
+            
+            vs_collections = [c for c in collections if c.name.startswith('vs_')]
+            print(f"DEBUG - _reload_indices found vs_ collections: {[c.name for c in vs_collections]}")
+            
+            for collection in vs_collections:
+                try:
                     self.indices[collection.name] = self.client.get_collection(
                         name=collection.name,
                         embedding_function=self.embedding_function
                     )
+                    print(f"DEBUG - Added collection to indices: {collection.name}")
+                except Exception as e:
+                    logging.error(f"Error loading collection {collection.name}: {str(e)}")
+            
             logging.info(f"Reloaded {len(self.indices)} vector indices")
         except Exception as e:
             logging.error(f"Error reloading indices: {str(e)}")
