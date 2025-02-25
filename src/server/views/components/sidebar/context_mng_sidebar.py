@@ -233,6 +233,21 @@ class ContextManagementSidebar:
             root.add_child(code_node)
             
             # Get all global data sources
+            if not self.context_manager or not self.context_manager.global_context_provider:
+                print("❌ No context manager or global context provider available")
+                return root
+                
+            print(f"  Context manager: {self.context_manager}")
+            print(f"  Global context provider: {self.context_manager.global_context_provider}")
+            print(f"  Vector store: {self.context_manager.global_context_provider.vector_store}")
+            
+            # Force reload of vector store indices
+            try:
+                self.context_manager.global_context_provider.vector_store._reload_indices()
+                print(f"  Reloaded vector store indices: {self.context_manager.global_context_provider.vector_store.indices}")
+            except Exception as e:
+                print(f"  Error reloading vector store indices: {str(e)}")
+            
             global_contexts = await self.context_manager.global_context_provider.get_all_contexts()
             print(f"  Found {len(global_contexts)} global contexts")
             
@@ -267,9 +282,15 @@ class ContextManagementSidebar:
             }
             
             for ctx in global_contexts:
-                type_contexts[ctx["type"]].append(ctx)
+                ctx_type = ctx.get("type")
+                if ctx_type in type_contexts:
+                    type_contexts[ctx_type].append(ctx)
+                    print(f"  Added context to {ctx_type}: {ctx.get('id')}")
+                else:
+                    print(f"  Unknown context type: {ctx_type}")
             
             # Process Vector Store contexts
+            print(f"\n  Processing {len(type_contexts['vector'])} vector store contexts")
             for ctx in type_contexts["vector"]:
                 index_name = ctx["metadata"].get("name", ctx["id"])
                 doc_count = ctx["metadata"].get("document_count", 0)
@@ -287,6 +308,7 @@ class ContextManagementSidebar:
                     data={"type": "index", "id": ctx["id"]}
                 )
                 vector_node.add_child(index_node)
+                print(f"    Added index node: {index_name}")
                 
                 # Add task connections if any
                 assocs = task_associations.get(ctx["id"], [])
