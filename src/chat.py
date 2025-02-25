@@ -8,6 +8,7 @@ from typing import List, Dict
 from datetime import datetime
 from pathlib import Path
 
+# Fix import paths - remove 'src.' prefix since we're running from the project root
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from server.controllers.task_runner import TaskRunner
 from server.models.message import Message
@@ -298,6 +299,57 @@ def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None
 def initialize_session_state():
     """Initialize session state variables."""
     print("\n🔄 Initializing session state")
+    
+    # Track initialization to prevent multiple calls
+    if 'session_initialized' in st.session_state:
+        print("✅ Session already initialized, skipping")
+        
+        # Still increment rerun counter to detect potential loops
+        if 'rerun_count' in st.session_state:
+            st.session_state.rerun_count += 1
+            if st.session_state.rerun_count > 5:  # Threshold of 5 reruns
+                print(f"⚠️ Warning: High rerun count detected ({st.session_state.rerun_count})")
+                # Reset counter after warning
+                st.session_state.rerun_count = 0
+                
+                # Force break potential loops by ensuring selection tracking is synchronized
+                if 'tm_selector' in st.session_state and 'previous_tm_selection' in st.session_state:
+                    if st.session_state.tm_selector != st.session_state.previous_tm_selection:
+                        print(f"🔄 Synchronizing previous_tm_selection to break potential loop")
+                        st.session_state.previous_tm_selection = st.session_state.tm_selector
+                
+                if 'task_selector' in st.session_state and 'previous_task_selection' in st.session_state:
+                    if st.session_state.task_selector != st.session_state.previous_task_selection:
+                        print(f"🔄 Synchronizing previous_task_selection to break potential loop")
+                        st.session_state.previous_task_selection = st.session_state.task_selector
+                
+                # Force synchronization of current IDs with selected values
+                if 'tm_selector' in st.session_state and st.session_state.tm_selector:
+                    # Find the task manager ID for the selected name
+                    persistence_model = st.session_state.persistence_model
+                    tasksmanagers = persistence_model.tasksmanagers.list()
+                    for tm in tasksmanagers:
+                        if tm.name == st.session_state.tm_selector:
+                            print(f"🔄 Forcing current_tasksmanager_id to match selected: {tm.id}")
+                            st.session_state.current_tasksmanager_id = tm.id
+                            break
+                
+                # Also synchronize task selection
+                if 'task_selector' in st.session_state and st.session_state.task_selector:
+                    # Get current TM ID
+                    tm_id = st.session_state.get('current_tasksmanager_id')
+                    if tm_id:
+                        tasks = get_tasks_for_tasksmanager(tm_id)
+                        for task in tasks:
+                            if task.name == st.session_state.task_selector:
+                                print(f"🔄 Forcing current_task_id to match selected: {task.id}")
+                                st.session_state.current_task_id = task.id
+                                break
+        return
+    
+    # Initialize rerun counter
+    st.session_state.rerun_count = 0
+    
     # Persistence and task runner
     if 'persistence_model' not in st.session_state:
         print("\n🆕 Creating new persistence model")
@@ -326,6 +378,13 @@ def initialize_session_state():
         st.session_state.default_state_loaded = False
     if 'state_location' not in st.session_state:
         st.session_state.state_location = None
+    if 'previous_tm_selection' not in st.session_state:
+        st.session_state.previous_tm_selection = None
+    if 'previous_task_selection' not in st.session_state:
+        st.session_state.previous_task_selection = None
+    
+    # Mark as initialized
+    st.session_state.session_initialized = True
 
 def get_task_system_messages(task_id: str) -> List[Dict]:
     """Get system messages for a specific task"""
@@ -394,17 +453,66 @@ def get_chat_sessions(task_id: str) -> Dict[str, List[Dict]]:
 
 def on_tm_select():
     """Callback when TaskManager selection changes"""
-    if st.session_state.tm_selector == "+ New Chat":
-        st.session_state.creating_new_chat = True
-        st.session_state.messages = []
-        st.session_state.current_session_id = None
-    else:
-        st.session_state.creating_new_chat = False
-        # Create new session for selected task
-        if st.session_state.current_task_id:
-            session_id = create_new_session(st.session_state.current_task_id)
-            st.session_state.current_session_id = session_id
+    # Store previous selection
+    previous_tm = st.session_state.get('previous_tm_selection')
+    current_tm = st.session_state.tm_selector
+    
+    print(f"\n🔍 DEBUG - on_tm_select callback:")
+    print(f"  Previous TM selection: {previous_tm}")
+    print(f"  Current TM selection: {current_tm}")
+    
+    # Only process if the selection has actually changed
+    if previous_tm != current_tm:
+        print(f"  TaskManager selection changed from {previous_tm} to {current_tm}")
+        # Update previous selection before processing to prevent loops
+        st.session_state.previous_tm_selection = current_tm
+        
+        if current_tm == "+ New Chat":
+            print(f"  Creating new chat")
+            st.session_state.creating_new_chat = True
             st.session_state.messages = []
+            st.session_state.current_session_id = None
+        else:
+            print(f"  Selecting existing chat")
+            st.session_state.creating_new_chat = False
+            
+            # Get the task manager ID from the name
+            persistence_model = st.session_state.persistence_model
+            tasksmanagers = persistence_model.tasksmanagers.list()
+            selected_tm_id = None
+            
+            for tm in tasksmanagers:
+                if tm.name == current_tm:
+                    selected_tm_id = tm.id
+                    break
+            
+            if selected_tm_id:
+                print(f"  Found TM ID: {selected_tm_id}")
+                
+                # Only update if the ID has changed to prevent unnecessary reruns
+                if st.session_state.get('current_tasksmanager_id') != selected_tm_id:
+                    print(f"  Updating current_tasksmanager_id from {st.session_state.get('current_tasksmanager_id')} to {selected_tm_id}")
+                    st.session_state.current_tasksmanager_id = selected_tm_id
+                    
+                    # Reset previous task selection to prevent rerun loops
+                    st.session_state.previous_task_selection = None
+                    
+                    # Get the first task for this TM
+                    tasks = get_tasks_for_tasksmanager(selected_tm_id)
+                    if tasks:
+                        first_task = tasks[0]
+                        print(f"  Setting first task: {first_task.name} (ID: {first_task.id})")
+                        st.session_state.current_task_id = first_task.id
+                        
+                        # Create new session for selected task
+                        print(f"  Creating new session for task: {first_task.id}")
+                        session_id = create_new_session(first_task.id)
+                        st.session_state.current_session_id = session_id
+                        st.session_state.messages = []
+                else:
+                    print(f"  TM ID already set to {selected_tm_id}, skipping update")
+    else:
+        print(f"  No change in TaskManager selection, skipping processing")
 
 def get_available_tasksmanagers():
     """Get list of available TasksManagers sorted by creation date"""
@@ -570,6 +678,12 @@ def render_chat_management_sidebar():
                     session_id = create_new_session(task_id)
                     st.session_state.current_session_id = session_id
                     
+                    # Store the selection to prevent future reruns
+                    for tm in tasksmanagers:
+                        if tm.id == tasksmanager_id:
+                            st.session_state.previous_tm_selection = tm.name
+                            break
+                    
                     st.rerun()
             
             with col2:
@@ -582,45 +696,129 @@ def render_chat_management_sidebar():
         st.markdown("---")
         st.subheader("Existing Chats")
         
+        # Create a mapping of TM names to IDs and IDs to names for easier lookup
+        tm_name_to_id = {tm.name: tm.id for tm in tasksmanagers}
+        tm_id_to_name = {tm.id: tm.name for tm in tasksmanagers}
+        
+        # Get current TM ID and name
+        current_tm_id = st.session_state.get('current_tasksmanager_id')
+        current_tm_name = tm_id_to_name.get(current_tm_id) if current_tm_id else None
+        
+        # Get previous TM selection
+        previous_tm_selection = st.session_state.get('previous_tm_selection')
+        
+        print(f"\n🔍 DEBUG - TaskManager Selection:")
+        print(f"  Previous TM selection: {previous_tm_selection}")
+        print(f"  Current TM ID: {current_tm_id}")
+        print(f"  Current TM name: {current_tm_name}")
+        
+        # Determine default selection
+        default_index = 0
+        tm_options = list(tm_name_to_id.keys())
+        
+        # If we have a current TM name, use it as default
+        if current_tm_name and current_tm_name in tm_options:
+            default_index = tm_options.index(current_tm_name)
+        # If not, but we have a previous selection, use that
+        elif previous_tm_selection and previous_tm_selection in tm_options:
+            default_index = tm_options.index(previous_tm_selection)
+        
+        print(f"  Default TM index: {default_index}")
+        
         # TaskManager selection
-        tm_options = {tm.name: tm.id for tm in tasksmanagers}
         selected_tm = st.selectbox(
             "Select Task Manager",
-            options=list(tm_options.keys()),
+            options=tm_options,
+            index=default_index,
             key="tm_selector",
             on_change=on_tm_select
         )
         
+        # Update previous_tm_selection to match current UI selection
+        # This prevents unnecessary reruns when the UI is first rendered
+        if selected_tm != st.session_state.get('previous_tm_selection'):
+            print(f"  Updating previous_tm_selection from {st.session_state.get('previous_tm_selection')} to {selected_tm}")
+            st.session_state.previous_tm_selection = selected_tm
+        
         if selected_tm:
-            selected_tm_id = tm_options[selected_tm]
+            selected_tm_id = tm_name_to_id[selected_tm]
+            print(f"  Selected TM: {selected_tm} (ID: {selected_tm_id})")
+            
+            # Ensure current_tasksmanager_id matches the selected TM
+            # This is crucial to prevent rerun loops
+            if st.session_state.get('current_tasksmanager_id') != selected_tm_id:
+                print(f"  Updating current_tasksmanager_id to match selected TM: {selected_tm_id}")
+                st.session_state.current_tasksmanager_id = selected_tm_id
+            
+            # Get tasks for the selected TM
             tasks = get_tasks_for_tasksmanager(selected_tm_id)
             
             if tasks:
+                # Create task name to ID mapping
+                task_name_to_id = {task.name: task.id for task in tasks}
+                task_id_to_name = {task.id: task.name for task in tasks}
+                
+                # Get current task ID and name
+                current_task_id = st.session_state.get('current_task_id')
+                current_task_name = task_id_to_name.get(current_task_id) if current_task_id else None
+                
+                print(f"  Current task ID: {current_task_id}")
+                print(f"  Current task name: {current_task_name}")
+                
+                # Track previous task selection to prevent rerun loops
+                if 'previous_task_selection' not in st.session_state:
+                    st.session_state.previous_task_selection = None
+                
+                # Determine default task selection
+                default_task_index = 0
+                task_options = list(task_name_to_id.keys())
+                
+                if current_task_name and current_task_name in task_options:
+                    default_task_index = task_options.index(current_task_name)
+                
+                print(f"  Default task index: {default_task_index}")
+                
                 # Task selection
-                task_options = {task.name: task.id for task in tasks}
                 selected_task = st.selectbox(
                     "Select Task",
-                    options=list(task_options.keys()),
+                    options=task_options,
+                    index=default_task_index,
                     key="task_selector"
                 )
                 
+                # Update previous_task_selection to match current UI selection
+                # This prevents unnecessary reruns when the UI is first rendered
+                if selected_task != st.session_state.get('previous_task_selection'):
+                    print(f"  Updating previous_task_selection from {st.session_state.get('previous_task_selection')} to {selected_task}")
+                    st.session_state.previous_task_selection = selected_task
+                
                 if selected_task:
-                    selected_task_id = task_options[selected_task]
-                    print(f"\n🔄 Selected task changed to: {selected_task_id}")
+                    selected_task_id = task_name_to_id[selected_task]
+                    print(f"  Selected task: {selected_task} (ID: {selected_task_id})")
                     
-                    if (selected_tm_id != st.session_state.current_tasksmanager_id or 
-                        selected_task_id != st.session_state.current_task_id):
+                    # Read the task to verify it exists
+                    try:
+                        task = persistence_model.tasks.read(selected_task_id)
+                        print(f"\n📖 Reading Task {selected_task_id}:")
+                        print(f"  Type: {type(task)}")
+                        print(f"  Is instance of Task: {isinstance(task, Task)}")
                         
-                        # Update session state
-                        st.session_state.current_tasksmanager_id = selected_tm_id
-                        st.session_state.current_task_id = selected_task_id
-                        st.session_state.messages = []
+                        # Check if the selection has actually changed
+                        selection_changed = (selected_task_id != current_task_id)
                         
-                        # Create new session
-                        session_id = create_new_session(selected_task_id)
-                        st.session_state.current_session_id = session_id
-                        
-                        st.rerun()
+                        if selection_changed:
+                            print(f"  Task selection changed from {current_task_id} to {selected_task_id}")
+                            # Update session state
+                            st.session_state.current_task_id = selected_task_id
+                            st.session_state.messages = []
+                            
+                            # Create new session
+                            session_id = create_new_session(selected_task_id)
+                            st.session_state.current_session_id = session_id
+                        else:
+                            print(f"  No change in task selection, skipping update")
+                    except Exception as e:
+                        print(f"❌ Error reading task {selected_task_id}: {e}")
 
 async def render_main_chat():
     """Render the main chat interface with context information."""
@@ -777,13 +975,13 @@ async def render_main_content():
                 save_current_state(st.session_state.state_location.state_name)
             
         if st.session_state.current_view == ViewType.TASK_HIERARCHY:
-            from src.pages.task_hierarchy_view import render_task_hierarchy_view
+            from pages.task_hierarchy_view import render_task_hierarchy_view
             await render_task_hierarchy_view()
         elif st.session_state.current_view == ViewType.TOOLS_CATALOG:
-            from src.pages.tools_catalog_view import render_tools_catalog_view
+            from pages.tools_catalog_view import render_tools_catalog_view
             await render_tools_catalog_view()
         elif st.session_state.current_view == ViewType.AGENTIC_CONFIG:
-            from src.pages.agentic_config_view import render_agentic_config_view
+            from pages.agentic_config_view import render_agentic_config_view
             await render_agentic_config_view()
         else:
             await render_main_chat()
@@ -998,47 +1196,96 @@ def initialize_state():
     """Initialize application state from saved state if available."""
     print("\n🔄 Initializing application state")
     
-    if 'state_initialized' in st.session_state:
+    # Check if state is already initialized to prevent redundant operations
+    if 'state_initialized' in st.session_state and st.session_state.state_initialized:
         print("✅ State already initialized")
         return
         
-    metadata = get_last_used_state()
-    last_used_state = metadata.get("last_used_state")
-    
-    if last_used_state:
-        try:
+    try:
+        metadata = get_last_used_state()
+        last_used_state = metadata.get("last_used_state")
+        
+        if last_used_state:
             state_path = str(get_state_dir() / last_used_state)
             print(f"📥 Loading last used state: {state_path}")
-            result = load_state(state_path)
             
-            # Set state flags
-            st.session_state.state_loaded = True
-            st.session_state.default_state_loaded = True
-            st.session_state.state_initialized = True
-            st.session_state.selected_state_file = last_used_state
-            
-            # Restore last used TM and Task
-            st.session_state.current_tasksmanager_id = metadata.get("last_tm_id")
-            st.session_state.current_task_id = metadata.get("last_task_id")
-            
-            print("✅ State loaded successfully")
-        except Exception as e:
-            print(f"❌ Error loading state: {str(e)}")
-            # Reset state flags on error
+            try:
+                result = load_state(state_path)
+                print(f"📥 Load state result: {result}")
+                
+                # Set state flags
+                st.session_state.state_loaded = True
+                st.session_state.default_state_loaded = True
+                
+                # Restore last used TM and Task
+                last_tm_id = metadata.get("last_tm_id")
+                last_task_id = metadata.get("last_task_id")
+                
+                print(f"📋 Last used TM ID: {last_tm_id}")
+                print(f"📋 Last used Task ID: {last_task_id}")
+                
+                # Only set these if they're not already set
+                if not st.session_state.get('current_tasksmanager_id'):
+                    st.session_state.current_tasksmanager_id = last_tm_id
+                    
+                if not st.session_state.get('current_task_id'):
+                    st.session_state.current_task_id = last_task_id
+                    
+                # Find the TM name for the current TM ID to set previous_tm_selection
+                if last_tm_id:
+                    persistence_model = st.session_state.persistence_model
+                    tasksmanagers = persistence_model.tasksmanagers.list()
+                    for tm in tasksmanagers:
+                        if tm.id == last_tm_id:
+                            st.session_state.previous_tm_selection = tm.name
+                            print(f"📋 Setting previous_tm_selection to: {tm.name}")
+                            
+                            # Also set previous_task_selection to prevent rerun loops
+                            if last_task_id:
+                                tasks = get_tasks_for_tasksmanager(last_tm_id)
+                                for task in tasks:
+                                    if task.id == last_task_id:
+                                        st.session_state.previous_task_selection = task.name
+                                        print(f"📋 Setting previous_task_selection to: {task.name}")
+                                        break
+                            break
+                
+                print("✅ State loaded successfully")
+            except Exception as e:
+                print(f"❌ Error loading specific state: {str(e)}")
+                st.session_state.state_loaded = False
+                st.session_state.default_state_loaded = False
+                # Reset selection tracking to prevent rerun loops
+                st.session_state.previous_tm_selection = None
+                st.session_state.previous_task_selection = None
+        else:
+            print("ℹ️ No last used state found")
             st.session_state.state_loaded = False
             st.session_state.default_state_loaded = False
             st.session_state.selected_state_file = ""
-    else:
-        print("ℹ️ No last used state found")
+            # Reset selection tracking to prevent rerun loops
+            st.session_state.previous_tm_selection = None
+            st.session_state.previous_task_selection = None
+    except Exception as e:
+        print(f"❌ Error loading state: {str(e)}")
+        # Reset state flags on error
         st.session_state.state_loaded = False
         st.session_state.default_state_loaded = False
         st.session_state.selected_state_file = ""
+        # Reset selection tracking to prevent rerun loops
+        st.session_state.previous_tm_selection = None
+        st.session_state.previous_task_selection = None
     
+    # Always mark as initialized to prevent loops
     st.session_state.state_initialized = True
+    # Reset rerun counter
+    st.session_state.rerun_count = 0
 
 def main():
     """Main application entry point."""
     print("\n🔄 Starting main application")
+    
+    # Configure Streamlit page
     st.set_page_config(
         page_title="Cerebrum Chat",
         layout="wide",
@@ -1047,6 +1294,13 @@ def main():
             'About': 'Cerebrum AI Chat Interface'
         }
     )
+    
+    # Track if we've already run the main function in this session
+    if 'main_executed' in st.session_state:
+        print("⚠️ Main function called again - potential rerun loop")
+    else:
+        print("🆕 First execution of main function")
+        st.session_state.main_executed = True
     
     # Initialize basic session state
     initialize_session_state()
