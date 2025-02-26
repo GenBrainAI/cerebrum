@@ -1,8 +1,7 @@
-
 import json
 from pydantic import BaseModel
 from .in_memory_crud import InMemoryCrud, CrewAIConfigCrud, ToolCrud, ToolsetCrud,\
-                             TasksManagerCrud, TaskCrud, MessageCrud, CurriedProxyCrud
+                             TasksManagerCrud, TaskCrud, MessageCrud, CurriedProxyCrud, TaskFlowCrud
 from .persistence_model import PersistenceModelBase
 from typing import Dict
 class InMemoryPersistenceModel(PersistenceModelBase):
@@ -15,6 +14,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._messages = MessageCrud()
         self._crewai_config = CrewAIConfigCrud()
         self._curried_proxies = CurriedProxyCrud()
+        self._task_flows = TaskFlowCrud()
 
         # For general dict non pydantic
         self.collections: Dict[str, InMemoryCrud[BaseModel]] = {}
@@ -30,6 +30,7 @@ class InMemoryPersistenceModel(PersistenceModelBase):
                 "messages": self._messages.to_json(),
                 "crewai_config": self._crewai_config.to_json(),
                 "curried_proxies": self._curried_proxies.to_json(),
+                "task_flows": self._task_flows.to_json(),
             }
             json_str = json.dumps(obj, indent=4)
             return json_str
@@ -46,6 +47,8 @@ class InMemoryPersistenceModel(PersistenceModelBase):
         self._tasks.from_json(data["tasks"])
         self._crewai_config.from_json(data["crewai_config"])
         self._curried_proxies.from_json(data["curried_proxies"])
+        if "task_flows" in data:
+            self._task_flows.from_json(data["task_flows"])
 
     @property
     def tools(self) -> ToolCrud:
@@ -74,5 +77,9 @@ class InMemoryPersistenceModel(PersistenceModelBase):
     @property
     def curried_proxies(self) -> CurriedProxyCrud:
         return self._curried_proxies
+
+    @property
+    def task_flows(self) -> TaskFlowCrud:
+        return self._task_flows
 
 
