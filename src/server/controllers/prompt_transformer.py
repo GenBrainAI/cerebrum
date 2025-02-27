@@ -208,3 +208,38 @@ class MessageTransformer:
             return self.transform_func(messages, source_task, target_task)
             
         return messages 
+    
+
+# Example: Creating a Three-Task Flow
+
+
+# # Create three tasks
+# task1 = Task(name="Data Extraction", ...)  # Extracts data
+# task2 = Task(name="Analysis", ...)         # Analyzes the data
+# task3 = Task(name="Report Generation", ...) # Generates a report
+
+# # Create transformers
+# extraction_to_analysis = PromptTransformer(
+#     instructions="Analyze the following extracted data"
+# )
+# analysis_to_report = PromptTransformer(
+#     instructions="Generate a report based on this analysis"
+# )
+
+# # Create the flow
+# flow = flow_manager.create_flow(
+#     name="Data Processing Flow",
+#     description="Extract, analyze, and report on data",
+#     tasksmanager_id=manager.id
+# )
+
+# # Add tasks with transformers
+# flow.add_task(task1.id, name="Extract")
+# flow.add_task(task2.id, name="Analyze", transformer=extraction_to_analysis)
+# flow.add_task(task3.id, name="Report", transformer=analysis_to_report)
+
+# # Execute the flow
+# result = await flow_manager.execute_flow(
+#     flow_id=flow.id,
+#     initial_context={"input_data": input_data}
+# )
