@@ -110,6 +110,18 @@ The task tree management system provides a flexible framework for organizing and
 
 [Detailed Task Tree Documentation](docs/task_tree.md)
 
+### Task Flow Framework
+
+The task flow framework enables the creation and execution of sequences of tasks with transformations between them. Key features include:
+
+- Sequential task execution with data transformation
+- Multiple transformer types for different transformation needs
+- Pre-execute and post-execute hooks for custom processing
+- Comprehensive status tracking and error handling
+- Support for complex multi-task workflows
+
+[Task Flow Documentation](docs/README_FLOW.md)
+
 ### Usage Examples
 
 ```python

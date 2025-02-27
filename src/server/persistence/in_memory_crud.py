@@ -11,6 +11,7 @@ from ..models.message import Message
 from ..models.agent import CrewAIConfig
 from ..controllers.curried_proxy import CurriedProxy
 from ..models.curried_proxy_info import CurriedProxyInfo
+from ..controllers.task_flow_manager import TaskFlow
 from uuid import uuid4
 from datetime import datetime
 
@@ -202,3 +203,7 @@ class CurriedProxyCrud(InMemoryCrud[CurriedProxy]):
         except Exception as e:
             print(f"Error deserializing CurriedProxy: {str(e)}")
             raise e
+
+class TaskFlowCrud(InMemoryCrud[TaskFlow]):
+    def __init__(self):
+        super().__init__(TaskFlow)

@@ -85,12 +85,12 @@ class MockPersistenceModel(PersistenceModelBase):
 class MockOperator:
     async def completion(self, tasksmanager_id, task_id, messages, model=None, curried_proxy=None):
         # Simulate AI responses based on the question
-        last_message = messages[-1]['content'].lower()
+        last_message = messages[-1].content.lower()
         if "capital of france" in last_message:
             return "The capital of France is Paris."
         elif "population of paris" in last_message:
             return "The population of Paris is approximately 2.2 million people."
-        return f"I'm not sure about: {messages[-1]['content']}"
+        return f"I'm not sure about: {messages[-1].content}"
 
 @pytest.fixture
 def sample_tree():
@@ -505,7 +505,7 @@ async def test_standard_task_execution():
         task=task,
         running_extra_params={
             "messages": [
-                {"role": "user", "content": "What is the capital of France?"}
+                Message(role="user", content="What is the capital of France?")
             ]
         },
         tasksmanager=tasksmanager
@@ -520,7 +520,7 @@ async def test_standard_task_execution():
         task=task,
         running_extra_params={
             "messages": [
-                {"role": "user", "content": "What is the population of Paris?"}
+                Message(role="user", content="What is the population of Paris?")
             ]
         },
         tasksmanager=tasksmanager
@@ -535,7 +535,7 @@ async def test_standard_task_execution():
         task=task,
         running_extra_params={
             "messages": [
-                {"role": "user", "content": "What is the GDP of Mars?"}
+                Message(role="user", content="What is the GDP of Mars?")
             ]
         },
         tasksmanager=tasksmanager
