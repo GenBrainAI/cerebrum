@@ -14,7 +14,7 @@ from ..controllers.curried_proxy import CurriedProxy
 from ..controllers.crew_runner import run_crew_task
 from ..context.context_provider import ContextProvider
 from ..context.context_analytics import ContextAnalytics
-from ..controllers.task_tree_controller import TaskNode
+from ..controllers.task_tree_flow import TaskNode
 from .task_observability import TaskObservabilityManager, ObservabilityLevel
 from ..plugins.plugin_manager import PluginManager
 

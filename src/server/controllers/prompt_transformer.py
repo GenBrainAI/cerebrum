@@ -77,6 +77,41 @@ class PromptTransformer:
             content = f"{content}{self.suffix}"
             
         return content
+    
+    async def transform_async(
+        self, 
+        task_result: Union[str, Dict[str, Any]], 
+        context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Asynchronously transform the result of a task.
+        
+        Args:
+            task_result: The result from the previous task (string or dict with 'response' key)
+            context: Optional context information
+            
+        Returns:
+            Transformed string prompt
+        """
+        # Extract the response from the task result
+        if isinstance(task_result, dict) and "response" in task_result:
+            content = task_result["response"]
+        elif isinstance(task_result, str):
+            content = task_result
+        else:
+            content = str(task_result)
+            
+        # Apply standard transformations
+        if self.instructions:
+            content = f"{self.instructions}: {content}"
+            
+        if self.prefix:
+            content = f"{self.prefix}{content}"
+            
+        if self.suffix:
+            content = f"{content}{self.suffix}"
+            
+        return content
         
     def create_messages(
         self, 
