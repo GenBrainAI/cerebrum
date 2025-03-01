@@ -215,6 +215,9 @@ class TaskRunner:
                 # Check if this is a CrewAI task
                 if hasattr(task, 'crewai_config_id') and task.crewai_config_id:
                     result = await self._run_crewai_task(task, manager, running_extra_params)
+                # Check if this is a Tree Flow task
+                elif hasattr(task, 'tree_flow_id') and task.tree_flow_id:
+                    result = await self._run_tree_flow_task(task, manager, running_extra_params)
                 else:
                     # Execute standard task
                     result = await self._run_standard_task(task, running_extra_params or {}, manager)
@@ -400,6 +403,66 @@ class TaskRunner:
             
         except Exception as e:
             error_msg = f"Error in CrewAI task execution: {str(e)}"
+            logger.error(error_msg)
+            logger.info(f"❌ {error_msg}")
+            return {
+                "status": "failed",
+                "error": error_msg,
+                "response": error_msg
+            }
+
+    async def _run_tree_flow_task(
+        self,
+        task: Task,
+        tasksmanager: TasksManager,
+        running_extra_params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Execute a Task Tree Flow task."""
+        try:
+            logger.info(f"\n🌳 Running Task Tree Flow task: {task.id}")
+            
+            # Check if tree flow exists
+            if not task.tree_flow_id:
+                raise ValueError(f"Task {task.id} has no associated tree flow")
+                
+            # Get contexts if needed
+            query = running_extra_params.get("context_query") if running_extra_params else None
+            logger.info(f"🔍 Getting contexts with query: {query}")
+            contexts = await self.context_provider.get_contexts(query) if query else []
+            logger.info(f"✅ Found {len(contexts)} contexts")
+            
+            # Prepare running parameters
+            params = {"contexts": contexts}
+            if running_extra_params:
+                params.update(running_extra_params)
+            logger.info(f"🔧 Running params: {params}")
+            
+            # Initialize tree flow manager
+            from src.server.controllers.task_tree_flow import TaskTreeFlowManager
+            tree_flow_manager = TaskTreeFlowManager(self, self.persistence_model)
+            await tree_flow_manager.initialize()
+            
+            # Create from model and execute
+            logger.info(f"\n🚀 Executing tree flow: {task.tree_flow_id}")
+            tree_flow_manager.create_from_model(task.tree_flow_id)
+            result = await tree_flow_manager.execute_tree(params)
+            logger.info("✅ Tree flow executed successfully")
+            
+            # Format the result
+            if isinstance(result, dict):
+                response = "\n".join([f"{node_id}: {node_result}" for node_id, node_result in result.items()])
+            else:
+                response = str(result)
+                
+            return {
+                "status": "completed",
+                "response": response,
+                "result": result,
+                "error": None
+            }
+            
+        except Exception as e:
+            error_msg = f"Error in Task Tree Flow execution: {str(e)}"
             logger.error(error_msg)
             logger.info(f"❌ {error_msg}")
             return {

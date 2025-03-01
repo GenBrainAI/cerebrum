@@ -335,21 +335,27 @@ class TaskTreeFlowManager:
     Manager for task tree flows with transformation capabilities.
     """
     
-    def __init__(self, task_manager: Any, persistence_model: 'PersistenceModelBase' = None):
+    def __init__(
+        self, 
+        task_manager: Any = None, 
+        persistence_model: Optional['PersistenceModelBase'] = None,
+        task_runner: Any = None
+    ):
         """
-        Initialize the task tree flow manager.
+        Initialize a task tree flow manager.
         
         Args:
-            task_manager: The task manager for retrieving tasks
-            persistence_model: The persistence model for storing and retrieving tasks
+            task_manager: The task manager to use for retrieving tasks
+            persistence_model: The persistence model to use for storing state
+            task_runner: The task runner to use for executing tasks
         """
         self.task_manager = task_manager
         self.persistence_model = persistence_model
+        self.task_runner = task_runner
         self.nodes: Dict[str, TaskNode] = {}
         self.roots: Dict[str, TaskNode] = {}
         self.execution_groups: Dict[str, List[str]] = {}
-        self.task_runner = None
-        
+    
     async def initialize(self):
         """Initialize the task tree flow manager."""
         from src.server.controllers.task_runner import TaskRunner

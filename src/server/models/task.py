@@ -76,6 +76,7 @@ class Task(BaseModel):
     curried_proxy_id: Optional[str] = Field(default=None)
     crewai_config_id: Optional[str] = Field(default=None)
     autogen_config_id: Optional[str] = Field(default=None)
+    tree_flow_id: Optional[str] = Field(default=None, description="ID of the task tree flow associated with this task")
     agent_role: Optional[str] = Field(default=None, description="Role of the agent assigned to this task")
     framework: Optional[str] = Field(default="crewai", description="Framework to use for task execution (e.g. crewai, autogen)")
     created_at: Optional[datetime] = Field(default_factory=datetime.now)
