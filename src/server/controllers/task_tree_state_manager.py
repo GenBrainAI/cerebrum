@@ -5,7 +5,8 @@ import json
 import asyncio
 import logging
 from ..models.task import Task
-from .tasks_tree_controller import TaskTreeManager, TaskNode, TaskNodeState, TaskStatus
+from ..controllers.task_tree_flow import TaskTreeFlowManager, TaskNode
+from ..models.task_tree_flow import TaskNodeState, TaskStatus
 
 class TaskTreeStateManager:
     """Manages persistence and restoration of task tree state."""
@@ -15,7 +16,7 @@ class TaskTreeStateManager:
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__name__)
 
-    async def save_tree_state(self, tree_id: str, manager: TaskTreeManager) -> bool:
+    async def save_tree_state(self, tree_id: str, manager: TaskTreeFlowManager) -> bool:
         """Save task tree state to persistent storage."""
         try:
             state_file = self.base_path / f"{tree_id}.json"

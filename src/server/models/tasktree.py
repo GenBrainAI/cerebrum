@@ -1,12 +1,24 @@
 """
+DEPRECATED: This module is deprecated and will be removed in a future version.
+Please use task_tree_flow.py instead.
+
 Task tree model with plugin system support.
 Handles task dependencies and execution order with plugin integration.
 """
 
+import warnings
 import logging
 from typing import List, Optional, Dict, Any, Set
 from .task import Task
 from ..plugins.plugin_manager import PluginManager
+
+# Show deprecation warning
+warnings.warn(
+    "tasktree.py is deprecated and will be removed in a future version. "
+    "Please use task_tree_flow.py instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 logger = logging.getLogger(__name__)
 
