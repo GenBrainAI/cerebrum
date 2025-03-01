@@ -122,6 +122,17 @@ The task flow framework enables the creation and execution of sequences of tasks
 
 [Task Flow Documentation](docs/README_FLOW.md)
 
+### Self-Aware Components
+
+The Self-Aware Components enable the system to understand, modify, and extend its own capabilities. Key features include:
+
+- Adaptive Context Management for optimized context usage
+- Secure Terminal Command Execution with sandboxing
+- Codebase Vector Store for semantic code search
+- Unified Context Manager for integrated context operations
+
+[Self-Aware Components Documentation](docs/self_aware_components.md)
+
 ### Usage Examples
 
 ```python
