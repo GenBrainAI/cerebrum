@@ -1,221 +1,243 @@
-# Self-Aware Cerebrum
+# Cerebrum
 
-An AI framework with self-modification capabilities, designed to evolve and improve through a cognitive loop process.
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-green)](https://fastapi.tiangolo.com/)
 
-## Overview
+Cerebrum is an advanced AI task orchestration and management system designed to handle complex, hierarchical task execution with robust state management and monitoring capabilities. It represents a revolutionary approach to AI framework development, offering a self-evolving system that grows and adapts through natural conversation.
 
-Self-Aware Cerebrum represents a new approach to AI framework development, one where the system grows and evolves through natural conversation. Rather than being constrained by traditional user interfaces and fixed capabilities, Cerebrum learns and adapts through dialogue with its users.
+## 🌟 Features
 
-At its heart, Cerebrum is a self-modifying system that understands and responds to natural language. Users interact with it through simple conversation, describing what they want to achieve, and Cerebrum intelligently constructs and modifies its task structures to meet these needs.
+- **Self-Evolution**: System learns and adapts through natural conversation
+- **Task Orchestration**: Hierarchical task management with dependency tracking
+- **Multi-Framework Integration**: Seamless integration with CrewAI, LangChain, and custom frameworks
+- **State Management**: Robust state persistence and recovery
+- **Real-time Monitoring**: Comprehensive execution statistics and visualization
+- **Error Handling**: Sophisticated retry mechanisms and failure recovery
+- **Result Aggregation**: Flexible strategies for combining task results
 
-## System Architecture
+## 📋 Requirements
 
-The Self-Aware Cerebrum consists of several key components:
+- Python 3.11 or higher
+- FastAPI
+- Pydantic
+- asyncio
+- pytest (for testing)
 
-### 1. AI Parameter Manager
-
-The AI Parameter Manager optimizes and manages parameters for AI model interactions. It tracks performance metrics and learns optimal parameter settings for different types of tasks.
-
-Key features:
-- Parameter set management (create, update, delete)
-- Performance tracking and analysis
-- Automatic parameter optimization based on task type
-- Parameter evolution with exploration/exploitation balance
-
-### 2. Knowledge Integration System
-
-The Knowledge Integration System manages different types of memory (semantic, episodic, procedural) and connects them through a knowledge graph.
-
-Key features:
-- Multiple memory types for different kinds of knowledge
-- Knowledge graph for relationship tracking
-- Context-aware knowledge retrieval
-- Memory search and filtering capabilities
-
-### 3. Development Cognitive Loop Orchestrator
-
-The Development Cognitive Loop Orchestrator manages the system's self-improvement process through a four-phase cognitive cycle:
-
-1. **Understand**: Analyze requirements and context
-2. **Plan**: Create an implementation plan
-3. **Execute**: Implement the plan
-4. **Reflect**: Evaluate results and learn
-
-Key features:
-- Task management across cognitive phases
-- Specialized workers for different phases
-- Context tracking and management
-- Continuous operation capabilities
-
-### 4. Goal Decomposition Engine
-
-The Goal Decomposition Engine breaks down high-level goals into manageable subgoals. It provides a structured approach to planning and executing complex tasks by decomposing them into smaller, more manageable pieces.
-
-Key features:
-- Goal decomposition using different strategies (TOP_DOWN, BOTTOM_UP, etc.)
-- Resource estimation for subgoals and overall goals
-- Subgoal prioritization based on dependencies, complexity, and risk
-- Decomposition validation for completeness and consistency
-- Knowledge integration for informed decomposition
-
-### 5. Self-Aware Integration
-
-The Self-Aware Integration combines all the components above into a cohesive system that can monitor its own performance, manage resources, execute tasks in parallel, and continuously improve through the cognitive loop process.
-
-Key features:
-- Integration of all core components
-- Parallel task execution with resource awareness
-- System access capabilities (package management, Git operations, testing)
-- Observability and supervision mechanisms
-
-For detailed documentation on the Self-Aware System, see [Self-Aware System Documentation](docs/self_aware_system.md).
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.8+
-- Required packages (install via `pip install -r requirements.txt`):
-  - pydantic
-  - networkx
-  - streamlit
-  - asyncio
+## 🚀 Quick Start
 
 ### Installation
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/cerebrum.git
-   cd cerebrum
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/cerebrum.git
+cd cerebrum
 
-2. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-
-### Running the System
-
-#### Command Line Interface
-
-The Self-Aware Cerebrum can be run from the command line:
-
-```
-python src/server/cli.py --help
+# Install dependencies
+poetry install
+# OR
+pip install -r requirements.txt
 ```
 
-Common commands:
-- Start a cognitive cycle: `python src/server/cli.py cycle`
-- Add semantic knowledge: `python src/server/cli.py add-semantic --concept "AI" --definition "Artificial Intelligence is the simulation of human intelligence by machines."`
-- Create a task: `python src/server/cli.py create-task --title "Improve Knowledge System" --description "Enhance the knowledge retrieval capabilities" --phase understand`
-- Get knowledge context: `python src/server/cli.py context --query "cognitive loop"`
-- Decompose a goal: `python src/server/cli.py goal decompose --name "Implement Feature X" --description "Implement a new feature X for the system" --type DEVELOPMENT`
-
-#### Streamlit UI
-
-For a more user-friendly interface, run the Streamlit app:
-
-```
-streamlit run src/server/streamlit_app.py
-```
-
-The Streamlit UI provides:
-- System dashboard with status and controls
-- Task management interface
-- Knowledge management tools
-- Development context management
-- Goal decomposition and management
-
-## System Components in Detail
-
-### AI Parameter Manager
-
-The AI Parameter Manager maintains sets of parameters for AI model interactions and tracks their performance. It can:
-
-- Create, update, and retrieve parameter sets
-- Record performance metrics for task executions
-- Analyze parameter impact on performance
-- Evolve parameters based on performance history
-- Provide optimal parameters for specific task types
-
-### Knowledge Integration System
-
-The Knowledge Integration System manages three types of memory:
-
-1. **Semantic Memory**: Factual knowledge about concepts, entities, and their relationships
-2. **Episodic Memory**: Memory of specific events, experiences, or interactions
-3. **Procedural Memory**: Knowledge about how to perform tasks or processes
-
-These memory types are connected through a knowledge graph that tracks relationships between knowledge items.
-
-### Development Cognitive Loop Orchestrator
-
-The Development Cognitive Loop Orchestrator manages the system's self-improvement process through a four-phase cognitive cycle:
-
-1. **Understand Phase**: Analyze requirements and context
-   - Worker: RequirementsWorker
-   - Tasks: Requirement analysis, context gathering
-
-2. **Plan Phase**: Create an implementation plan
-   - Worker: PlanningWorker
-   - Tasks: Solution design, task breakdown
-
-3. **Execute Phase**: Implement the plan
-   - Worker: ImplementationWorker
-   - Tasks: Code generation, integration
-
-4. **Reflect Phase**: Evaluate results and learn
-   - Worker: EvaluationWorker
-   - Tasks: Testing, performance analysis, knowledge update
-
-### Goal Decomposition Engine
-
-The Goal Decomposition Engine breaks down high-level goals into manageable subgoals. It supports:
-
-1. **Goal Types**: Different types of goals (GENERAL, RESEARCH, DEVELOPMENT, etc.)
-2. **Decomposition Strategies**: Various strategies for decomposing goals (TOP_DOWN, BOTTOM_UP, etc.)
-3. **Resource Estimation**: Estimation of time, complexity, knowledge requirements, and risk
-4. **Subgoal Prioritization**: Prioritization of subgoals based on various factors
-5. **Decomposition Validation**: Validation of decompositions for completeness and consistency
-
-The Goal Decomposition Engine can be accessed through both the CLI and Streamlit UI. For more information, see the [Goal Decomposition Engine documentation](docs/planning/goal_decomposition.md).
-
-## Contributing
-
-Contributions to the Self-Aware Cerebrum are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- The Cerebrum project is inspired by research in cognitive architectures and self-modifying systems.
-- Special thanks to all contributors and researchers in the field of artificial general intelligence.
-
-## Vector Store Setup
-
-The Cerebrum system uses a vector store to index the codebase for semantic search. This vector store is not included in the repository to avoid committing large binary files to git.
-
-After cloning the repository, you need to set up the vector store by running the following command:
+### Running the Server
 
 ```bash
-# Set up the vector store
-python scripts/setup_vector_store.py
+# Using poetry
+poetry run uvicorn src.server.main:app --host 0.0.0.0 --port 8080 --reload
+
+# OR using pip
+uvicorn src.server.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-This script will index the codebase and create the necessary vector store files in the `persistent_state/cerebrum_system/chroma_db` directory.
+Visit `http://localhost:8080/docs` to access the Swagger documentation.
 
-You can also specify a different codebase root directory and base path:
+## 🏗️ Architecture
+
+Cerebrum's architecture is designed with three primary goals:
+1. Enabling natural interaction and self-evolution
+2. Maintaining robust security and stability
+3. Supporting seamless integration with existing enterprise systems
+
+For a comprehensive understanding of Cerebrum's architecture, please refer to our [Architecture Documentation](architecture.md).
+
+### Core Components
+
+1. **Core Engine**
+   - Central orchestrator for all operations
+   - Dynamic tool management
+   - State coordination
+   - Task orchestration
+
+2. **State Management**
+   - Multi-layer state management
+   - State isolation
+   - Recovery mechanisms
+   - Transaction management
+
+3. **Task Management**
+   - Hierarchical task organization
+   - Multiple execution strategies
+   - Dependency handling
+   - Progress tracking
+
+4. **Integration Layer**
+   - Multi-framework support
+   - API adapters
+   - Framework connectors
+   - Resource sharing
+
+5. **Self-Evolution Mechanism**
+   - Capability discovery
+   - Pattern learning
+   - Automated improvement
+   - Safety validation
+
+## 📚 Documentation
+
+### Customer Management
+
+For detailed instructions on managing customer access, subscriptions, and repository synchronization, see our [Customer Management Guide](docs/customer_management.md).
+
+### Task Tree Management
+
+The task tree management system provides a flexible framework for organizing and executing hierarchical tasks. Key features include:
+
+- Hierarchical task organization
+- Multiple execution strategies (Sequential, Parallel, Limited Parallel)
+- Comprehensive state tracking
+- Result aggregation strategies
+- Execution monitoring
+
+[Detailed Task Tree Documentation](docs/task_tree.md)
+
+### Task Flow Framework
+
+The task flow framework enables the creation and execution of sequences of tasks with transformations between them. Key features include:
+
+- Sequential task execution with data transformation
+- Multiple transformer types for different transformation needs
+- Pre-execute and post-execute hooks for custom processing
+- Comprehensive status tracking and error handling
+- Support for complex multi-task workflows
+
+[Task Flow Documentation](docs/README_FLOW.md)
+
+### Self-Aware Components
+
+The Self-Aware Components enable the system to understand, modify, and extend its own capabilities. Key features include:
+
+- Adaptive Context Management for optimized context usage
+- Secure Terminal Command Execution with sandboxing
+- Codebase Vector Store for semantic code search
+- Unified Context Manager for integrated context operations
+
+[Self-Aware Components Documentation](docs/self_aware_components.md)
+
+### Usage Examples
+
+```python
+from src.server.controllers.tasks_tree_controller import TaskTreeManager, Task
+
+# Create a task tree
+manager = TaskTreeManager()
+root_task = Task(id="root", name="Root Task")
+manager.create_node(root_task)
+
+# Execute tasks
+result = await manager.execute_group("main_group", strategy="parallel")
+```
+
+More examples can be found in the [examples directory](examples/).
+
+## 🧪 Testing
+
+Run the test suite:
 
 ```bash
-# Set up the vector store with custom paths
-python scripts/setup_vector_store.py --codebase-root /path/to/codebase --base-path /path/to/base
+# Run all tests
+pytest
+
+# Run specific test category
+pytest tests/task_view/
+
+# Run with coverage
+pytest --cov=src tests/
 ```
 
-For incremental indexing (only index files that have changed):
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
+
+1. Code Style
+2. Development Process
+3. Testing Requirements
+4. Pull Request Process
+
+### Development Setup
 
 ```bash
-# Perform incremental indexing
-python scripts/setup_vector_store.py --incremental
+# Create development environment
+poetry install --with dev
+
+# Run pre-commit hooks
+pre-commit install
 ```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🔗 Links
+
+- [Architecture Documentation](architecture.md)
+- [Documentation](docs/)
+- [Issue Tracker](https://github.com/yourusername/cerebrum/issues)
+- [Project Wiki](https://github.com/yourusername/cerebrum/wiki)
+
+## 🙏 Acknowledgments
+
+- Contributors
+- Supporting Libraries
+- Inspiration Sources
+
+## 📞 Contact
+
+- Project Maintainer: [Your Name](mailto:your.email@example.com)
+- Project Website: [https://cerebrum.ai](https://cerebrum.ai)
+
+## Syncing with Base Repository
+
+As a customer with a private fork of Cerebrum, you can automatically sync your fork with the base repository to receive updates. Follow these steps to set up automatic syncing:
+
+1. **Generate a Personal Access Token (PAT)**:
+   - Go to your GitHub Settings > Developer settings > Personal access tokens
+   - Generate a new token with `repo` scope
+   - Copy the token value
+
+2. **Add the Token to Your Fork**:
+   - Go to your fork's Settings > Secrets and variables > Actions
+   - Create a new repository secret named `SYNC_TOKEN`
+   - Paste your PAT as the value
+
+3. **Enable Workflows**:
+   - Go to your fork's Actions tab
+   - Enable workflows if they are disabled
+   - You should see the "Sync with Base Repository" workflow
+
+4. **Using the Sync Workflow**:
+   - The workflow runs automatically every day at midnight
+   - You can also trigger it manually from the Actions tab
+   - When updates are available, it creates a pull request for you to review
+   - If there are conflicts, it creates a special PR with instructions for manual resolution
+
+5. **Best Practices**:
+   - Always review the changes in the sync PR before merging
+   - If you have local customizations, keep them well-documented
+   - Consider creating a separate branch for your customizations
+   - Test your application after merging updates
+
+For any issues or questions about syncing, please contact our support team.
+
+---
+
+Made with ❤️ by the Cerebrum Team
