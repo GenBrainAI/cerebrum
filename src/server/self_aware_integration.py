@@ -48,118 +48,133 @@ class SelfAwareSystem:
     """
     
     def __init__(self, storage_path: Optional[str] = None):
-        """Initialize the Self-Aware System with its core components"""
-        self.storage_path = storage_path or os.path.join(os.path.expanduser("~"), ".cerebrum", "self_aware")
+        """
+        Initialize the Self-Aware System.
+        
+        Args:
+            storage_path: Path to store persistent data
+        """
+        self.storage_path = storage_path or "persistent_state/self_aware"
         os.makedirs(self.storage_path, exist_ok=True)
         
         # Initialize AI Parameter Manager
-        param_path = os.path.join(self.storage_path, "parameters")
-        self.parameter_manager = AIParameterManager(storage_path=param_path)
+        self.parameter_manager = AIParameterManager(
+            storage_path=os.path.join(self.storage_path, "parameters")
+        )
         
         # Initialize Knowledge Integration System
-        knowledge_path = os.path.join(self.storage_path, "knowledge")
-        self.knowledge_system = KnowledgeIntegrationSystem(storage_path=knowledge_path)
+        self.knowledge_system = KnowledgeIntegrationSystem(
+            storage_path=os.path.join(self.storage_path, "knowledge")
+        )
         
-        # Initialize Development Cognitive Loop Orchestrator
-        cognitive_path = os.path.join(self.storage_path, "cognitive_loop")
-        self.cognitive_orchestrator = CognitiveLoopOrchestrator(storage_path=cognitive_path)
+        # Initialize Cognitive Loop Orchestrator
+        self.cognitive_orchestrator = CognitiveLoopOrchestrator(
+            storage_path=os.path.join(self.storage_path, "cognitive_loop")
+        )
         
         # Initialize Parallel Execution Controller
         self.parallel_controller = ParallelExecutionController(
-            max_concurrent_tasks=5,
-            resource_limits={"cpu": 80.0, "memory": 4096.0}
+            max_concurrent_tasks=10
         )
         
-        # Initialize System Access Layer components
+        # Initialize System Access Layer
         self.package_manager = PackageManager()
         self.git_manager = GitManager()
-        self.test_runner = TestRunner(project_root=os.getcwd())
+        self.test_runner = TestRunner()
         
-        # Initialize Observability Layer components
-        supervision_path = os.path.join(self.storage_path, "supervision")
-        resource_path = os.path.join(self.storage_path, "resources")
-        metrics_path = os.path.join(self.storage_path, "metrics")
-        
-        self.supervision_hub = SupervisionHub(storage_path=supervision_path)
+        # Initialize Observability Layer
+        self.supervision_hub = SupervisionHub(
+            storage_path=os.path.join(self.storage_path, "supervision")
+        )
         self.resource_monitor = ResourceMonitor()
-        self.metrics_collector = MetricsCollector(storage_path=metrics_path)
+        self.metrics_collector = MetricsCollector(
+            storage_path=os.path.join(self.storage_path, "metrics")
+        )
         
-        # Initialize self-modification components
+        # Initialize Self-Modification Engine
         self.code_generator = CodeGenerator()
         self.safety_validator = SafetyValidator()
         self.integration_manager = IntegrationManager(
-            self.git_manager, 
-            self.test_runner
+            git_manager=self.git_manager,
+            test_runner=self.test_runner
         )
-        self.agentic_development_controller = AgenticDevelopmentController(
-            self.code_generator,
-            self.safety_validator,
-            self.integration_manager,
-            self.knowledge_system,
-            self.cognitive_orchestrator
+        self.agentic_controller = AgenticDevelopmentController(
+            code_generator=self.code_generator,
+            safety_validator=self.safety_validator,
+            integration_manager=self.integration_manager,
+            knowledge_system=self.knowledge_system,
+            cognitive_orchestrator=self.cognitive_orchestrator
         )
+        
+        logger.info(f"Self-Aware System initialized with storage path: {self.storage_path}")
+
+    async def initialize(self):
+        """Initialize all components of the Self-Aware System."""
+        logger.info("Initializing Self-Aware System components")
+        
+        # Initialize AI Parameter Manager
+        await self.parameter_manager.initialize()
+        
+        # Initialize Knowledge Integration System
+        await self.knowledge_system.initialize()
+        
+        # Initialize Cognitive Loop Orchestrator
+        await self.cognitive_orchestrator.initialize()
         
         # Register specialized workers
-        self._register_workers()
+        await self.register_specialized_workers()
         
-        # Initialize system with basic knowledge
-        self._initialize_knowledge()
+        logger.info("Self-Aware System initialization completed")
+
+    async def register_specialized_workers(self):
+        """Register specialized workers with the cognitive orchestrator."""
+        logger.info("Registering specialized workers")
         
-        # Don't start monitoring and metrics collection in __init__
-        # This will be done explicitly in start_monitoring_and_metrics
-    
-    def _register_workers(self):
-        """Register specialized workers with the cognitive loop orchestrator"""
-        # Requirements Worker
-        self.cognitive_orchestrator.register_worker(
-            WorkerType.REQUIREMENTS,
-            RequirementsWorker()
+        # Create and register Requirements Worker
+        requirements_worker = RequirementsWorker(
+            knowledge_system=self.knowledge_system,
+            parameter_manager=self.parameter_manager
+        )
+        await self.cognitive_orchestrator.register_worker(
+            worker_type=WorkerType.REQUIREMENTS,
+            worker=requirements_worker
         )
         
-        # Planning Worker
-        self.cognitive_orchestrator.register_worker(
-            WorkerType.PLANNING,
-            PlanningWorker()
+        # Create and register Planning Worker
+        planning_worker = PlanningWorker(
+            knowledge_system=self.knowledge_system,
+            parameter_manager=self.parameter_manager
+        )
+        await self.cognitive_orchestrator.register_worker(
+            worker_type=WorkerType.PLANNING,
+            worker=planning_worker
         )
         
-        # Implementation Worker
-        self.cognitive_orchestrator.register_worker(
-            WorkerType.IMPLEMENTATION,
-            ImplementationWorker()
+        # Create and register Implementation Worker
+        implementation_worker = ImplementationWorker(
+            knowledge_system=self.knowledge_system,
+            parameter_manager=self.parameter_manager,
+            code_generator=self.code_generator,
+            safety_validator=self.safety_validator
+        )
+        await self.cognitive_orchestrator.register_worker(
+            worker_type=WorkerType.IMPLEMENTATION,
+            worker=implementation_worker
         )
         
-        # Evaluation Worker
-        self.cognitive_orchestrator.register_worker(
-            WorkerType.EVALUATION,
-            EvaluationWorker()
+        # Create and register Evaluation Worker
+        evaluation_worker = EvaluationWorker(
+            knowledge_system=self.knowledge_system,
+            parameter_manager=self.parameter_manager,
+            test_runner=self.test_runner
         )
-    
-    def _initialize_knowledge(self):
-        """Initialize the system with basic knowledge"""
-        # Add semantic memory about the system itself
-        if not self.knowledge_system.search_semantic_memory("Self-Aware Cerebrum"):
-            self.knowledge_system.add_semantic_memory(
-                concept="Self-Aware Cerebrum",
-                definition="An AI framework that can modify and improve itself through a cognitive loop process.",
-                related_concepts=["AI", "Self-Improvement", "Cognitive Loop"],
-                tags=["system", "core", "architecture"]
-            )
+        await self.cognitive_orchestrator.register_worker(
+            worker_type=WorkerType.EVALUATION,
+            worker=evaluation_worker
+        )
         
-        # Add procedural memory about the cognitive loop process
-        if not self.knowledge_system.search_procedural_memory("Run Cognitive Cycle"):
-            self.knowledge_system.add_procedural_memory(
-                task_name="Run Cognitive Cycle",
-                description="Execute a complete cognitive cycle through all phases.",
-                steps=[
-                    "Start with the Understand phase to analyze requirements and context",
-                    "Move to the Plan phase to create an implementation plan",
-                    "Execute the plan in the Execute phase",
-                    "Evaluate results and learn in the Reflect phase"
-                ],
-                expected_outcome="Completed development cycle with system improvements",
-                tags=["cognitive_loop", "process", "core"]
-            )
-    
+        logger.info("Specialized workers registered successfully")
+
     async def start_cognitive_cycle(self):
         """Start a cognitive cycle"""
         # Create initial understanding task
@@ -874,7 +889,7 @@ class SelfAwareSystem:
             ID of the created development cycle.
         """
         logger.info("Starting development cycle")
-        return await self.agentic_development_controller.initialize_development_cycle(requirements)
+        return await self.agentic_controller.initialize_development_cycle(requirements)
     
     async def get_development_cycle_status(self, cycle_id: str) -> Dict[str, Any]:
         """Get current status of a development cycle.
@@ -886,4 +901,4 @@ class SelfAwareSystem:
             Dictionary containing development cycle status.
         """
         logger.info(f"Getting status for development cycle: {cycle_id}")
-        return await self.agentic_development_controller.get_cycle_status(cycle_id) 
+        return await self.agentic_controller.get_cycle_status(cycle_id) 

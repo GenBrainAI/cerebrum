@@ -24,10 +24,9 @@ from src.server.system.terminal_command_executor import (
     SecurityConfig,
     CommandExecutionResult
 )
-from src.server.system.codebase_vector_store import (
-    CodebaseVectorStore,
-    VectorStoreConfig,
-    CodeSnippet
+from src.server.context.chroma_vector_store import (
+    ChromaVectorStore,
+    VectorStoreConfig
 )
 
 logger = logging.getLogger(__name__)
@@ -53,59 +52,64 @@ class UnifiedContextManager:
         security_config: Optional[SecurityConfig] = None,
         vector_store_config: Optional[VectorStoreConfig] = None
     ):
-        """Initialize the Unified Context Manager."""
+        """
+        Initialize the Unified Context Manager.
+        
+        Args:
+            base_path: Base path for persistent state
+            codebase_root: Root directory of the codebase
+            context_config: Configuration for the context manager
+            security_config: Configuration for the terminal command executor
+            vector_store_config: Configuration for the vector store
+        """
         self.base_path = Path(base_path)
-        self.base_path.mkdir(parents=True, exist_ok=True)
+        self.codebase_root = Path(codebase_root)
         
-        # Initialize context directories
-        self.context_dir = self.base_path / "context"
-        self.command_logs_dir = self.base_path / "command_logs"
+        # Create base directories
+        self.base_path.mkdir(exist_ok=True, parents=True)
+        
+        # Initialize context manager
+        self.context_manager = AdaptiveContextManager(
+            base_path=self.base_path / "context_manager",
+            config=context_config
+        )
+        
+        # Initialize terminal command executor
+        self.command_executor = TerminalCommandExecutor(
+            base_path=self.base_path / "command_executor",
+            security_config=security_config
+        )
+        
+        # Initialize vector store with ChromaDB
         self.vector_store_dir = self.base_path / "vector_store"
-        
-        self.context_dir.mkdir(exist_ok=True)
-        self.command_logs_dir.mkdir(exist_ok=True)
         self.vector_store_dir.mkdir(exist_ok=True)
         
-        # Initialize context providers
-        self.adaptive_context = AdaptiveContextManager(
-            config=context_config or ContextConfig(
-                base_path=str(self.context_dir / "adaptive"),
-                default_model="gpt-4",
-                max_tokens=8192
-            )
+        self.vector_store = ChromaVectorStore(
+            config=VectorStoreConfig(
+                persist_directory=str(self.vector_store_dir),
+                collection_name="unified_context",
+                embedding_model="text-embedding-3-small"
+            ),
+            base_path=str(self.vector_store_dir)
         )
         
-        self.terminal_executor = TerminalCommandExecutor(
-            config=security_config or SecurityConfig(
-                log_directory=str(self.command_logs_dir),
-                require_approval_for_risk_level="medium"
-            )
-        )
-        
-        self.vector_store = CodebaseVectorStore(
-            config=vector_store_config or VectorStoreConfig(
-                root_dir=codebase_root,
-                store_dir=str(self.vector_store_dir)
-            )
-        )
-        
-        # Initialize active operations
-        self.active_operations: Dict[str, Dict[str, Any]] = {}
+        # Dictionary to store operation metadata
+        self.operations = {}
         
         logger.info(f"Unified Context Manager initialized with base path: {self.base_path}")
     
     async def initialize_codebase_index(self, incremental: bool = True) -> Dict[str, Any]:
-        """
-        Initialize or update the codebase vector store.
+        """Initialize or update the codebase vector store."""
+        logger.info(f"Initializing codebase index (incremental={incremental})")
         
-        Args:
-            incremental: If True, only update files that have changed
-            
-        Returns:
-            Dict[str, Any]: Statistics about the indexing operation
-        """
-        logger.info("Initializing codebase vector store")
-        return await self.vector_store.index_codebase(incremental=incremental)
+        result = await self.vector_store.index_directory(
+            directory=self.codebase_root,
+            incremental=incremental,
+            collection_name="codebase",
+            file_types=[".py", ".md", ".txt", ".json", ".yaml", ".yml"]
+        )
+        
+        return result
     
     async def create_operation(
         self,
@@ -127,10 +131,10 @@ class UnifiedContextManager:
             str: The operation ID
         """
         # Create context for the operation
-        await self.adaptive_context.create_context(operation_id)
+        await self.context_manager.create_context(operation_id)
         
         # Store operation metadata
-        self.active_operations[operation_id] = {
+        self.operations[operation_id] = {
             "id": operation_id,
             "description": description,
             "type": operation_type,
@@ -167,12 +171,12 @@ class UnifiedContextManager:
             str: The context item ID
         """
         # Update operation last active timestamp
-        if operation_id in self.active_operations:
-            self.active_operations[operation_id]["last_active"] = datetime.now().isoformat()
+        if operation_id in self.operations:
+            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
             await self._save_operation_metadata(operation_id)
         
         # Add to adaptive context
-        return await self.adaptive_context.add_to_context(
+        return await self.context_manager.add_to_context(
             operation_id,
             content,
             source=source,
@@ -198,12 +202,12 @@ class UnifiedContextManager:
             Union[str, Dict[str, Any]]: The context as a string or with metadata
         """
         # Update operation last active timestamp
-        if operation_id in self.active_operations:
-            self.active_operations[operation_id]["last_active"] = datetime.now().isoformat()
+        if operation_id in self.operations:
+            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
             await self._save_operation_metadata(operation_id)
         
         # Get from adaptive context
-        return await self.adaptive_context.get_context(
+        return await self.context_manager.get_context(
             operation_id,
             max_tokens=max_tokens,
             include_metadata=include_metadata
@@ -237,12 +241,12 @@ class UnifiedContextManager:
             Union[CommandExecutionResult, str]: The execution result or approval ID
         """
         # Update operation last active timestamp
-        if operation_id in self.active_operations:
-            self.active_operations[operation_id]["last_active"] = datetime.now().isoformat()
+        if operation_id in self.operations:
+            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
             await self._save_operation_metadata(operation_id)
         
         # Execute command
-        result = await self.terminal_executor.execute_command(
+        result = await self.command_executor.execute_command(
             command,
             working_directory=working_directory,
             environment_vars=environment_vars,
@@ -306,12 +310,12 @@ STDERR:
             CommandExecutionResult: The execution result
         """
         # Update operation last active timestamp
-        if operation_id in self.active_operations:
-            self.active_operations[operation_id]["last_active"] = datetime.now().isoformat()
+        if operation_id in self.operations:
+            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
             await self._save_operation_metadata(operation_id)
         
         # Execute approved command
-        result = await self.terminal_executor.execute_approved_command(approval_id)
+        result = await self.command_executor.execute_approved_command(approval_id)
         
         # Add result to context if requested
         if add_to_context:
@@ -352,48 +356,33 @@ STDERR:
         top_k: int = 5,
         add_to_context: bool = True,
         context_priority: int = 60
-    ) -> List[CodeSnippet]:
-        """
-        Search the codebase for relevant code snippets.
+    ) -> List[Dict[str, Any]]:
+        """Search the codebase using semantic search."""
+        logger.info(f"Searching codebase for: {query}")
         
-        Args:
-            operation_id: The operation ID
-            query: The search query
-            top_k: Maximum number of results to return
-            add_to_context: Whether to add the results to the operation context
-            context_priority: Priority for the context item (0-100)
-            
-        Returns:
-            List[CodeSnippet]: The search results
-        """
-        # Update operation last active timestamp
-        if operation_id in self.active_operations:
-            self.active_operations[operation_id]["last_active"] = datetime.now().isoformat()
-            await self._save_operation_metadata(operation_id)
+        results = await self.vector_store.search(
+            query=query,
+            collection_name="codebase",
+            limit=top_k
+        )
         
-        # Search codebase
-        results = await self.vector_store.search(query, top_k=top_k)
-        
-        # Add results to context if requested
         if add_to_context and results:
-            # Format search results as text
-            context_content = f"Code search results for: {query}\n\n"
+            # Format the results for context
+            context_content = f"Codebase search results for query: {query}\n\n"
+            for i, result in enumerate(results):
+                context_content += f"Result {i+1}:\n"
+                context_content += f"File: {result.get('metadata', {}).get('file_path', 'Unknown')}\n"
+                context_content += f"Content:\n{result.get('content', '')}\n\n"
             
-            for i, snippet in enumerate(results):
-                context_content += f"Result {i+1}: {snippet.file_path} (Score: {snippet.relevance_score:.4f})\n"
-                context_content += f"Lines {snippet.start_line}-{snippet.end_line}:\n"
-                context_content += f"```{snippet.language}\n{snippet.content}\n```\n\n"
-            
-            # Add to context
+            # Add to operation context
             await self.add_to_operation_context(
-                operation_id,
-                context_content,
-                source="code_search",
+                operation_id=operation_id,
+                content=context_content,
+                source="codebase_search",
                 priority=context_priority,
                 metadata={
                     "query": query,
-                    "result_count": len(results),
-                    "files": [snippet.file_path for snippet in results]
+                    "result_count": len(results)
                 }
             )
         
@@ -419,8 +408,8 @@ STDERR:
             Optional[str]: The file content, or None if not found
         """
         # Update operation last active timestamp
-        if operation_id in self.active_operations:
-            self.active_operations[operation_id]["last_active"] = datetime.now().isoformat()
+        if operation_id in self.operations:
+            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
             await self._save_operation_metadata(operation_id)
         
         # Get file content
@@ -472,7 +461,7 @@ STDERR:
                     logger.error(f"Error loading operation metadata from {path}: {str(e)}")
         
         # Add active operations that might not be saved yet
-        for operation_id, metadata in self.active_operations.items():
+        for operation_id, metadata in self.operations.items():
             if not any(op["id"] == operation_id for op in operations):
                 operations.append(metadata)
         
@@ -489,8 +478,8 @@ STDERR:
             Optional[Dict[str, Any]]: The operation metadata, or None if not found
         """
         # Check active operations first
-        if operation_id in self.active_operations:
-            return self.active_operations[operation_id]
+        if operation_id in self.operations:
+            return self.operations[operation_id]
         
         # Check saved operations
         metadata_path = self.base_path / "operations" / f"{operation_id}.json"
@@ -516,14 +505,14 @@ STDERR:
         success = True
         
         # Delete context
-        context_success = await self.adaptive_context.delete_context(operation_id)
+        context_success = await self.context_manager.delete_context(operation_id)
         if not context_success:
             logger.warning(f"Failed to delete context for operation {operation_id}")
             success = False
         
         # Remove from active operations
-        if operation_id in self.active_operations:
-            del self.active_operations[operation_id]
+        if operation_id in self.operations:
+            del self.operations[operation_id]
         
         # Delete metadata file
         metadata_path = self.base_path / "operations" / f"{operation_id}.json"
@@ -544,7 +533,7 @@ STDERR:
         Args:
             operation_id: The operation ID
         """
-        if operation_id not in self.active_operations:
+        if operation_id not in self.operations:
             return
         
         # Create operations directory if it doesn't exist
@@ -554,7 +543,7 @@ STDERR:
         # Save metadata
         metadata_path = operations_dir / f"{operation_id}.json"
         with open(metadata_path, 'w') as f:
-            json.dump(self.active_operations[operation_id], f, indent=2)
+            json.dump(self.operations[operation_id], f, indent=2)
     
     async def get_pending_command_approvals(self) -> List[Dict[str, Any]]:
         """
@@ -563,7 +552,7 @@ STDERR:
         Returns:
             List[Dict[str, Any]]: List of pending approvals
         """
-        return self.terminal_executor.get_pending_approvals()
+        return self.command_executor.get_pending_approvals()
     
     async def reject_command(self, approval_id: str) -> bool:
         """
@@ -575,7 +564,7 @@ STDERR:
         Returns:
             bool: True if successful
         """
-        return self.terminal_executor.reject_command(approval_id)
+        return self.command_executor.reject_command(approval_id)
     
     async def get_command_execution_history(
         self,
@@ -592,7 +581,7 @@ STDERR:
         Returns:
             List[CommandExecutionResult]: List of execution results
         """
-        return self.terminal_executor.get_execution_history(
+        return self.command_executor.get_execution_history(
             limit=limit,
             filter_successful=filter_successful
         )
@@ -639,13 +628,13 @@ STDERR:
         """
         # Create context if it doesn't exist
         try:
-            await self.adaptive_context.create_context(task_id)
+            await self.context_manager.create_context(task_id)
         except ValueError:
             # Context already exists
             pass
             
         # Add to context
-        return await self.adaptive_context.add_to_context(
+        return await self.context_manager.add_to_context(
             task_id,
             content,
             source=context_type,

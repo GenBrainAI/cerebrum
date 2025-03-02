@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 import traceback
 import logging
+import os
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -10,8 +11,13 @@ from ..context.knowledge_base import KnowledgeBase
 from ..models.message import Message
 from ..models.task_context_model import TaskContextManager, ContextReference
 from ..persistence.persistence_model_factory import PersistenceModelFactory
-from ..context.chroma_vector_store import ChromaVectorStore
+from ..context.chroma_vector_store import ChromaVectorStore, VectorStoreConfig
 from ..context.code_catalog import CodeCatalog
+
+# Define standard paths for vector store
+GLOBAL_VECTOR_STORE_PATH = "persistent_state/global_context/vector_store"
+CONTEXT_VECTOR_STORE_PATH = "persistent_state/context/vector_store"
+CODEBASE_VECTOR_STORE_PATH = "persistent_state/codebase/vector_store"
 
 # Re-export ContextReference for backwards compatibility
 __all__ = ['ContextProvider', 'ContextReference']
@@ -24,13 +30,18 @@ class ContextProvider:
         self.is_global = is_global
         self.task_context_manager = TaskContextManager()
         
-        # Use different paths for different contexts
-        if is_global:
-            chroma_path = "persistent_state/global_context/chroma_db"
-        else:
-            chroma_path = "persistent_state/context/chroma_db"
+        # Use standardized paths for vector store
+        vector_store_path = get_vector_store_path("global" if is_global else "default")
             
-        self.vector_store = ChromaVectorStore(base_path=chroma_path)
+        self.vector_store = ChromaVectorStore(
+            config=VectorStoreConfig(
+                persist_directory=vector_store_path,
+                collection_name="context",
+                embedding_model="text-embedding-3-small"
+            ),
+            base_path=vector_store_path
+        )
+        
         self.code_catalog = CodeCatalog()
         self.knowledge_base = KnowledgeBase(
             base_path="persistent_state/global_knowledge_base" if is_global else "persistent_state/knowledge_base"
@@ -381,3 +392,12 @@ class ContextProvider:
             return prepared_messages
             
         return messages
+
+def get_vector_store_path(context_type: str = "default") -> str:
+    """Get the appropriate vector store path based on context type."""
+    if context_type == "global":
+        return GLOBAL_VECTOR_STORE_PATH
+    elif context_type == "codebase":
+        return CODEBASE_VECTOR_STORE_PATH
+    else:
+        return os.path.join(CONTEXT_VECTOR_STORE_PATH, context_type)
