@@ -1,6 +1,7 @@
 """Tests for the Context Catalog Registry."""
 
 import pytest
+import pytest_asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
@@ -49,8 +50,8 @@ def test_metadata() -> ContextMetadata:
     )
 
 
-@pytest.fixture
-async def registry(storage_config: Dict[str, Any]) -> ContextCatalogRegistry:
+@pytest_asyncio.fixture
+async def registry(storage_config: Dict[str, Any]):
     """Create test registry instance."""
     return ContextCatalogRegistry(storage_config)
 

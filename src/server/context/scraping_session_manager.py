@@ -7,7 +7,7 @@ import io
 
 from src.server.models.scraping_session import ScrapingSession, ScrapingTargetType, ScrapingContentType
 from src.server.context.knowledge_base import KnowledgeBase
-from src.server.context.vector_store import VectorStore
+from src.server.context.chroma_vector_store import ChromaVectorStore
 from src.server.context.code_catalog import CodeCatalog
 from src.server.tools.web_scraper_tool import WebScraperTool
 from src.server.tools.repo_scraper import RepoScraper
@@ -20,7 +20,7 @@ class ScrapingSessionManager:
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.sessions: Dict[str, ScrapingSession] = {}
         self.knowledge_base = KnowledgeBase()
-        self.vector_store = VectorStore()
+        self.vector_store = ChromaVectorStore(base_path="persistent_state/context/chroma_db")
         self.code_catalog = CodeCatalog()
         self._load_sessions()
         

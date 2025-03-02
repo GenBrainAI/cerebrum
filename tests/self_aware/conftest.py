@@ -3,12 +3,13 @@ Shared fixtures for Self-Aware Cerebrum tests.
 """
 
 import pytest
+import pytest_asyncio
 import asyncio
 import os
 import tempfile
 from pathlib import Path
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 def event_loop():
     """Create an instance of the default event loop for each test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()

@@ -50,4 +50,4 @@ class TasksManager(BaseModel):
             return True
         return False
 
-TasksManager.update_forward_refs()
+TasksManager.model_rebuild()

@@ -3,6 +3,7 @@ Tests for the job posting plugin implementation.
 """
 
 import pytest
+import pytest_asyncio
 import logging
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ from src.server.plugins.agent_framework_config import AgentFrameworkConfig
 
 logger = logging.getLogger(__name__)
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def plugin_registry(tmp_path):
     """Create a plugin registry for testing."""
     # Create temporary directories for plugins

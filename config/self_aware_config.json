@@ -1,0 +1,83 @@
+{
+    "base_path": "persistent_state/self_aware",
+    "codebase_root": ".",
+    "context": {
+        "max_tokens": 8192,
+        "default_model": "gpt-4",
+        "default_compression_strategy": "summarize",
+        "enable_history": true,
+        "history_max_items": 100
+    },
+    "security": {
+        "max_execution_time": 60,
+        "max_output_size": 1048576,
+        "sandbox_type": "subprocess",
+        "log_commands": true,
+        "log_output": true,
+        "log_directory": "logs/commands",
+        "require_approval_for_risk_level": "medium",
+        "blocked_commands": [
+            "rm -rf /",
+            "sudo",
+            "chmod 777"
+        ]
+    },
+    "vector_store": {
+        "embedding_model": "text-embedding-ada-002",
+        "embedding_dimension": 1536,
+        "similarity_threshold": 0.7,
+        "max_files": 10000,
+        "excluded_dirs": [
+            ".git",
+            "node_modules",
+            "venv",
+            "env",
+            "__pycache__",
+            "dist",
+            "build",
+            ".vscode",
+            ".idea"
+        ],
+        "excluded_patterns": [
+            "\\.pyc$",
+            "\\.class$",
+            "\\.o$",
+            "\\.so$",
+            "\\.a$",
+            "\\.dll$",
+            "\\.exe$",
+            "\\.bin$",
+            "\\.dat$",
+            "\\.log$"
+        ],
+        "included_extensions": [
+            ".py",
+            ".js",
+            ".ts",
+            ".jsx",
+            ".tsx",
+            ".html",
+            ".css",
+            ".java",
+            ".c",
+            ".cpp",
+            ".h",
+            ".hpp",
+            ".go",
+            ".rs",
+            ".rb",
+            ".php",
+            ".swift",
+            ".kt",
+            ".sh",
+            ".md",
+            ".json",
+            ".yml",
+            ".yaml",
+            ".toml",
+            ".sql"
+        ],
+        "chunk_size": 1000,
+        "chunk_overlap": 200
+    }
+} 

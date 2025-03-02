@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+logs/
 
 # Distribution / packaging
 .Python
@@ -149,6 +150,11 @@ chroma.sqlite3
 # ChromaDB
 context_db/
 persistent_state/context/*/
+persistent_state/cerebrum_system/chroma_db/
+persistent_state/cerebrum_system/vector_store/
+persistent_state/cerebrum_system/vector_store_backup/
+persistent_state/*/chroma_db/
+*.sqlite3
 
 sms_*
 
@@ -175,6 +181,9 @@ state/specialized/task_generation/**
 state/sessions/**
 test_cerebrum_data/
 test_storage/
+
+# Add vector_store directory to prevent large files from being committed
+persistent_state/cerebrum_system/vector_store/
 
 
 

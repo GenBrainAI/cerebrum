@@ -4,6 +4,7 @@ Tests plugin loading, initialization, and execution.
 """
 
 import pytest
+import pytest_asyncio
 import logging
 from pathlib import Path
 from typing import Dict, Any
@@ -51,7 +52,7 @@ class TestPlugin(AgentFrameworkPlugin):
     def version(self) -> str:
         return self.config.version
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def plugin_manager():
     """Create a plugin manager for testing."""
     manager = PluginManager()

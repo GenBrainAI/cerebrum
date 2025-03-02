@@ -25,4 +25,4 @@ class Message(BaseModel):
     created_at: Optional[datetime] = Field(alias="created_at", default=None)
     updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
 
-Message.update_forward_refs()
+Message.model_rebuild()

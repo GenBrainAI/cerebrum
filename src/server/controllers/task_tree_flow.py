@@ -92,28 +92,39 @@ class TaskNode:
         """Check if all dependencies are satisfied."""
         return all(dep.state.status == TaskStatus.COMPLETED for dep in self.dependencies)
     
+    def get_execution_stats(self) -> Dict[str, Any]:
+        """Get execution statistics for this node."""
+        execution_time = None
+        if self.state.started_at and self.state.completed_at:
+            execution_time = (self.state.completed_at - self.state.started_at).total_seconds()
+            
+        return {
+            "status": self.state.status.value,
+            "execution_time": execution_time,
+            "started_at": self.state.started_at.isoformat() if self.state.started_at else None,
+            "completed_at": self.state.completed_at.isoformat() if self.state.completed_at else None,
+            "retry_count": self.state.retry_count,
+            "last_retry_at": self.state.last_retry_at.isoformat() if self.state.last_retry_at else None,
+            "transformation_applied": self.state.transformation_applied,
+            "children_count": len(self.children)
+        }
+    
     async def _execute_task_with_timeout(self, context: Dict[str, Any]) -> str:
         """Execute the task with timeout handling."""
         timeout = self.execution_config.timeout
         
-        # Get the task from the task manager
-        if not self.task_manager or not hasattr(self.task_manager, "get_task"):
+        # Check if task manager is available
+        if not self.task_manager:
             raise TaskExecutionError(f"No task manager available for task {self.task_id}")
         
-        task = self.task_manager.get_task(self.task_id)
-        if not task:
-            raise TaskExecutionError(f"Task {self.task_id} not found")
-        
-        if not hasattr(task, "run") or not callable(task.run):
-            raise TaskExecutionError(f"Task {self.task_id} does not have a run method")
-        
+        # Use the task manager directly
         if timeout:
             try:
-                return await asyncio.wait_for(task.run(context), timeout)
+                return await asyncio.wait_for(self.task_manager.run(context), timeout)
             except asyncio.TimeoutError:
                 raise TaskExecutionError(f"Task execution timed out after {timeout} seconds")
         else:
-            return await task.run(context)
+            return await self.task_manager.run(context)
     
     async def _execute_task_with_retry(self, context: Dict[str, Any]) -> str:
         """Execute the task with retry logic."""
@@ -497,6 +508,20 @@ class TaskTreeFlowManager:
     def get_roots(self) -> List[TaskNode]:
         """Get all root nodes."""
         return list(self.roots.values())
+    
+    def set_as_root(self, task_id: str) -> None:
+        """
+        Mark a task as a root task.
+        
+        Args:
+            task_id: ID of the task to set as root
+        """
+        if task_id not in self.nodes:
+            raise ValueError(f"Task node {task_id} not found")
+        
+        # Add to roots if not already there
+        if task_id not in self.roots:
+            self.roots[task_id] = self.nodes[task_id]
     
     def get_execution_order(self) -> List[TaskNode]:
         """Get nodes in execution order (topological sort)."""

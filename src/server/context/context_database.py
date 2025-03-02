@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import backoff
 from tqdm.asyncio import tqdm
 import numpy as np
-from .vector_store import VectorStore, VectorStoreConfig
+from .chroma_vector_store import ChromaVectorStore, VectorStoreConfig
 from openai import OpenAI
 import json
 import chromadb
@@ -29,8 +29,22 @@ class ContextDatabase:
         self.batch_size = batch_size
         self._setup_logging()
         
+        # Initialize vector store
+        self.vector_store = ChromaVectorStore(
+            config=VectorStoreConfig(
+                batch_size=batch_size,
+                persist_directory=persist_directory
+            ),
+            base_path=persist_directory
+        )
+        
+        # Initialize OpenAI client for embeddings
+        self.client = OpenAI(
+            api_key=os.environ.get("OPENAI_API_KEY")
+        )
+        
         # Initialize ChromaDB client
-        self.client = chromadb.PersistentClient(
+        self.chromadb_client = chromadb.PersistentClient(
             path=str(Path(persist_directory) / "chroma"),
             settings=chromadb.Settings(
                 anonymized_telemetry=False,
@@ -39,12 +53,14 @@ class ContextDatabase:
         )
         
         # Initialize embedding function
-        self.embedding_function = chromadb.utils.embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.getenv("OPENAI_API_KEY"),
+        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=os.environ.get("OPENAI_API_KEY"),
             model_name="text-embedding-3-small"
         )
         
+        # Initialize collections
         self._initialize_collections()
+        
         self.executor = ThreadPoolExecutor(max_workers=4)
         
         # Initialize OpenAI client
@@ -72,8 +88,14 @@ class ContextDatabase:
         """Initialize collections in ChromaDB."""
         try:
             # Initialize main collection for contexts
-            self.collection = self.client.get_or_create_collection(
+            self.collection = self.chromadb_client.get_or_create_collection(
                 name="contexts",
+                embedding_function=self.embedding_function
+            )
+            
+            # Initialize code collection
+            self.code_collection = self.chromadb_client.get_or_create_collection(
+                name="code_contexts",
                 embedding_function=self.embedding_function
             )
             
@@ -84,30 +106,20 @@ class ContextDatabase:
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
     async def _safe_embed(self, texts: List[str]) -> np.ndarray:
-        """Safely generate embeddings with retry logic."""
-        # Validate input texts
-        if not texts or not any(text.strip() for text in texts):
-            self.logger.warning("Empty texts provided for embedding")
-            return []
-            
-        # Filter out empty strings and normalize texts
-        valid_texts = [text.strip() for text in texts if text and text.strip()]
-        if not valid_texts:
-            self.logger.warning("No valid texts after filtering")
-            return []
-            
+        """Safely embed texts with error handling and retries."""
         try:
-            # Use OpenAI's embedding API with the client instance
-            response = self.openai_client.embeddings.create(
-                input=valid_texts,
-                model=self.embeddings["model"]
-            )
-            return [data.embedding for data in response.data]
+            # Use the vector store's embedding function
+            embeddings = []
+            for text in texts:
+                response = await self.client.embeddings.create(
+                    input=text,
+                    model="text-embedding-3-small"
+                )
+                embeddings.append(response.data[0].embedding)
+            return embeddings
         except Exception as e:
-            self.logger.error(f"Embedding generation failed: {str(e)}")
-            # For testing/fallback, return random embeddings
-            dim = 1536  # OpenAI's default embedding dimension
-            return [list(np.random.uniform(-1, 1, dim)) for _ in valid_texts]
+            self.logger.error(f"Error embedding texts: {str(e)}")
+            raise
 
     async def ingest_code_directory(
         self,

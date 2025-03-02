@@ -1,15 +1,17 @@
 """Tests for the Cerebrum Data Catalog integration."""
 
 import pytest
+import pytest_asyncio
 from typing import Dict, Any, List
 from datetime import datetime
 
 from src.context_catalog.integration import CerebrumDataCatalog
 from src.context_catalog.metadata import AccessLevel
+from src.context_catalog.exceptions import AccessError
 
 
-@pytest.fixture
-async def catalog() -> CerebrumDataCatalog:
+@pytest_asyncio.fixture
+async def catalog():
     """Create a test catalog instance."""
     return CerebrumDataCatalog(
         storage_path="test_cerebrum_data",

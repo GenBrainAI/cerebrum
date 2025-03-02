@@ -92,4 +92,4 @@ class Tool(BaseModel):
         
         return super().model_validate(obj)
 
-Toolset.update_forward_refs()
+Toolset.model_rebuild()

@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any
 
-from src.server.context.vector_store import VectorStore, VectorStoreConfig
+from src.server.context.chroma_vector_store import ChromaVectorStore, VectorStoreConfig
 from src.server.context.knowledge_base import KnowledgeBase
 
 @pytest.fixture(scope="function")
@@ -45,8 +45,8 @@ def vector_store_config(temp_dir):
 
 @pytest.fixture
 def vector_store(vector_store_config):
-    """Fixture for VectorStore instance with cleanup."""
-    store = VectorStore(vector_store_config)
+    """Fixture for ChromaVectorStore instance with cleanup."""
+    store = ChromaVectorStore(config=vector_store_config, base_path=os.path.join(vector_store_config.persist_directory))
     return store
 
 @pytest.fixture

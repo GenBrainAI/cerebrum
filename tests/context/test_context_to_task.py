@@ -20,82 +20,95 @@ class MockVectorStore:
         self.client = self  # Make the mock self-referential for the ChromaDB interface
         self.stored_documents = {}
         self.embedding_function = lambda x: [0.0] * 384  # Mock embedding function that returns zero vector
+        self.indices = {}  # For compatibility with both old and new interfaces
         
     def get_or_create_collection(self, name: str, embedding_function: Any = None):
         """Mock ChromaDB collection creation."""
+        self.indices[name] = self  # Store the collection in indices for compatibility
         return self  # Return self as the collection
         
     def add(self, documents: List[str], metadatas: List[Dict], ids: List[str]):
         """Mock ChromaDB add method."""
         for doc, metadata, id in zip(documents, metadatas, ids):
             self.stored_documents[id] = {
-                "content": doc,
+                "document": doc,
                 "metadata": metadata
             }
-            # Also save to metadata file for backward compatibility
-            metadata_file = self.metadata_dir / f"{id}.json"
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f)
-                
+            
+    def query(self, query_texts: List[str], n_results: int = 5, where: Optional[Dict] = None):
+        """Mock ChromaDB query method."""
+        # Simple mock implementation that returns all documents
+        results = list(self.stored_documents.items())[:n_results]
+        
+        return {
+            "ids": [[id for id, _ in results]],
+            "documents": [[doc["document"] for _, doc in results]],
+            "metadatas": [[doc["metadata"] for _, doc in results]],
+            "distances": [[0.1] * len(results)]  # Mock distances
+        }
+        
+    async def create_index(self, name: str, description: Optional[str] = None) -> str:
+        """Create a new index/collection for specific content."""
+        index_name = f"vs_{name}"
+        self.indices[index_name] = self
+        return index_name
+        
     async def get_filtered_items(self, filters: Dict, limit: int = 5) -> List[Dict]:
         """Get items matching the filters."""
-        print(f"\nDebug - MockVectorStore.get_filtered_items:")
-        print(f"Filters: {filters}")
-        print(f"Limit: {limit}")
-        print(f"Stored documents: {self.stored_documents}")
+        # This method is for compatibility with the old interface
+        results = []
         
-        if 'file_ids' in filters:
-            results = []
-            for file_id in filters['file_ids']:
-                # First check in stored documents
-                if file_id in self.stored_documents:
-                    doc = self.stored_documents[file_id]
-                    results.append({
-                        "content": doc["content"],
-                        "metadata": doc["metadata"]
-                    })
-                    continue
-                    
-                # Fall back to metadata file
-                metadata_file = self.metadata_dir / f"{file_id}.json"
-                if metadata_file.exists():
-                    with open(metadata_file, 'r') as f:
-                        metadata = json.load(f)
-                        results.append({
-                            "content": metadata.get('content', ''),
-                            "metadata": metadata
-                        })
+        # Apply filters if provided
+        filtered_docs = {}
+        if filters and 'filters' in filters:
+            for id, doc in self.stored_documents.items():
+                match = True
+                for key, value in filters['filters'].items():
+                    if key == 'file_ids' and id not in value:
+                        match = False
+                        break
+                    elif key in doc['metadata'] and doc['metadata'][key] != value:
+                        match = False
+                        break
+                if match:
+                    filtered_docs[id] = doc
+        else:
+            filtered_docs = self.stored_documents
             
-            print(f"Returning results: {results}")
-            return results[:limit]
-        return []
+        # Convert to list and limit results
+        for id, doc in list(filtered_docs.items())[:limit]:
+            results.append({
+                "id": id,
+                "content": doc["document"],
+                "metadata": doc["metadata"]
+            })
+            
+        return results
         
     async def get_content(self, content_id: str) -> Optional[Dict[str, Any]]:
         """Get content by ID."""
-        # For test_chunk_1, return test content directly
-        if content_id == "test_chunk_1":
+        if content_id in self.stored_documents:
+            doc = self.stored_documents[content_id]
             return {
-                "content": "This is a test chunk",
-                "metadata": {
-                    "index_name": "test_index",
-                    "chunk_ids": ["test_chunk_1"],
-                    "file_ids": ["test_chunk_1"]
-                }
+                "content": doc["document"],
+                "metadata": doc["metadata"]
             }
-            
-        # Otherwise try to read from file
-        metadata_file = self.metadata_dir / f"{content_id}.json"
-        if metadata_file.exists():
-            print(f"Found metadata file: {metadata_file}")
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-                print(f"Loaded metadata: {metadata}")
-                return {
-                    "content": metadata.get('content', ''),
-                    "metadata": metadata
-                }
-        print(f"Metadata file not found: {metadata_file}")
         return None
+        
+    async def search_index(self, index_name: str, query: str, 
+                          filters: Optional[Dict[str, Any]] = None, 
+                          limit: int = 5) -> List[Dict[str, Any]]:
+        """Search a specific index for relevant documents."""
+        # This is a simplified implementation for testing
+        results = []
+        for id, doc in list(self.stored_documents.items())[:limit]:
+            results.append({
+                "id": id,
+                "content": doc["document"],
+                "metadata": doc["metadata"],
+                "relevance": 0.9  # Mock relevance score
+            })
+        return results
 
 class MockContextDB:
     def __init__(self):

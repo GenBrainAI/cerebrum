@@ -68,13 +68,18 @@ async def test_openai_completion():
 async def test_anthropic_completion():
     # Mock the Anthropic client
     mock_client = AsyncMock()
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text="Hello, World!")]
+    mock_response = AsyncMock()
+    mock_content = MagicMock()
+    mock_content.text = "Hello, World!"
+    mock_response.content = [mock_content]
     mock_client.messages.create.return_value = mock_response
 
     # Create a ToolsOperator instance with the mocked client
     with patch('anthropic.AsyncAnthropic', return_value=mock_client):
+        # We need to patch the client initialization in the operator
         operator = ToolsOperator(api_provider="anthropic")
+        # Directly set the mocked client
+        operator.client = mock_client
         
         messages = [Message(role="user", content="Say 'Hello, World!'")]
         curried_proxy = CurriedProxy()
@@ -86,6 +91,14 @@ async def test_anthropic_completion():
             model="claude-3-5-sonnet-20240620",
             curried_proxy=curried_proxy
         )
+        
+        # Verify the mock was called with the expected parameters
+        mock_client.messages.create.assert_called_once()
+        call_args = mock_client.messages.create.call_args[1]
+        assert call_args["model"] == "claude-3-5-sonnet-20240620"
+        assert call_args["messages"][0]["content"] == "Say 'Hello, World!'"
+        
+        # Verify the response
         assert response == "Hello, World!"
 
 @pytest.mark.asyncio

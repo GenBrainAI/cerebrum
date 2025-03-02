@@ -7,8 +7,9 @@ from unittest.mock import MagicMock, patch
 from typing import List, Dict, Any, Optional
 import json
 import shutil
+import tempfile
 
-from src.server.context.vector_store import VectorStore, VectorStoreConfig
+from src.server.context.chroma_vector_store import ChromaVectorStore, VectorStoreConfig
 from src.server.context.context_provider import ContextProvider, ContextReference
 from src.server.models.task_context_model import TaskContext
 from src.server.models.tasks_manager import TasksManager
@@ -217,22 +218,31 @@ The development of transformer models marked a significant milestone in AI histo
 mechanisms and parallel processing capabilities, have set new benchmarks in language understanding and generation.
 """
 
-@pytest.fixture
-def vector_store() -> VectorStore:
-    """Create a test vector store instance."""
+@pytest_asyncio.fixture
+async def vector_store() -> ChromaVectorStore:
+    """Create a test vector store with a test configuration."""
+    # Create a temporary directory for testing
+    temp_dir = tempfile.mkdtemp(prefix="test_chroma_db_")
+    
+    # Create a test configuration
     config = VectorStoreConfig(
-        chunk_size=200,
+        batch_size=10,
+        chunk_size=500,
         chunk_overlap=50,
-        persist_directory="test_vector_store"
+        collection_name="test_collection",
+        persist_directory=temp_dir
     )
-    store = VectorStore(config=config, base_path="test_persistent_state/vector_store")
+    
+    # Create the vector store
+    store = ChromaVectorStore(config=config, base_path=temp_dir)
+    
     yield store
+    
     # Cleanup after tests
-    for idx in store.indices.values():
-        try:
-            store.client.delete_collection(idx.name)
-        except:
-            pass
+    try:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    except Exception as e:
+        print(f"Warning: Could not clean up test vector store: {e}")
 
 @pytest_asyncio.fixture
 async def context_provider() -> ContextProvider:
@@ -362,7 +372,7 @@ async def test_vector_store_file_processing(vector_store):
             assert 0 <= content.get("metadata", {}).get("chunk_index") < len(chunk_ids) - 1, "chunk_index should be within bounds"
 
 @pytest.mark.asyncio
-async def test_vector_context_in_task(vector_store: VectorStore, 
+async def test_vector_context_in_task(vector_store: ChromaVectorStore, 
                                     context_provider: ContextProvider, 
                                     mock_task: Dict[str, Any]):
     """Test adding vector context to a task and retrieving it."""

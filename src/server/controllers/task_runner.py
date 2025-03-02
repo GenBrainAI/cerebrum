@@ -65,6 +65,12 @@ class TaskExecutor:
         """Explicitly forward tasksmanager_id property to task."""
         return self.task.tasksmanager_id
 
+    def get_task(self, task_id: str) -> Optional[Task]:
+        """Get the task with the given ID if it matches the wrapped task's ID."""
+        if task_id == self.task.id:
+            return self.task
+        return None
+
 class TaskRunner:
     """Runner for executing tasks."""
 

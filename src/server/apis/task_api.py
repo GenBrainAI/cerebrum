@@ -18,9 +18,13 @@ from ..models.tasks_manager import TasksManager
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..controllers.task_runner import TaskRunner
 from ..models.error import Error
-from ..controllers.tasks_tree_controller import (
-    TaskTreeManager, ExecutionConfig,
-    ExecutionStrategy
+from ..controllers.task_tree_flow import TaskTreeFlowManager
+from ..models.task_tree_flow import (
+    TaskTreeFlow,
+    TaskTreeFlowNode,
+    TaskNodeState,
+    ExecutionConfig,
+    ExecutionStrategy,
 )
 from pydantic import BaseModel
 
@@ -30,7 +34,7 @@ router = APIRouter()
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
 #TODO: should be part of the persistence model
-tasksmanager_trees: Dict[str, TaskTreeManager] = {}
+tasksmanager_trees: Dict[str, TaskTreeFlowManager] = {}
 
 # Additional request models for tree operations
 class TaskTreeRelation(BaseModel):
@@ -185,8 +189,11 @@ async def run_task(
             if not task:
                 raise HTTPException(status_code=404, detail="Task not found")
             
-            # Update node's task with executor
-            node.task = task_runner.wrap_task(task)
+            # Create task executor
+            task_executor = task_runner.wrap_task(task)
+            
+            # Update node's task manager
+            node.task_manager = task_executor
             
             # Execute as part of tree
             result = await node.run(context)
@@ -351,7 +358,7 @@ async def set_task_as_root(
         
         # Get or create tree manager for this tasksmanager
         if tasksmanager_id not in tasksmanager_trees:
-            tasksmanager_trees[tasksmanager_id] = TaskTreeManager()
+            tasksmanager_trees[tasksmanager_id] = TaskTreeFlowManager()
         tree_manager = tasksmanager_trees[tasksmanager_id]
         
         # Check if task is already in another tree
@@ -363,7 +370,10 @@ async def set_task_as_root(
         
         # Create node with wrapped task and set as root
         task_executor = task_runner.wrap_task(task)
-        node = tree_manager.create_node(task_executor)
+        # Set the task manager for the tree manager
+        tree_manager.task_manager = task_executor
+        # Create node with task ID
+        node = tree_manager.create_node(task_id=task_id)
         try:
             tree_manager.set_as_root(task_id)
         except Exception as e:
@@ -455,10 +465,12 @@ async def add_task_relation(
         # Create nodes if they don't exist in tree
         if relation.parent_id not in tree_manager.nodes:
             parent_executor = task_runner.wrap_task(parent_task)
-            tree_manager.create_node(parent_executor)
+            tree_manager.task_manager = parent_executor
+            tree_manager.create_node(task_id=relation.parent_id)
         if relation.child_id not in tree_manager.nodes:
             child_executor = task_runner.wrap_task(child_task)
-            tree_manager.create_node(child_executor)
+            tree_manager.task_manager = child_executor
+            tree_manager.create_node(task_id=relation.child_id)
         
         # Add relationship
         try:
