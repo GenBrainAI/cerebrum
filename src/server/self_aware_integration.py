@@ -33,6 +33,16 @@ from src.server.self_modification.safety_validator import SafetyValidator
 from src.server.self_modification.integration_manager import IntegrationManager
 from src.server.self_modification.agentic_framework import AgenticDevelopmentController
 
+# Import planning components
+from src.server.planning.goal_decomposition import (
+    GoalDecompositionEngine,
+    GoalType,
+    DecompositionStrategy,
+    ResourceEstimate,
+    SubGoal,
+    DecomposedGoal
+)
+
 logger = logging.getLogger(__name__)
 
 class SelfAwareSystem:
@@ -45,6 +55,7 @@ class SelfAwareSystem:
     - System Access Layer (Package Manager, Git Manager, Test Runner)
     - Observability Layer (Supervision Hub, Resource Monitor, Metrics Collector)
     - Self-Modification Engine (Code Generator, Safety Validator, Integration Manager, Agentic Development Controller)
+    - Planning Layer (Goal Decomposition Engine)
     """
     
     def __init__(self, storage_path: Optional[str] = None):
@@ -106,6 +117,11 @@ class SelfAwareSystem:
             cognitive_orchestrator=self.cognitive_orchestrator
         )
         
+        # Initialize Planning Layer
+        self.goal_decomposition_engine = GoalDecompositionEngine(
+            knowledge_system=self.knowledge_system
+        )
+        
         logger.info(f"Self-Aware System initialized with storage path: {self.storage_path}")
 
     async def initialize(self):
@@ -143,7 +159,8 @@ class SelfAwareSystem:
         # Create and register Planning Worker
         planning_worker = PlanningWorker(
             knowledge_system=self.knowledge_system,
-            parameter_manager=self.parameter_manager
+            parameter_manager=self.parameter_manager,
+            goal_decomposition_engine=self.goal_decomposition_engine
         )
         await self.cognitive_orchestrator.register_worker(
             worker_type=WorkerType.PLANNING,
@@ -901,4 +918,112 @@ class SelfAwareSystem:
             Dictionary containing development cycle status.
         """
         logger.info(f"Getting status for development cycle: {cycle_id}")
-        return await self.agentic_controller.get_cycle_status(cycle_id) 
+        return await self.agentic_controller.get_cycle_status(cycle_id)
+    
+    # New methods for Goal Decomposition Engine
+    
+    async def decompose_goal(
+        self, 
+        goal: Dict[str, Any],
+        strategy: str = "TOP_DOWN",
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Decompose a high-level goal into manageable subgoals.
+        
+        Args:
+            goal: Dictionary containing goal information (name, description, type, etc.)
+            strategy: Decomposition strategy to use (TOP_DOWN, BOTTOM_UP, ITERATIVE, DOMAIN_SPECIFIC)
+            context: Additional context for decomposition
+            
+        Returns:
+            Dictionary representation of the decomposed goal
+        """
+        try:
+            # Convert strategy string to enum
+            decomposition_strategy = DecompositionStrategy.from_str(strategy)
+            
+            # Decompose the goal
+            decomposed_goal = await self.goal_decomposition_engine.decompose_goal(
+                goal=goal,
+                strategy=decomposition_strategy,
+                context=context
+            )
+            
+            # Record in episodic memory
+            self.knowledge_system.add_episodic_memory(
+                title=f"Goal Decomposition: {goal.get('name', 'Unnamed Goal')}",
+                description=f"Decomposed goal using {strategy} strategy",
+                timestamp=datetime.now(),
+                actors=["Self-Aware Cerebrum"],
+                context={
+                    "goal_id": decomposed_goal.id,
+                    "strategy": strategy,
+                    "subgoal_count": len(decomposed_goal.subgoals)
+                },
+                tags=["goal_decomposition", "planning", "system_activity"]
+            )
+            
+            return decomposed_goal.to_dict()
+            
+        except Exception as e:
+            logger.error(f"Error decomposing goal: {str(e)}")
+            raise
+    
+    async def get_decomposed_goal(self, goal_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a decomposed goal by ID.
+        
+        Args:
+            goal_id: ID of the decomposed goal
+            
+        Returns:
+            Dictionary representation of the decomposed goal, or None if not found
+        """
+        decomposed_goal = await self.goal_decomposition_engine.get_decomposed_goal(goal_id)
+        if decomposed_goal:
+            return decomposed_goal.to_dict()
+        return None
+    
+    async def prioritize_subgoals(self, goal_id: str) -> List[str]:
+        """
+        Prioritize subgoals within a decomposed goal.
+        
+        Args:
+            goal_id: ID of the decomposed goal
+            
+        Returns:
+            List of subgoal IDs in priority order
+        """
+        return await self.goal_decomposition_engine.prioritize_subgoals(goal_id)
+    
+    async def estimate_goal_resources(self, goal_id: str) -> Dict[str, Any]:
+        """
+        Estimate resources for a decomposed goal.
+        
+        Args:
+            goal_id: ID of the decomposed goal
+            
+        Returns:
+            Dictionary containing resource estimates
+        """
+        resource_estimate = await self.goal_decomposition_engine.estimate_resources(goal_id)
+        return {
+            "time_hours": resource_estimate.time_hours,
+            "complexity": resource_estimate.complexity,
+            "knowledge_requirements": resource_estimate.knowledge_requirements,
+            "dependencies": resource_estimate.dependencies,
+            "risk_level": resource_estimate.risk_level
+        }
+    
+    async def validate_goal_decomposition(self, goal_id: str) -> Dict[str, Any]:
+        """
+        Validate a goal decomposition for completeness and consistency.
+        
+        Args:
+            goal_id: ID of the decomposed goal
+            
+        Returns:
+            Dictionary containing validation results
+        """
+        return await self.goal_decomposition_engine.validate_decomposition(goal_id) 

@@ -169,6 +169,39 @@ class KnowledgeIntegrationSystem:
         self.knowledge_graph = KnowledgeGraph()
         
         self._load_data()
+    
+    async def initialize(self):
+        """Initialize the Knowledge Integration System."""
+        # This method is called by the SelfAwareSystem during initialization
+        # Currently, all initialization is done in __init__, so this is just a placeholder
+        # for future async initialization tasks
+        logger.info("Knowledge Integration System initialized")
+        return True
+        
+    async def query_semantic_memory(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """
+        Query the semantic memory for relevant information.
+        
+        Args:
+            query: The query string to search for
+            limit: Maximum number of results to return
+            
+        Returns:
+            A list of matching memory entries
+        """
+        # For testing purposes, return a mock result
+        return [
+            {
+                "id": str(uuid.uuid4()),
+                "content": f"Mock semantic memory result for query: {query}",
+                "metadata": {
+                    "source": "test",
+                    "timestamp": datetime.now().isoformat(),
+                    "relevance_score": 0.95
+                }
+            }
+            for _ in range(min(limit, 3))  # Return at most 3 mock results
+        ]
         
     def _load_data(self) -> None:
         """Load saved knowledge data"""

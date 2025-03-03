@@ -169,7 +169,7 @@ async def test_get_index_contents(vector_store):
         "embeddings": None
     }
     
-    with patch.dict(vector_store.indices, {f"vs_{index_name}": mock_collection}):
+    with patch.dict(vector_store.indices, {index_name: mock_collection}):
         contents = await vector_store.get_index_contents(index_name)
         
         # Check that we got the expected contents
@@ -214,6 +214,7 @@ async def test_delete_index(vector_store):
         
         # Check that the index was deleted
         assert result is True
+        # The delete_collection method should be called with the full index name (with vs_ prefix)
         vector_store.client.delete_collection.assert_called_once_with(name=f"vs_{index_name}")
 
 @pytest.mark.asyncio

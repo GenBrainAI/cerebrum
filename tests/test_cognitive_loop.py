@@ -49,27 +49,27 @@ class TestCognitiveLoopOrchestrator:
         shutil.rmtree(temp_dir)
 
     @pytest.fixture
-    def orchestrator(self, temp_dir):
+    async def orchestrator(self, temp_dir):
         """Create an orchestrator with a temporary storage path"""
         orchestrator = CognitiveLoopOrchestrator(storage_path=temp_dir)
         
         # Register mock workers
-        orchestrator.register_worker(
+        await orchestrator.register_worker(
             WorkerType.REQUIREMENTS,
             MockWorker(WorkerType.REQUIREMENTS)
         )
         
-        orchestrator.register_worker(
+        await orchestrator.register_worker(
             WorkerType.PLANNING,
             MockWorker(WorkerType.PLANNING)
         )
         
-        orchestrator.register_worker(
+        await orchestrator.register_worker(
             WorkerType.IMPLEMENTATION,
             MockWorker(WorkerType.IMPLEMENTATION)
         )
         
-        orchestrator.register_worker(
+        await orchestrator.register_worker(
             WorkerType.EVALUATION,
             MockWorker(WorkerType.EVALUATION)
         )
@@ -358,14 +358,19 @@ class TestCognitiveLoopOrchestrator:
             worker_type=WorkerType.EVALUATION
         )
         
-        # Run the cognitive cycle
-        await orchestrator.run_cognitive_cycle()
-        
-        # All tasks should be completed
-        assert orchestrator.get_task(understand_id).status == TaskStatus.COMPLETED
-        assert orchestrator.get_task(plan_id).status == TaskStatus.COMPLETED
-        assert orchestrator.get_task(execute_id).status == TaskStatus.COMPLETED
-        assert orchestrator.get_task(reflect_id).status == TaskStatus.COMPLETED
-        
-        # The phase should be back to UNDERSTAND
-        assert orchestrator.get_current_phase() == CognitivePhase.UNDERSTAND 
+        # Run the cognitive cycle with a timeout to prevent endless loops
+        try:
+            # Set a timeout of 2 seconds to prevent the test from hanging
+            await asyncio.wait_for(orchestrator.run_cognitive_cycle(), timeout=2.0)
+            
+            # All tasks should be completed
+            assert orchestrator.get_task(understand_id).status == TaskStatus.COMPLETED
+            assert orchestrator.get_task(plan_id).status == TaskStatus.COMPLETED
+            assert orchestrator.get_task(execute_id).status == TaskStatus.COMPLETED
+            assert orchestrator.get_task(reflect_id).status == TaskStatus.COMPLETED
+            
+            # The phase should be back to UNDERSTAND
+            assert orchestrator.get_current_phase() == CognitivePhase.UNDERSTAND
+        except asyncio.TimeoutError:
+            # If we hit a timeout, the test fails but with a clear message
+            pytest.fail("Cognitive cycle execution timed out - possible infinite loop detected") 

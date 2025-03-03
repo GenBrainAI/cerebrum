@@ -5,6 +5,9 @@ import os
 import time
 from datetime import datetime
 import random
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ParameterSet(BaseModel):
     """Configuration parameters for an AI model"""
@@ -82,6 +85,14 @@ class AIParameterManager:
         
         self._load_data()
         self._register_default_task_types()
+    
+    async def initialize(self):
+        """Initialize the AI Parameter Manager."""
+        # This method is called by the SelfAwareSystem during initialization
+        # Currently, all initialization is done in __init__, so this is just a placeholder
+        # for future async initialization tasks
+        logger.info("AI Parameter Manager initialized")
+        return True
     
     def _load_data(self) -> None:
         """Load saved parameter sets and task types"""

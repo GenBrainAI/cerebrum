@@ -107,6 +107,27 @@ class CognitiveLoopOrchestrator:
         
         self._load_data()
     
+    async def initialize(self):
+        """Initialize the Cognitive Loop Orchestrator."""
+        # This method is called by the SelfAwareSystem during initialization
+        # Currently, all initialization is done in __init__, so this is just a placeholder
+        # for future async initialization tasks
+        logger.info("Cognitive Loop Orchestrator initialized")
+        return True
+    
+    async def register_worker(self, worker_type: WorkerType, worker: WorkerInterface) -> None:
+        """Register a worker for a specific worker type.
+        
+        Args:
+            worker_type: Type of worker to register
+            worker: Worker instance to register
+        """
+        if worker_type not in self.workers:
+            self.workers[worker_type] = []
+        
+        self.workers[worker_type].append(worker)
+        logger.info(f"Registered worker for {worker_type.value}")
+    
     def _load_data(self) -> None:
         """Load saved cognitive loop data"""
         tasks_path = os.path.join(self.storage_path, "tasks.json")
@@ -175,10 +196,6 @@ class CognitiveLoopOrchestrator:
                 'current_phase': self.current_phase
             }
             json.dump(state, f, indent=2)
-    
-    def register_worker(self, worker_type: WorkerType, worker: WorkerInterface) -> None:
-        """Register a worker for a specific type"""
-        self.workers[worker_type].append(worker)
     
     def create_task(self, title: str, description: str, phase: CognitivePhase, 
                    worker_type: Optional[WorkerType] = None, priority: TaskPriority = TaskPriority.MEDIUM,
@@ -554,12 +571,19 @@ class CognitiveLoopOrchestrator:
         self.set_current_phase(CognitivePhase.UNDERSTAND)
         
         # Process each phase until completion
-        while True:
+        max_iterations = 100  # Prevent infinite loops
+        iteration_count = 0
+        
+        while iteration_count < max_iterations:
+            iteration_count += 1
             phase_completed = await self.process_current_phase()
             
             if phase_completed and self.current_phase == CognitivePhase.UNDERSTAND:
                 # We've completed a full cycle
                 break
+        
+        if iteration_count >= max_iterations:
+            logger.warning(f"Cognitive cycle reached maximum iterations ({max_iterations}). Possible infinite loop detected.")
     
     async def run_continuous(self, interval_seconds: float = 1.0) -> None:
         """Run the cognitive loop continuously"""
@@ -569,6 +593,16 @@ class CognitiveLoopOrchestrator:
 
 class RequirementsWorker(WorkerInterface):
     """Worker for requirements analysis tasks"""
+    
+    def __init__(self, knowledge_system=None, parameter_manager=None):
+        """Initialize the RequirementsWorker.
+        
+        Args:
+            knowledge_system: Knowledge Integration System for context
+            parameter_manager: AI Parameter Manager for optimal parameters
+        """
+        self.knowledge_system = knowledge_system
+        self.parameter_manager = parameter_manager
     
     async def process_task(self, task: CognitiveTask) -> CognitiveTask:
         """Process a requirements analysis task"""
@@ -594,17 +628,89 @@ class RequirementsWorker(WorkerInterface):
 class PlanningWorker(WorkerInterface):
     """Worker for planning tasks"""
     
+    def __init__(self, knowledge_system=None, parameter_manager=None, goal_decomposition_engine=None):
+        """Initialize the PlanningWorker.
+        
+        Args:
+            knowledge_system: Knowledge Integration System for context
+            parameter_manager: AI Parameter Manager for optimal parameters
+            goal_decomposition_engine: Goal Decomposition Engine for breaking down goals
+        """
+        self.knowledge_system = knowledge_system
+        self.parameter_manager = parameter_manager
+        self.goal_decomposition_engine = goal_decomposition_engine
+    
     async def process_task(self, task: CognitiveTask) -> CognitiveTask:
         """Process a planning task"""
-        # Implementation would depend on specific planning logic
-        # This is a placeholder for the actual implementation
-        
-        # Update task with result
-        task.result = {
-            "plan_created": True,
-            "steps": ["Step 1", "Step 2", "Step 3"]
-        }
-        task.update_status(TaskStatus.COMPLETED)
+        try:
+            # Extract goal information from task
+            goal_info = {
+                "name": task.title,
+                "description": task.description,
+                "type": task.context.get("goal_type", "GENERAL"),
+                "metadata": {
+                    "task_id": task.id,
+                    "priority": str(task.priority.name).lower(),
+                    "created_at": task.created_at.isoformat()
+                }
+            }
+            
+            # Extract decomposition strategy from context or use default
+            strategy_str = task.context.get("decomposition_strategy", "TOP_DOWN")
+            
+            # Convert string to DecompositionStrategy enum
+            try:
+                from src.server.planning.goal_decomposition import DecompositionStrategy
+                strategy = DecompositionStrategy.from_str(strategy_str)
+            except (ValueError, ImportError) as e:
+                logger.warning(f"Error converting strategy string: {e}, using TOP_DOWN")
+                from src.server.planning.goal_decomposition import DecompositionStrategy
+                strategy = DecompositionStrategy.TOP_DOWN
+            
+            # Use Goal Decomposition Engine if available
+            if self.goal_decomposition_engine:
+                # Decompose the goal
+                decomposed_goal = await self.goal_decomposition_engine.decompose_goal(
+                    goal=goal_info,
+                    strategy=strategy,
+                    context=task.context
+                )
+                
+                # Prioritize subgoals
+                prioritized_subgoals = await self.goal_decomposition_engine.prioritize_subgoals(decomposed_goal.id)
+                
+                # Estimate resources
+                resource_estimate = await self.goal_decomposition_engine.estimate_resources(decomposed_goal.id)
+                
+                # Update task with result
+                task.result = {
+                    "plan_created": True,
+                    "decomposed_goal_id": decomposed_goal.id,
+                    "goal_name": decomposed_goal.name,
+                    "subgoal_count": len(decomposed_goal.subgoals),
+                    "prioritized_subgoals": prioritized_subgoals,
+                    "resource_estimate": {
+                        "time_hours": resource_estimate.time_hours,
+                        "complexity": resource_estimate.complexity,
+                        "knowledge_requirements": resource_estimate.knowledge_requirements,
+                        "dependencies": resource_estimate.dependencies,
+                        "risk_level": resource_estimate.risk_level
+                    },
+                    "critical_path": decomposed_goal.get_critical_path()
+                }
+            else:
+                # Fallback to simple planning if Goal Decomposition Engine is not available
+                task.result = {
+                    "plan_created": True,
+                    "steps": ["Step 1", "Step 2", "Step 3"],
+                    "note": "Using fallback planning as Goal Decomposition Engine is not available"
+                }
+            
+            task.update_status(TaskStatus.COMPLETED)
+            
+        except Exception as e:
+            task.error = f"Error in planning task: {str(e)}"
+            task.update_status(TaskStatus.FAILED)
         
         return task
     
@@ -612,11 +718,25 @@ class PlanningWorker(WorkerInterface):
         """Check if this worker can handle the given task"""
         return task.worker_type == WorkerType.PLANNING or (
             task.phase == CognitivePhase.PLAN and
-            "plan" in task.title.lower() or "plan" in task.description.lower()
+            ("plan" in task.title.lower() or "plan" in task.description.lower())
         )
 
 class ImplementationWorker(WorkerInterface):
     """Worker for implementation tasks"""
+    
+    def __init__(self, knowledge_system=None, parameter_manager=None, code_generator=None, safety_validator=None):
+        """Initialize the ImplementationWorker.
+        
+        Args:
+            knowledge_system: Knowledge Integration System for context
+            parameter_manager: AI Parameter Manager for optimal parameters
+            code_generator: Code Generator for generating code
+            safety_validator: Safety Validator for validating code
+        """
+        self.knowledge_system = knowledge_system
+        self.parameter_manager = parameter_manager
+        self.code_generator = code_generator
+        self.safety_validator = safety_validator
     
     async def process_task(self, task: CognitiveTask) -> CognitiveTask:
         """Process an implementation task"""
@@ -641,6 +761,18 @@ class ImplementationWorker(WorkerInterface):
 
 class EvaluationWorker(WorkerInterface):
     """Worker for evaluation tasks"""
+    
+    def __init__(self, knowledge_system=None, parameter_manager=None, test_runner=None):
+        """Initialize the EvaluationWorker.
+        
+        Args:
+            knowledge_system: Knowledge Integration System for context
+            parameter_manager: AI Parameter Manager for optimal parameters
+            test_runner: Test Runner for running tests
+        """
+        self.knowledge_system = knowledge_system
+        self.parameter_manager = parameter_manager
+        self.test_runner = test_runner
     
     async def process_task(self, task: CognitiveTask) -> CognitiveTask:
         """Process an evaluation task"""

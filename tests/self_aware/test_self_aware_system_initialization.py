@@ -40,6 +40,7 @@ def mock_components():
     mock_code_generator = MagicMock()
     mock_safety_validator = MagicMock()
     mock_test_runner = MagicMock()
+    mock_goal_decomposition_engine = MagicMock()
     
     return {
         "parameter_manager": mock_parameter_manager,
@@ -47,7 +48,8 @@ def mock_components():
         "cognitive_orchestrator": mock_cognitive_orchestrator,
         "code_generator": mock_code_generator,
         "safety_validator": mock_safety_validator,
-        "test_runner": mock_test_runner
+        "test_runner": mock_test_runner,
+        "goal_decomposition_engine": mock_goal_decomposition_engine
     }
 
 @pytest.mark.asyncio
@@ -62,6 +64,7 @@ async def test_self_aware_system_initialization(temp_dir, mock_components):
          patch('src.server.self_aware_integration.CodeGenerator', return_value=mock_components["code_generator"]), \
          patch('src.server.self_aware_integration.SafetyValidator', return_value=mock_components["safety_validator"]), \
          patch('src.server.self_aware_integration.TestRunner', return_value=mock_components["test_runner"]), \
+         patch('src.server.self_aware_integration.GoalDecompositionEngine', return_value=mock_components["goal_decomposition_engine"]), \
          patch('src.server.self_aware_integration.SelfAwareSystem.register_specialized_workers', new_callable=AsyncMock):
         
         # Create a SelfAwareSystem instance
@@ -97,6 +100,7 @@ async def test_register_specialized_workers(temp_dir, mock_components):
          patch('src.server.self_aware_integration.CodeGenerator', return_value=mock_components["code_generator"]), \
          patch('src.server.self_aware_integration.SafetyValidator', return_value=mock_components["safety_validator"]), \
          patch('src.server.self_aware_integration.TestRunner', return_value=mock_components["test_runner"]), \
+         patch('src.server.self_aware_integration.GoalDecompositionEngine', return_value=mock_components["goal_decomposition_engine"]), \
          patch('src.server.self_aware_integration.RequirementsWorker', return_value=mock_requirements_worker), \
          patch('src.server.self_aware_integration.PlanningWorker', return_value=mock_planning_worker), \
          patch('src.server.self_aware_integration.ImplementationWorker', return_value=mock_implementation_worker), \
@@ -141,6 +145,7 @@ async def test_worker_initialization(temp_dir, mock_components):
          patch('src.server.self_aware_integration.CodeGenerator', return_value=mock_components["code_generator"]), \
          patch('src.server.self_aware_integration.SafetyValidator', return_value=mock_components["safety_validator"]), \
          patch('src.server.self_aware_integration.TestRunner', return_value=mock_components["test_runner"]), \
+         patch('src.server.self_aware_integration.GoalDecompositionEngine', return_value=mock_components["goal_decomposition_engine"]), \
          patch('src.server.self_aware_integration.RequirementsWorker') as mock_requirements_worker_class, \
          patch('src.server.self_aware_integration.PlanningWorker') as mock_planning_worker_class, \
          patch('src.server.self_aware_integration.ImplementationWorker') as mock_implementation_worker_class, \
@@ -160,7 +165,8 @@ async def test_worker_initialization(temp_dir, mock_components):
         
         mock_planning_worker_class.assert_called_once_with(
             knowledge_system=mock_components["knowledge_system"],
-            parameter_manager=mock_components["parameter_manager"]
+            parameter_manager=mock_components["parameter_manager"],
+            goal_decomposition_engine=mock_components["goal_decomposition_engine"]
         )
         
         mock_implementation_worker_class.assert_called_once_with(
@@ -227,6 +233,10 @@ async def test_component_dependencies(temp_dir, mock_components):
     with patch('src.server.self_aware_integration.AIParameterManager', return_value=mock_components["parameter_manager"]), \
          patch('src.server.self_aware_integration.KnowledgeIntegrationSystem', return_value=mock_components["knowledge_system"]), \
          patch('src.server.self_aware_integration.CognitiveLoopOrchestrator', return_value=mock_components["cognitive_orchestrator"]), \
+         patch('src.server.self_aware_integration.CodeGenerator', return_value=mock_components["code_generator"]), \
+         patch('src.server.self_aware_integration.SafetyValidator', return_value=mock_components["safety_validator"]), \
+         patch('src.server.self_aware_integration.TestRunner', return_value=mock_components["test_runner"]), \
+         patch('src.server.self_aware_integration.GoalDecompositionEngine', return_value=mock_components["goal_decomposition_engine"]), \
          patch('src.server.self_aware_integration.SelfAwareSystem.register_specialized_workers', new_callable=AsyncMock):
         
         # Create a SelfAwareSystem instance
