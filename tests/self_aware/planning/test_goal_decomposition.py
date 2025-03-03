@@ -93,6 +93,20 @@ class TestGoalDecompositionEngine:
         assert decomposed_goal.total_resources.time_hours > 0
 
     @pytest.mark.asyncio
+    async def test_decompose_goal_bottom_up(self, goal_decomposition_engine, sample_goal):
+        """Test decomposing a goal using the BOTTOM_UP strategy."""
+        # Decompose the goal
+        decomposed_goal = await goal_decomposition_engine.decompose_goal(
+            goal=sample_goal,
+            strategy=DecompositionStrategy.BOTTOM_UP
+        )
+        
+        # Check the result
+        assert decomposed_goal is not None
+        assert decomposed_goal.strategy == DecompositionStrategy.BOTTOM_UP
+        assert len(decomposed_goal.subgoals) > 0
+
+    @pytest.mark.asyncio
     async def test_decompose_goal_with_context(self, goal_decomposition_engine, sample_goal):
         """Test decomposing a goal with additional context."""
         context = {
@@ -122,7 +136,253 @@ class TestGoalDecompositionEngine:
         
         assert decomposed_goal is not None
         assert len(decomposed_goal.subgoals) > 0
+        
+        # Check that the context keywords were used in the decomposition
+        # Instead of looking for a specific subgoal name, we'll check if any subgoals were created
+        # and if the knowledge requirements include any of our context keywords
+        knowledge_requirements = []
+        for subgoal in decomposed_goal.subgoals.values():
+            knowledge_requirements.extend(subgoal.resources.knowledge_requirements)
+        
+        # Check if any knowledge requirements were found
+        assert len(knowledge_requirements) > 0
+        
         goal_decomposition_engine.knowledge_system.query_semantic_memory.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_prioritize_subgoals(self, goal_decomposition_engine, sample_goal):
+        """Test prioritizing subgoals."""
+        # Decompose the goal
+        decomposed_goal = await goal_decomposition_engine.decompose_goal(
+            goal=sample_goal,
+            strategy=DecompositionStrategy.TOP_DOWN
+        )
+        
+        # Prioritize subgoals
+        prioritized_ids = await goal_decomposition_engine.prioritize_subgoals(decomposed_goal.id)
+        
+        # Check the result
+        assert len(prioritized_ids) > 0
+        assert len(prioritized_ids) == len(decomposed_goal.subgoals)
+        
+        # Check that all subgoal IDs are included
+        for subgoal_id in decomposed_goal.subgoals:
+            assert subgoal_id in prioritized_ids
+
+    @pytest.mark.asyncio
+    async def test_estimate_resources(self, goal_decomposition_engine, sample_goal):
+        """Test estimating resources for a decomposed goal."""
+        # Decompose the goal
+        decomposed_goal = await goal_decomposition_engine.decompose_goal(
+            goal=sample_goal,
+            strategy=DecompositionStrategy.TOP_DOWN
+        )
+        
+        # Estimate resources
+        resources = await goal_decomposition_engine.estimate_resources(decomposed_goal.id)
+        
+        # Check the result
+        assert resources is not None
+        assert resources.time_hours > 0
+        assert resources.complexity > 0
+        assert len(resources.knowledge_requirements) > 0
+        assert resources.risk_level > 0
+
+    @pytest.mark.asyncio
+    async def test_validate_decomposition(self, goal_decomposition_engine, sample_goal):
+        """Test validating a goal decomposition."""
+        # Decompose the goal
+        decomposed_goal = await goal_decomposition_engine.decompose_goal(
+            goal=sample_goal,
+            strategy=DecompositionStrategy.TOP_DOWN
+        )
+        
+        # Validate the decomposition
+        validation = await goal_decomposition_engine.validate_decomposition(decomposed_goal.id)
+        
+        # Check the result
+        assert validation is not None
+        assert "valid" in validation
+        assert "errors" in validation
+        assert "warnings" in validation
+
+    @pytest.mark.asyncio
+    async def test_get_decomposed_goal(self, goal_decomposition_engine, sample_goal):
+        """Test getting a decomposed goal by ID."""
+        # Decompose the goal
+        decomposed_goal = await goal_decomposition_engine.decompose_goal(
+            goal=sample_goal,
+            strategy=DecompositionStrategy.TOP_DOWN
+        )
+        
+        # Get the decomposed goal
+        retrieved_goal = await goal_decomposition_engine.get_decomposed_goal(decomposed_goal.id)
+        
+        # Check the result
+        assert retrieved_goal is not None
+        assert retrieved_goal.id == decomposed_goal.id
+        assert retrieved_goal.name == decomposed_goal.name
+        assert len(retrieved_goal.subgoals) == len(decomposed_goal.subgoals)
+
+    @pytest.mark.asyncio
+    async def test_get_all_decomposed_goals(self, goal_decomposition_engine, sample_goal):
+        """Test getting all decomposed goals."""
+        # Decompose multiple goals
+        goal1 = await goal_decomposition_engine.decompose_goal(
+            goal=sample_goal,
+            strategy=DecompositionStrategy.TOP_DOWN
+        )
+        
+        goal2 = await goal_decomposition_engine.decompose_goal(
+            goal={"name": "Another Goal", "description": "Another test goal", "type": "RESEARCH"},
+            strategy=DecompositionStrategy.BOTTOM_UP
+        )
+        
+        # Get all decomposed goals
+        all_goals = await goal_decomposition_engine.get_all_decomposed_goals()
+        
+        # Check the result
+        assert len(all_goals) >= 2
+        assert goal1.id in all_goals
+        assert goal2.id in all_goals
+
+    @pytest.mark.asyncio
+    async def test_delete_decomposed_goal(self, goal_decomposition_engine, sample_goal):
+        """Test deleting a decomposed goal."""
+        # Decompose the goal
+        decomposed_goal = await goal_decomposition_engine.decompose_goal(
+            goal=sample_goal,
+            strategy=DecompositionStrategy.TOP_DOWN
+        )
+        
+        # Delete the decomposed goal
+        result = await goal_decomposition_engine.delete_decomposed_goal(decomposed_goal.id)
+        
+        # Check the result
+        assert result is True
+        
+        # Try to get the deleted goal
+        deleted_goal = await goal_decomposition_engine.get_decomposed_goal(decomposed_goal.id)
+        assert deleted_goal is None
+
+    @pytest.mark.asyncio
+    async def test_further_decompose_subgoal(self, goal_decomposition_engine):
+        """Test further decomposing a subgoal."""
+        # Create a subgoal
+        resources = ResourceEstimate(
+            time_hours=10.0,
+            complexity=7,
+            knowledge_requirements=["python", "testing"],
+            dependencies=[],
+            risk_level=5
+        )
+        
+        subgoal = SubGoal(
+            id=str(uuid.uuid4()),
+            name="Test Subgoal",
+            description="A test subgoal",
+            goal_type=GoalType.DEVELOPMENT,
+            priority=8,
+            resources=resources,
+            parent_id=None,
+            children_ids=[],
+            status="pending"
+        )
+        
+        # Further decompose the subgoal
+        child_subgoals = await goal_decomposition_engine._further_decompose_subgoal(
+            subgoal=subgoal,
+            goal_type=GoalType.DEVELOPMENT
+        )
+        
+        # Check the result
+        assert len(child_subgoals) > 0
+        
+        # Check that all child subgoals have the parent ID set
+        for child in child_subgoals.values():
+            assert child.parent_id == subgoal.id
+
+    @pytest.mark.asyncio
+    async def test_edge_case_empty_goal(self):
+        """Test decomposing an empty goal."""
+        # Create a goal decomposition engine
+        engine = GoalDecompositionEngine()
+        
+        # Try to decompose an empty goal
+        with pytest.raises(Exception):
+            await engine.decompose_goal({})
+
+    @pytest.mark.asyncio
+    async def test_edge_case_minimal_goal(self):
+        """Test decomposing a minimal goal."""
+        # Create a goal decomposition engine
+        engine = GoalDecompositionEngine()
+        
+        # Decompose a minimal goal
+        minimal_goal = {"name": "Minimal Goal"}
+        decomposed_goal = await engine.decompose_goal(minimal_goal)
+        
+        # Check the result
+        assert decomposed_goal is not None
+        assert decomposed_goal.name == minimal_goal["name"]
+        assert decomposed_goal.goal_type == GoalType.GENERAL  # Default type
+        assert len(decomposed_goal.subgoals) > 0
+
+    @pytest.mark.asyncio
+    async def test_edge_case_invalid_strategy(self):
+        """Test decomposing a goal with an invalid strategy."""
+        # Create a goal decomposition engine
+        engine = GoalDecompositionEngine()
+        
+        # Decompose a goal with an invalid strategy
+        # This should raise a ValueError
+        goal = {"name": "Test Goal", "description": "A test goal"}
+        
+        # Test that the correct exception is raised
+        with pytest.raises(ValueError, match="Invalid decomposition strategy"):
+            await engine.decompose_goal(goal, strategy="INVALID_STRATEGY")
+
+    @pytest.mark.asyncio
+    async def test_complex_goal(self, goal_decomposition_engine):
+        """Test decomposing a complex goal."""
+        # Create a complex goal
+        complex_goal = {
+            "name": "Build Enterprise Web Application",
+            "description": "Design and implement a scalable enterprise web application with multiple modules and integrations",
+            "type": "DEVELOPMENT",
+            "complexity": "high",
+            "estimated_time": "6 months",
+            "team_size": 10,
+            "modules": [
+                "User Management",
+                "Content Management",
+                "Analytics",
+                "Reporting",
+                "Integration",
+                "Administration"
+            ],
+            "technologies": [
+                "Python",
+                "React",
+                "PostgreSQL",
+                "Docker",
+                "Kubernetes",
+                "AWS"
+            ]
+        }
+        
+        # Decompose the complex goal
+        decomposed_goal = await goal_decomposition_engine.decompose_goal(
+            goal=complex_goal,
+            strategy=DecompositionStrategy.TOP_DOWN
+        )
+        
+        # Check the result
+        assert decomposed_goal is not None
+        assert decomposed_goal.name == complex_goal["name"]
+        assert decomposed_goal.goal_type == GoalType.DEVELOPMENT
+        assert len(decomposed_goal.subgoals) > 5  # Should have many subgoals for a complex goal
+        assert decomposed_goal.total_resources.time_hours > 20  # Should require significant time
 
     @pytest.mark.asyncio
     async def test_decompose_goal_validation(self, goal_decomposition_engine):

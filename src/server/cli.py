@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 
 from src.server.self_aware_integration import SelfAwareSystem, CognitivePhase, WorkerType, TaskPriority
+from src.server.planning.goal_decomposition import GoalType, DecompositionStrategy
 
 # Configure logging
 logging.basicConfig(
@@ -193,6 +194,81 @@ class SelfAwareCLI:
         result = await self.system.get_development_cycle_status(cycle_id)
         return result
 
+    async def decompose_goal(self, args):
+        """Decompose a high-level goal into subgoals."""
+        # Load goal from file if specified
+        if args.goal_file:
+            with open(args.goal_file, 'r') as f:
+                goal = json.load(f)
+        else:
+            # Create goal from command line arguments
+            goal = {
+                "name": args.name,
+                "description": args.description,
+                "type": args.type
+            }
+        
+        # Create context if specified
+        context = None
+        if args.context_file:
+            with open(args.context_file, 'r') as f:
+                context = json.load(f)
+        
+        # Decompose the goal
+        result = await self.system.decompose_goal(
+            goal=goal,
+            strategy=args.strategy,
+            context=context
+        )
+        
+        # Print the result
+        if args.output_file:
+            with open(args.output_file, 'w') as f:
+                json.dump(result, f, indent=2)
+        else:
+            print(json.dumps(result, indent=2))
+        
+        return result
+
+    async def get_subgoals(self, args):
+        """Get all subgoals for a decomposed goal."""
+        subgoals = await self.system.get_subgoals(args.goal_id)
+        
+        # Print the result
+        if args.output_file:
+            with open(args.output_file, 'w') as f:
+                json.dump(subgoals, f, indent=2)
+        else:
+            print(json.dumps(subgoals, indent=2))
+        
+        return subgoals
+
+    async def prioritize_subgoals(self, args):
+        """Prioritize subgoals within a decomposed goal."""
+        prioritized = await self.system.prioritize_subgoals(args.goal_id)
+        
+        # Print the result
+        if args.output_file:
+            with open(args.output_file, 'w') as f:
+                json.dump(prioritized, f, indent=2)
+        else:
+            print(json.dumps(prioritized, indent=2))
+        
+        return prioritized
+
+    async def validate_decomposition(self, args):
+        """Validate a goal decomposition for completeness and consistency."""
+        validation = await self.system.validate_decomposition(args.goal_id)
+        
+        # Print the result
+        if args.output_file:
+            with open(args.output_file, 'w') as f:
+                json.dump(validation, f, indent=2)
+        else:
+            print(json.dumps(validation, indent=2))
+        
+        return validation
+
 def parse_args():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description="Self-Aware Cerebrum CLI")
@@ -292,6 +368,35 @@ def parse_args():
     cycle_status_parser = subparsers.add_parser("cycle-status", help="Get development cycle status")
     cycle_status_parser.add_argument("--cycle-id", required=True, help="Development cycle ID")
     
+    # Goal decomposition commands
+    goal_parser = subparsers.add_parser('goal', help='Goal decomposition commands')
+    goal_subparsers = goal_parser.add_subparsers(dest='goal_command', help='Goal decomposition subcommands')
+
+    # Decompose goal command
+    decompose_parser = goal_subparsers.add_parser('decompose', help='Decompose a high-level goal')
+    decompose_parser.add_argument('--goal-file', type=str, help='Path to JSON file with goal details')
+    decompose_parser.add_argument('--name', type=str, help='Goal name')
+    decompose_parser.add_argument('--description', type=str, help='Goal description')
+    decompose_parser.add_argument('--type', type=str, default='GENERAL', choices=[t.name for t in GoalType], help='Goal type')
+    decompose_parser.add_argument('--strategy', type=str, default='TOP_DOWN', choices=[s.name for s in DecompositionStrategy], help='Decomposition strategy')
+    decompose_parser.add_argument('--context-file', type=str, help='Path to JSON file with context details')
+    decompose_parser.add_argument('--output-file', type=str, help='Path to output file')
+
+    # Get subgoals command
+    subgoals_parser = goal_subparsers.add_parser('subgoals', help='Get subgoals for a decomposed goal')
+    subgoals_parser.add_argument('goal_id', type=str, help='ID of the decomposed goal')
+    subgoals_parser.add_argument('--output-file', type=str, help='Path to output file')
+
+    # Prioritize subgoals command
+    prioritize_parser = goal_subparsers.add_parser('prioritize', help='Prioritize subgoals within a decomposed goal')
+    prioritize_parser.add_argument('goal_id', type=str, help='ID of the decomposed goal')
+    prioritize_parser.add_argument('--output-file', type=str, help='Path to output file')
+
+    # Validate decomposition command
+    validate_parser = goal_subparsers.add_parser('validate', help='Validate a goal decomposition')
+    validate_parser.add_argument('goal_id', type=str, help='ID of the decomposed goal')
+    validate_parser.add_argument('--output-file', type=str, help='Path to output file')
+    
     return parser.parse_args()
 
 async def main():
@@ -359,8 +464,21 @@ async def main():
         result = await cli.get_development_cycle_status(args.cycle_id)
         print(json.dumps(result, indent=2, default=str))
     
+    # Goal decomposition commands
+    elif args.command == "goal":
+        if args.goal_command == "decompose":
+            await cli.decompose_goal(args)
+        elif args.goal_command == "subgoals":
+            await cli.get_subgoals(args)
+        elif args.goal_command == "prioritize":
+            await cli.prioritize_subgoals(args)
+        elif args.goal_command == "validate":
+            await cli.validate_decomposition(args)
+        else:
+            print("Unknown goal command. Use --help for more information.")
+    
     else:
-        print("Unknown command. Use --help for usage information.")
+        print("Unknown command. Use --help for more information.")
 
 if __name__ == "__main__":
     asyncio.run(main()) 

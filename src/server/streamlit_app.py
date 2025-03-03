@@ -2,10 +2,13 @@ import streamlit as st
 import asyncio
 import json
 import time
+import pandas as pd
+import matplotlib.pyplot as plt
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Union
 
 from src.server.self_aware_integration import SelfAwareSystem, CognitivePhase, WorkerType, TaskPriority
+from src.server.planning.goal_decomposition import GoalType, DecompositionStrategy
 
 # Initialize session state
 if "system" not in st.session_state:
@@ -199,7 +202,7 @@ st.subheader("AI Framework with Self-Modification Capabilities")
 st.sidebar.title("Navigation")
 page = st.sidebar.selectbox(
     "Navigation",
-    ["Cognitive Loop", "Knowledge Management", "Development Context", "Self-Modification"]
+    ["Cognitive Loop", "Knowledge Management", "Development Context", "Self-Modification", "Goal Decomposition"]
 )
 
 if page == "Cognitive Loop":
@@ -624,6 +627,290 @@ elif page == "Self-Modification":
                             updated_cycle = run_async(lambda: st.session_state.system.get_development_cycle_status(cycle['id']))
                             st.session_state.development_cycles[i] = updated_cycle
                             st.success("Cycle status refreshed")
+
+elif page == "Goal Decomposition":
+    # Goal Decomposition page
+    st.header("Goal Decomposition")
+    
+    # Create tabs for different operations
+    tab1, tab2, tab3, tab4 = st.tabs(["Decompose Goal", "View Subgoals", "Prioritize Subgoals", "Validate Decomposition"])
+    
+    with tab1:
+        st.header("Decompose a New Goal")
+        
+        # Goal input form
+        with st.form("decompose_goal_form"):
+            goal_name = st.text_input("Goal Name", "")
+            goal_description = st.text_area("Goal Description", "")
+            
+            # Goal type selection
+            goal_type_options = [t.name for t in GoalType]
+            goal_type = st.selectbox("Goal Type", goal_type_options, index=0)
+            
+            # Strategy selection
+            strategy_options = [s.name for s in DecompositionStrategy]
+            strategy = st.selectbox("Decomposition Strategy", strategy_options, index=0)
+            
+            # Advanced options
+            with st.expander("Advanced Options"):
+                # Context keywords
+                context_keywords = st.text_input("Context Keywords (comma-separated)", "")
+                
+                # Custom template selection
+                use_custom_template = st.checkbox("Use Custom Template", False)
+                custom_template = None
+                if use_custom_template:
+                    template_options = ["Research Project", "Software Development", "Content Creation", "Custom"]
+                    selected_template = st.selectbox("Template", template_options)
+                    
+                    if selected_template == "Custom":
+                        custom_template = st.text_area("Custom Template (JSON)", "{}")
+            
+            submitted = st.form_submit_button("Decompose Goal")
+            
+            if submitted:
+                with st.spinner("Decomposing goal..."):
+                    # Prepare goal dictionary
+                    goal = {
+                        "name": goal_name,
+                        "description": goal_description,
+                        "type": goal_type
+                    }
+                    
+                    # Prepare context
+                    context = None
+                    if context_keywords:
+                        context = {
+                            "keywords": [k.strip() for k in context_keywords.split(",")]
+                        }
+                    
+                    # Add template if selected
+                    if use_custom_template and custom_template:
+                        try:
+                            template_data = json.loads(custom_template)
+                            if context:
+                                context["template"] = template_data
+                            else:
+                                context = {"template": template_data}
+                        except json.JSONDecodeError:
+                            st.error("Invalid JSON in custom template")
+                            st.stop()
+                    
+                    # Call the decompose_goal method
+                    try:
+                        result = run_async(lambda: st.session_state.system.decompose_goal(
+                            goal=goal,
+                            strategy=strategy,
+                            context=context
+                        ))
+                        
+                        # Store the result in session state
+                        if "decomposed_goals" not in st.session_state:
+                            st.session_state.decomposed_goals = {}
+                        
+                        st.session_state.decomposed_goals[result["id"]] = result
+                        st.session_state.current_goal_id = result["id"]
+                        
+                        # Display success message
+                        st.success(f"Goal decomposed successfully! ID: {result['id']}")
+                        
+                        # Display summary
+                        st.subheader("Decomposition Summary")
+                        st.json({
+                            "id": result["id"],
+                            "name": result["name"],
+                            "subgoals_count": result["subgoals_count"],
+                            "total_time_hours": result["total_time_hours"],
+                            "max_complexity": result["max_complexity"],
+                            "risk_level": result["risk_level"]
+                        })
+                    
+                    except Exception as e:
+                        st.error(f"Error decomposing goal: {str(e)}")
+    
+    with tab2:
+        st.header("View Subgoals")
+        
+        # Goal selection
+        if "decomposed_goals" in st.session_state and st.session_state.decomposed_goals:
+            goal_options = {g["id"]: f"{g['name']} ({g['id']})" for g in st.session_state.decomposed_goals.values()}
+            
+            selected_goal_id = st.selectbox(
+                "Select Goal", 
+                list(goal_options.keys()),
+                format_func=lambda x: goal_options[x],
+                index=list(goal_options.keys()).index(st.session_state.current_goal_id) if "current_goal_id" in st.session_state else 0
+            )
+            
+            if st.button("View Subgoals"):
+                with st.spinner("Loading subgoals..."):
+                    try:
+                        subgoals = run_async(lambda: st.session_state.system.get_subgoals(selected_goal_id))
+                        
+                        if not subgoals:
+                            st.info("No subgoals found for this goal.")
+                        else:
+                            # Display subgoals in a table
+                            st.subheader(f"Subgoals for {goal_options[selected_goal_id]}")
+                            
+                            # Create a DataFrame for better display
+                            subgoals_data = []
+                            for sg in subgoals:
+                                subgoals_data.append({
+                                    "ID": sg["id"],
+                                    "Name": sg["name"],
+                                    "Priority": sg["priority"],
+                                    "Time (hours)": sg["time_hours"],
+                                    "Complexity": sg["complexity"],
+                                    "Risk Level": sg["risk_level"],
+                                    "Status": sg["status"]
+                                })
+                            
+                            df = pd.DataFrame(subgoals_data)
+                            st.dataframe(df)
+                            
+                            # Display subgoal details
+                            st.subheader("Subgoal Details")
+                            for sg in subgoals:
+                                with st.expander(f"{sg['name']} ({sg['id']})"):
+                                    st.write(f"**Description:** {sg['description']}")
+                                    st.write(f"**Priority:** {sg['priority']}")
+                                    st.write(f"**Time Estimate:** {sg['time_hours']} hours")
+                                    st.write(f"**Complexity:** {sg['complexity']}/10")
+                                    st.write(f"**Risk Level:** {sg['risk_level']}/10")
+                                    st.write(f"**Knowledge Requirements:** {', '.join(sg['knowledge_requirements'])}")
+                                    st.write(f"**Parent ID:** {sg['parent_id'] or 'None'}")
+                                    st.write(f"**Children IDs:** {', '.join(sg['children_ids']) if sg['children_ids'] else 'None'}")
+                                    st.write(f"**Status:** {sg['status']}")
+                    
+                    except Exception as e:
+                        st.error(f"Error loading subgoals: {str(e)}")
+        else:
+            st.info("No decomposed goals available. Please decompose a goal first.")
+    
+    with tab3:
+        st.header("Prioritize Subgoals")
+        
+        # Goal selection
+        if "decomposed_goals" in st.session_state and st.session_state.decomposed_goals:
+            goal_options = {g["id"]: f"{g['name']} ({g['id']})" for g in st.session_state.decomposed_goals.values()}
+            
+            selected_goal_id = st.selectbox(
+                "Select Goal for Prioritization", 
+                list(goal_options.keys()),
+                format_func=lambda x: goal_options[x],
+                index=list(goal_options.keys()).index(st.session_state.current_goal_id) if "current_goal_id" in st.session_state else 0,
+                key="prioritize_goal_select"
+            )
+            
+            if st.button("Prioritize Subgoals"):
+                with st.spinner("Prioritizing subgoals..."):
+                    try:
+                        prioritized = run_async(lambda: st.session_state.system.prioritize_subgoals(selected_goal_id))
+                        
+                        if not prioritized:
+                            st.info("No subgoals found for this goal.")
+                        else:
+                            # Display prioritized subgoals
+                            st.subheader(f"Prioritized Subgoals for {goal_options[selected_goal_id]}")
+                            
+                            # Create a DataFrame for better display
+                            priority_data = []
+                            for i, sg in enumerate(prioritized):
+                                priority_data.append({
+                                    "Priority Rank": i + 1,
+                                    "ID": sg["id"],
+                                    "Name": sg["name"],
+                                    "Base Priority": sg["priority"],
+                                    "Time (hours)": sg["time_hours"],
+                                    "Complexity": sg["complexity"],
+                                    "Risk Level": sg["risk_level"],
+                                    "Status": sg["status"]
+                                })
+                            
+                            df = pd.DataFrame(priority_data)
+                            st.dataframe(df)
+                            
+                            # Visualization
+                            st.subheader("Priority Visualization")
+                            
+                            # Bar chart of time estimates by priority
+                            fig, ax = plt.subplots(figsize=(10, 6))
+                            
+                            names = [f"{i+1}. {sg['name']}" for i, sg in enumerate(prioritized)]
+                            times = [sg["time_hours"] for sg in prioritized]
+                            
+                            bars = ax.barh(names, times, color='skyblue')
+                            
+                            # Add risk level as color intensity
+                            for i, bar in enumerate(bars):
+                                risk = prioritized[i]["risk_level"] / 10
+                                bar.set_color(plt.cm.Reds(risk))
+                            
+                            ax.set_xlabel('Time Estimate (hours)')
+                            ax.set_title('Subgoal Time Estimates by Priority')
+                            
+                            # Add a colorbar for risk level
+                            sm = plt.cm.ScalarMappable(cmap=plt.cm.Reds, norm=plt.Normalize(0, 10))
+                            sm.set_array([])
+                            cbar = plt.colorbar(sm, ax=ax)
+                            cbar.set_label('Risk Level')
+                            
+                            st.pyplot(fig)
+                    
+                    except Exception as e:
+                        st.error(f"Error prioritizing subgoals: {str(e)}")
+        else:
+            st.info("No decomposed goals available. Please decompose a goal first.")
+    
+    with tab4:
+        st.header("Validate Decomposition")
+        
+        # Goal selection
+        if "decomposed_goals" in st.session_state and st.session_state.decomposed_goals:
+            goal_options = {g["id"]: f"{g['name']} ({g['id']})" for g in st.session_state.decomposed_goals.values()}
+            
+            selected_goal_id = st.selectbox(
+                "Select Goal for Validation", 
+                list(goal_options.keys()),
+                format_func=lambda x: goal_options[x],
+                index=list(goal_options.keys()).index(st.session_state.current_goal_id) if "current_goal_id" in st.session_state else 0,
+                key="validate_goal_select"
+            )
+            
+            if st.button("Validate Decomposition"):
+                with st.spinner("Validating decomposition..."):
+                    try:
+                        validation = run_async(lambda: st.session_state.system.validate_decomposition(selected_goal_id))
+                        
+                        # Display validation results
+                        st.subheader(f"Validation Results for {goal_options[selected_goal_id]}")
+                        
+                        if validation["valid"]:
+                            st.success("✅ Decomposition is valid!")
+                        else:
+                            st.error("❌ Decomposition has errors!")
+                        
+                        # Display errors
+                        if validation["errors"]:
+                            st.subheader("Errors")
+                            for error in validation["errors"]:
+                                st.error(error)
+                        
+                        # Display warnings
+                        if validation["warnings"]:
+                            st.subheader("Warnings")
+                            for warning in validation["warnings"]:
+                                st.warning(warning)
+                        
+                        # If no errors or warnings
+                        if not validation["errors"] and not validation["warnings"]:
+                            st.info("No issues found in the decomposition.")
+                    
+                    except Exception as e:
+                        st.error(f"Error validating decomposition: {str(e)}")
+        else:
+            st.info("No decomposed goals available. Please decompose a goal first.")
 
 # Initialize by refreshing tasks
 if st.session_state.tasks == []:

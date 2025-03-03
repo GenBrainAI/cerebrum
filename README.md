@@ -47,7 +47,18 @@ Key features:
 - Context tracking and management
 - Continuous operation capabilities
 
-### 4. Self-Aware Integration
+### 4. Goal Decomposition Engine
+
+The Goal Decomposition Engine breaks down high-level goals into manageable subgoals. It provides a structured approach to planning and executing complex tasks by decomposing them into smaller, more manageable pieces.
+
+Key features:
+- Goal decomposition using different strategies (TOP_DOWN, BOTTOM_UP, etc.)
+- Resource estimation for subgoals and overall goals
+- Subgoal prioritization based on dependencies, complexity, and risk
+- Decomposition validation for completeness and consistency
+- Knowledge integration for informed decomposition
+
+### 5. Self-Aware Integration
 
 The Self-Aware Integration combines all the components above into a cohesive system that can monitor its own performance, manage resources, execute tasks in parallel, and continuously improve through the cognitive loop process.
 
@@ -98,6 +109,7 @@ Common commands:
 - Add semantic knowledge: `python src/server/cli.py add-semantic --concept "AI" --definition "Artificial Intelligence is the simulation of human intelligence by machines."`
 - Create a task: `python src/server/cli.py create-task --title "Improve Knowledge System" --description "Enhance the knowledge retrieval capabilities" --phase understand`
 - Get knowledge context: `python src/server/cli.py context --query "cognitive loop"`
+- Decompose a goal: `python src/server/cli.py goal decompose --name "Implement Feature X" --description "Implement a new feature X for the system" --type DEVELOPMENT`
 
 #### Streamlit UI
 
@@ -112,6 +124,7 @@ The Streamlit UI provides:
 - Task management interface
 - Knowledge management tools
 - Development context management
+- Goal decomposition and management
 
 ## System Components in Detail
 
@@ -154,6 +167,18 @@ The Development Cognitive Loop Orchestrator manages the system's self-improvemen
 4. **Reflect Phase**: Evaluate results and learn
    - Worker: EvaluationWorker
    - Tasks: Testing, performance analysis, knowledge update
+
+### Goal Decomposition Engine
+
+The Goal Decomposition Engine breaks down high-level goals into manageable subgoals. It supports:
+
+1. **Goal Types**: Different types of goals (GENERAL, RESEARCH, DEVELOPMENT, etc.)
+2. **Decomposition Strategies**: Various strategies for decomposing goals (TOP_DOWN, BOTTOM_UP, etc.)
+3. **Resource Estimation**: Estimation of time, complexity, knowledge requirements, and risk
+4. **Subgoal Prioritization**: Prioritization of subgoals based on various factors
+5. **Decomposition Validation**: Validation of decompositions for completeness and consistency
+
+The Goal Decomposition Engine can be accessed through both the CLI and Streamlit UI. For more information, see the [Goal Decomposition Engine documentation](docs/planning/goal_decomposition.md).
 
 ## Contributing
 
