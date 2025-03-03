@@ -4689,7 +4689,393 @@
       },
       "tags": [],
       "created_at": "2025-03-02T18:13:23.019559"
+    },
+    "knowledge_328": {
+      "content": "# Langchain Tool Creation Guide\n        Tools in Langchain must:\n        1. Implement _run and _arun methods\n        2. Include proper type hints\n        3. Handle errors appropriately\n        4. Support async operations\n        5. Include comprehensive documentation\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "langchain_tools_guide",
+        "description": "Guide for creating Langchain tools",
+        "tags": [
+          "langchain",
+          "guide",
+          "tools"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "langchain",
+        "guide",
+        "tools"
+      ],
+      "created_at": "2025-03-02T23:24:08.729114"
+    },
+    "knowledge_329": {
+      "content": "\n        from langchain.tools import BaseTool\n        from pydantic import BaseModel, Field\n        \n        class CalculatorInput(BaseModel):\n            operation: str = Field(description=\"The math operation to perform\")\n            numbers: List[float] = Field(description=\"Numbers to operate on\")\n            \n        class CalculatorTool(BaseTool):\n            name = \"calculator\"\n            description = \"Perform mathematical calculations\"\n            args_schema = CalculatorInput\n            \n            def _run(self, operation: str, numbers: List[float]) -> float:\n                if operation == \"add\":\n                    return sum(numbers)\n                elif operation == \"multiply\":\n                    return math.prod(numbers)\n                raise ValueError(f\"Unknown operation: {operation}\")\n                \n            async def _arun(self, operation: str, numbers: List[float]) -> float:\n                return self._run(operation, numbers)\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "tool_example",
+        "description": "Example Langchain tool implementation",
+        "tags": [
+          "langchain",
+          "example",
+          "tools"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "langchain",
+        "example",
+        "tools"
+      ],
+      "created_at": "2025-03-02T23:24:08.735259"
+    },
+    "knowledge_330": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:24:50.583784"
+    },
+    "knowledge_331": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:24:50.588259"
+    },
+    "knowledge_332": {
+      "content": "# Langchain Tool Creation Guide\n        Tools in Langchain must:\n        1. Implement _run and _arun methods\n        2. Include proper type hints\n        3. Handle errors appropriately\n        4. Support async operations\n        5. Include comprehensive documentation\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "langchain_tools_guide",
+        "description": "Guide for creating Langchain tools",
+        "tags": [
+          "guide",
+          "langchain",
+          "tools"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "guide",
+        "langchain",
+        "tools"
+      ],
+      "created_at": "2025-03-02T23:41:40.957099"
+    },
+    "knowledge_333": {
+      "content": "\n        from langchain.tools import BaseTool\n        from pydantic import BaseModel, Field\n        \n        class CalculatorInput(BaseModel):\n            operation: str = Field(description=\"The math operation to perform\")\n            numbers: List[float] = Field(description=\"Numbers to operate on\")\n            \n        class CalculatorTool(BaseTool):\n            name = \"calculator\"\n            description = \"Perform mathematical calculations\"\n            args_schema = CalculatorInput\n            \n            def _run(self, operation: str, numbers: List[float]) -> float:\n                if operation == \"add\":\n                    return sum(numbers)\n                elif operation == \"multiply\":\n                    return math.prod(numbers)\n                raise ValueError(f\"Unknown operation: {operation}\")\n                \n            async def _arun(self, operation: str, numbers: List[float]) -> float:\n                return self._run(operation, numbers)\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "tool_example",
+        "description": "Example Langchain tool implementation",
+        "tags": [
+          "example",
+          "langchain",
+          "tools"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "example",
+        "langchain",
+        "tools"
+      ],
+      "created_at": "2025-03-02T23:41:40.964475"
+    },
+    "knowledge_334": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:42:01.473591"
+    },
+    "knowledge_335": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:42:01.480515"
+    },
+    "knowledge_336": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:48:06.082258"
+    },
+    "knowledge_337": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:48:06.100401"
+    },
+    "knowledge_338": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:53:24.210639"
+    },
+    "knowledge_339": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:53:24.220936"
+    },
+    "knowledge_340": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:58:01.114650"
+    },
+    "knowledge_341": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-02T23:58:01.130429"
+    },
+    "knowledge_342": {
+      "content": "# Langchain Tool Creation Guide\n        Tools in Langchain must:\n        1. Implement _run and _arun methods\n        2. Include proper type hints\n        3. Handle errors appropriately\n        4. Support async operations\n        5. Include comprehensive documentation\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "langchain_tools_guide",
+        "description": "Guide for creating Langchain tools",
+        "tags": [
+          "guide",
+          "tools",
+          "langchain"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "guide",
+        "tools",
+        "langchain"
+      ],
+      "created_at": "2025-03-03T00:57:54.986422"
+    },
+    "knowledge_343": {
+      "content": "\n        from langchain.tools import BaseTool\n        from pydantic import BaseModel, Field\n        \n        class CalculatorInput(BaseModel):\n            operation: str = Field(description=\"The math operation to perform\")\n            numbers: List[float] = Field(description=\"Numbers to operate on\")\n            \n        class CalculatorTool(BaseTool):\n            name = \"calculator\"\n            description = \"Perform mathematical calculations\"\n            args_schema = CalculatorInput\n            \n            def _run(self, operation: str, numbers: List[float]) -> float:\n                if operation == \"add\":\n                    return sum(numbers)\n                elif operation == \"multiply\":\n                    return math.prod(numbers)\n                raise ValueError(f\"Unknown operation: {operation}\")\n                \n            async def _arun(self, operation: str, numbers: List[float]) -> float:\n                return self._run(operation, numbers)\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "tool_example",
+        "description": "Example Langchain tool implementation",
+        "tags": [
+          "example",
+          "tools",
+          "langchain"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "example",
+        "tools",
+        "langchain"
+      ],
+      "created_at": "2025-03-03T00:57:54.993949"
+    },
+    "knowledge_344": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-03T00:58:14.804101"
+    },
+    "knowledge_345": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-03T00:58:14.817506"
+    },
+    "knowledge_346": {
+      "content": "# Langchain Tool Creation Guide\n        Tools in Langchain must:\n        1. Implement _run and _arun methods\n        2. Include proper type hints\n        3. Handle errors appropriately\n        4. Support async operations\n        5. Include comprehensive documentation\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "langchain_tools_guide",
+        "description": "Guide for creating Langchain tools",
+        "tags": [
+          "guide",
+          "tools",
+          "langchain"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "guide",
+        "tools",
+        "langchain"
+      ],
+      "created_at": "2025-03-03T01:11:32.132293"
+    },
+    "knowledge_347": {
+      "content": "\n        from langchain.tools import BaseTool\n        from pydantic import BaseModel, Field\n        \n        class CalculatorInput(BaseModel):\n            operation: str = Field(description=\"The math operation to perform\")\n            numbers: List[float] = Field(description=\"Numbers to operate on\")\n            \n        class CalculatorTool(BaseTool):\n            name = \"calculator\"\n            description = \"Perform mathematical calculations\"\n            args_schema = CalculatorInput\n            \n            def _run(self, operation: str, numbers: List[float]) -> float:\n                if operation == \"add\":\n                    return sum(numbers)\n                elif operation == \"multiply\":\n                    return math.prod(numbers)\n                raise ValueError(f\"Unknown operation: {operation}\")\n                \n            async def _arun(self, operation: str, numbers: List[float]) -> float:\n                return self._run(operation, numbers)\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "tool_example",
+        "description": "Example Langchain tool implementation",
+        "tags": [
+          "example",
+          "tools",
+          "langchain"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "example",
+        "tools",
+        "langchain"
+      ],
+      "created_at": "2025-03-03T01:11:32.147062"
+    },
+    "knowledge_348": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-03T01:11:48.290264"
+    },
+    "knowledge_349": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-03T01:11:48.300627"
+    },
+    "knowledge_350": {
+      "content": "# Langchain Tool Creation Guide\n        Tools in Langchain must:\n        1. Implement _run and _arun methods\n        2. Include proper type hints\n        3. Handle errors appropriately\n        4. Support async operations\n        5. Include comprehensive documentation\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "langchain_tools_guide",
+        "description": "Guide for creating Langchain tools",
+        "tags": [
+          "langchain",
+          "tools",
+          "guide"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "langchain",
+        "tools",
+        "guide"
+      ],
+      "created_at": "2025-03-03T01:17:14.723590"
+    },
+    "knowledge_351": {
+      "content": "\n        from langchain.tools import BaseTool\n        from pydantic import BaseModel, Field\n        \n        class CalculatorInput(BaseModel):\n            operation: str = Field(description=\"The math operation to perform\")\n            numbers: List[float] = Field(description=\"Numbers to operate on\")\n            \n        class CalculatorTool(BaseTool):\n            name = \"calculator\"\n            description = \"Perform mathematical calculations\"\n            args_schema = CalculatorInput\n            \n            def _run(self, operation: str, numbers: List[float]) -> float:\n                if operation == \"add\":\n                    return sum(numbers)\n                elif operation == \"multiply\":\n                    return math.prod(numbers)\n                raise ValueError(f\"Unknown operation: {operation}\")\n                \n            async def _arun(self, operation: str, numbers: List[float]) -> float:\n                return self._run(operation, numbers)\n        ",
+      "domain": "system",
+      "metadata": {
+        "name": "tool_example",
+        "description": "Example Langchain tool implementation",
+        "tags": [
+          "example",
+          "langchain",
+          "tools"
+        ],
+        "type": "system",
+        "domain": "system"
+      },
+      "tags": [
+        "example",
+        "langchain",
+        "tools"
+      ],
+      "created_at": "2025-03-03T01:17:14.732447"
+    },
+    "knowledge_352": {
+      "content": "Test content",
+      "domain": "Test Session",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-03T01:17:29.629304"
+    },
+    "knowledge_353": {
+      "content": "Test content",
+      "domain": "Test Session 2",
+      "metadata": {
+        "title": "Test",
+        "domain": "Test Session 2",
+        "tags": []
+      },
+      "tags": [],
+      "created_at": "2025-03-03T01:17:29.636647"
     }
   },
-  "next_id": 328
+  "next_id": 354
 }
