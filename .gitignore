@@ -159,6 +159,7 @@ temp_repos/
 # Test directories
 test_context_db/
 test_context_db/**
+persistent_state/*
 
 test_persistent_state/vector_store/
 test_persistent_state/vector_store/**
@@ -175,6 +176,6 @@ state/specialized/task_generation/**
 state/sessions/**
 test_cerebrum_data/
 test_storage/
-
+tests/db/chroma.sqlite3
 
 

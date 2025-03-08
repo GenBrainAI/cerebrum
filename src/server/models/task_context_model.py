@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Any
 from uuid import UUID
 import logging
 from datetime import datetime
+from crewai import Task
 from pydantic import BaseModel, Field
 from uuid import uuid4
 import traceback
@@ -101,7 +102,7 @@ class TaskContextManager:
         self.task_contexts[task_id] = context
         return context
 
-    def sync_task_contexts(self, task_id: str, task: Any) -> None:
+    def sync_task_contexts(self, task_id: str, task: Task) -> None:
         """Sync task contexts with persistence model."""
         try:
             print(f"\n🔄 Syncing task contexts for {task_id}")

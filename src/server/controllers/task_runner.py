@@ -74,7 +74,8 @@ class TaskRunner:
         self.tools_operator = ToolsOperator()
         self.operator = APIOperator()
         self.observability_managers: Dict[str, TaskObservabilityManager] = {}
-        self.context_provider = ContextProvider(persistence_model)
+        self.context_provider = ContextProvider()
+        self.context_provider.persistence_model = persistence_model
         self.context_analytics = ContextAnalytics()
         self._active_observability_managers = {}
         self._active_tasks = set()  # Track currently running tasks
@@ -157,7 +158,7 @@ class TaskRunner:
             task.status = status
             task.error = error
             task.updated_at = datetime.now()
-            self.persistence_model.tasks.update(task)
+            self.persistence_model.tasks.update(task.id, task)
         except Exception as e:
             logger.error(f"❌ Failed to update task status: {str(e)}")
 
@@ -297,77 +298,165 @@ class TaskRunner:
         running_extra_params: Dict[str, Any],
         tasksmanager: Optional[TasksManager] = None
     ) -> Dict[str, Any]:
-        """Execute a standard task."""
+        """Run a standard task."""
         try:
-            logger.info(f"🔄 Running standard task: {task.name}")
-            task_data = task.dict() if hasattr(task, 'dict') else task.model_dump()
+            # Get the task manager if not provided
+            if not tasksmanager and task.tasksmanager_id:
+                tasksmanager = self.persistence_model.tasksmanagers.read(task.tasksmanager_id)
             
-            # Add running_extra_params to task_data
-            if running_extra_params:
-                task_data.update(running_extra_params)
-
-            # If a plugin is configured, try to use it
-            if hasattr(task, 'framework') and task.framework and self._plugin_manager:
-                try:
-                    plugin = self._plugin_manager.get_plugin(task.framework)
-                    if plugin:
-                        agent = await plugin.create_agent(task_data)
-                        return await plugin.execute_task(agent, task_data)
-                except Exception as plugin_error:
-                    logger.warning(f"Plugin execution failed: {str(plugin_error)}, falling back to standard execution")
-
-            # Get or create curried proxy for standard execution
-            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager) if tasksmanager else None
-
-            # Standard task execution using operator for completions
-            messages_input = running_extra_params.get('messages', [])
+            # Initialize context
+            contexts = []
             
-            # Validate messages using helper method
-            formatted_messages = self._validate_messages(messages_input, "input parameters")
+            # Extract messages from running_extra_params
+            messages = running_extra_params.get('messages', [])
             
-            # If no messages provided, use task's default messages
-            if not formatted_messages and task.messages:
-                formatted_messages = self._validate_messages(task.messages, "task messages")
-
-            if not formatted_messages:
-                return {
-                    "status": "failed",
-                    "response": "No messages found for task execution",
-                    "error": "Missing messages"
-                }
-
-            # Get model from tasksmanager or use default
+            # Extract query from the last user message if available
+            query = None
+            
+            # First check if context_query is directly provided in running_extra_params
+            if running_extra_params and "context_query" in running_extra_params:
+                query = running_extra_params["context_query"]
+                logger.info(f"📝 Context query from running_extra_params: {query}")
+            # Otherwise try to extract from the last user message
+            elif messages:
+                # Find the last user message
+                for msg in reversed(messages):
+                    if isinstance(msg, dict) and msg.get('role') == 'user':
+                        query = msg.get('content')
+                        break
+                    elif hasattr(msg, 'role') and msg.role == 'user':
+                        query = msg.content
+                        break
+                logger.info(f"📝 Context query from last user message: {query}")
+            else:
+                logger.info("📝 No context query found")
+            
+            # Get model to use for context retrieval
             model = None
-            if tasksmanager and hasattr(tasksmanager, 'model'):
+            if tasksmanager and hasattr(tasksmanager, 'model') and tasksmanager.model:
                 model = tasksmanager.model
-            if not model and hasattr(task, 'model'):
+            elif hasattr(task, 'model') and task.model:
                 model = task.model
-            if not model:
-                model = "gpt-4o-mini"  # Default model if none specified
-
-            # Execute completion with curried proxy
+            else:
+                model = "gpt-4o-mini"  # Default model
+                
+            logger.info(f"🤖 Using model {model} for context retrieval")
+            
+            # Get message history for token calculation
+            message_history = []
+            if messages:
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        message_history.append(msg)
+                    elif hasattr(msg, 'to_dict'):
+                        message_history.append(msg.to_dict())
+                    elif hasattr(msg, '__dict__'):
+                        message_history.append(msg.__dict__)
+            
+            # Get contexts if we have a query
+            if query:
+                try:
+                    # Use the context provider that's already set on the TaskRunner
+                    self.context_provider.persistence_model = self.persistence_model
+                    contexts = await self.context_provider.get_contexts(
+                        query=query,
+                        task_id=task.id,
+                        model=model,
+                        message_history=message_history
+                    )
+                    logger.info(f"📚 Found {len(contexts)} contexts for query")
+                    
+                    # Log context details for debugging
+                    for i, ctx in enumerate(contexts):
+                        logger.debug(f"Context {i+1}: Type={ctx.get('type')}, "
+                                    f"Source={ctx.get('source_id')}, "
+                                    f"Content preview: {ctx.get('content', '')[:50]}...")
+                except Exception as e:
+                    logger.error(f"❌ Error getting contexts: {str(e)}")
+                    logger.exception(e)
+            
+            # Get the messages from running_extra_params
+            messages = running_extra_params.get('messages', [])
+            
+            # If no messages provided, use the task messages
+            if not messages and hasattr(task, 'messages') and task.messages:
+                messages = task.messages
+            
+            # Prepare the messages with context
+            if contexts:
+                # Use the context provider that's already set on the TaskRunner
+                self.context_provider.persistence_model = self.persistence_model
+                
+                # Add contexts to task
+                for context in contexts:
+                    await self.context_provider.add_context_to_task(
+                        task_id=task.id,
+                        type=context.get('type', 'unknown'),
+                        source_id=context.get('source_id', 'unknown'),
+                        metadata={
+                            'content': context.get('content', ''),
+                            **context.get('metadata', {})
+                        },
+                        priority=context.get('priority', 50)
+                    )
+                
+                # Prepare messages with context
+                messages = await self.context_provider.prepare_task_messages(task.id, messages)
+            
+            # Get the model to use
+            model = None
+            if tasksmanager and hasattr(tasksmanager, 'model') and tasksmanager.model:
+                model = tasksmanager.model
+            elif hasattr(task, 'model') and task.model:
+                model = task.model
+            
+            # Get the system prompt
+            system_prompt = None
+            if hasattr(task, 'system_prompt') and task.system_prompt:
+                system_prompt = task.system_prompt
+            elif tasksmanager and hasattr(tasksmanager, 'system_prompt') and tasksmanager.system_prompt:
+                system_prompt = tasksmanager.system_prompt
+            
+            # Add system prompt if available and not already in messages
+            if system_prompt:
+                has_system_message = False
+                for msg in messages:
+                    if (isinstance(msg, dict) and msg.get('role') == 'system') or \
+                       (hasattr(msg, 'role') and msg.role == 'system'):
+                        has_system_message = True
+                        break
+                
+                if not has_system_message:
+                    system_message = Message(role="system", content=system_prompt)
+                    messages = [system_message] + messages
+            
+            # Get the curried proxy
+            curried_proxy = None
+            if tasksmanager:
+                curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            
+            # Run the completion
             response = await self.completion(
                 tasksmanager_id=task.tasksmanager_id,
                 task_id=task.id,
-                messages=formatted_messages,
+                messages=messages,
                 model=model,
                 curried_proxy=curried_proxy
             )
-
-            return {
-                "status": "completed",
-                "response": response,
-                "error": None
-            }
             
-        except Exception as e:
-            error_msg = f"Task execution failed: {str(e)}"
-            logger.error(f"❌ {error_msg}")
+            # Update the task with the response
+            task.last_response = response
+            task.updated_at = datetime.now()
+            self.persistence_model.tasks.update(task.id, task)
+            
             return {
-                "status": "failed",
-                "response": error_msg,
-                "error": str(e)
+                "response": response,
+                "task": task.to_dict() if hasattr(task, 'to_dict') else task
             }
+        except Exception as e:
+            logger.error(f"❌ Error running standard task: {str(e)}")
+            logger.exception(e)
+            raise TaskExecutionError(f"Failed to run standard task: {str(e)}")
 
     async def _run_crewai_task(
         self,
@@ -379,37 +468,106 @@ class TaskRunner:
         try:
             logger.info(f"\n🤖 Running CrewAI task: {task.id}")
             
-            # Get contexts if needed
-            query = running_extra_params.get("context_query") if running_extra_params else None
-            logger.info(f"🔍 Getting contexts with query: {query}")
-            contexts = await self.context_provider.get_contexts(query) if query else []
-            logger.info(f"✅ Found {len(contexts)} contexts")
+            # Initialize context
+            contexts = []
             
-            # Prepare running parameters
-            params = {"contexts": contexts}
+            # Extract messages from running_extra_params
+            messages = running_extra_params.get('messages', []) if running_extra_params else []
+            
+            # Extract query from the last user message if available
+            query = None
+            
+            # First check if there's a crewai_task with a context field
+            if running_extra_params and "crewai_task" in running_extra_params:
+                crewai_task = running_extra_params["crewai_task"]
+                if isinstance(crewai_task, dict) and "context" in crewai_task:
+                    query = crewai_task["context"]
+                    logger.info(f"📝 Context query from crewai_task: {query}")
+            
+            # If no query from crewai_task, try to extract from messages
+            if not query and messages:
+                # Find the last user message
+                for msg in reversed(messages):
+                    if isinstance(msg, dict) and msg.get('role') == 'user':
+                        query = msg.get('content')
+                        break
+                    elif hasattr(msg, 'role') and msg.role == 'user':
+                        query = msg.content
+                        break
+                logger.info(f"📝 Context query from last user message: {query}")
+            else:
+                logger.info(f"📝 Context query from last user message: {query}")
+            
+            # Get message history for token calculation
+            message_history = []
+            if messages:
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        message_history.append(msg)
+                    elif hasattr(msg, 'to_dict'):
+                        message_history.append(msg.to_dict())
+                    elif hasattr(msg, '__dict__'):
+                        message_history.append(msg.__dict__)
+            
+            # Get contexts if we have a query
+            if query:
+                try:
+                    # Get model from tasksmanager
+                    model = tasksmanager.model if hasattr(tasksmanager, 'model') and tasksmanager.model else "gpt-4"
+                    
+                    logger.info(f"🤖 Using model {model} for context retrieval")
+                    
+                    # Get contexts with intelligent token management
+                    self.context_provider.persistence_model = self.persistence_model
+                    contexts = await self.context_provider.get_contexts(
+                        query=query,
+                        model=model,
+                        task_id=task.id,
+                        message_history=message_history
+                    )
+                    
+                    logger.info(f"📚 Found {len(contexts)} contexts for query")
+                    # Log context details for debugging
+                    for i, ctx in enumerate(contexts):
+                        content_preview = ctx.get("content", "")[:100] + "..." if len(ctx.get("content", "")) > 100 else ctx.get("content", "")
+                        logger.debug(f"Context {i+1}: Type={ctx.get('type', 'unknown')}, Source={ctx.get('source_id', 'unknown')}")
+                        logger.debug(f"Content preview: {content_preview}")
+                except Exception as e:
+                    logger.error(f"❌ Error getting contexts: {str(e)}")
+                    logger.exception(e)
+                    contexts = []
+            
+            # Get the CrewAI plugin
+            plugin = None
+            if self._plugin_manager:
+                plugin = self._plugin_manager.get_plugin("crewai")
+            
+            if not plugin:
+                raise TaskExecutionError("CrewAI plugin not found")
+            
+            # Get or create curried proxy
+            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            
+            # Prepare task data
+            task_data = task.dict() if hasattr(task, 'dict') else task.__dict__
+            
+            # Add running_extra_params to task_data
             if running_extra_params:
-                params.update(running_extra_params)
-            logger.info(f"🔧 Running params: {params}")
+                task_data.update(running_extra_params)
             
-            logger.info("\n🚀 Executing crew task")
-            result = await run_crew_task(
-                task_id=task.id,
-                task_input=params,
-                persistence_model=self.persistence_model
-            )
-            logger.info("✅ Crew task executed successfully")
+            # Add contexts to task_data
+            if contexts:
+                task_data["contexts"] = contexts
+            
+            # Create agent and execute task
+            agent = await plugin.create_agent(task_data)
+            result = await plugin.execute_task(agent, task_data)
             
             return result
-            
         except Exception as e:
-            error_msg = f"Error in CrewAI task execution: {str(e)}"
-            logger.error(error_msg)
-            logger.info(f"❌ {error_msg}")
-            return {
-                "status": "failed",
-                "error": error_msg,
-                "response": error_msg
-            }
+            logger.error(f"❌ Error running CrewAI task: {str(e)}")
+            logger.exception(e)
+            raise TaskExecutionError(f"Failed to run CrewAI task: {str(e)}")
 
     async def _run_tree_flow_task(
         self,

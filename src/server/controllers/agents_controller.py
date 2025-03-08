@@ -15,6 +15,7 @@ from ..tools.sms_tool import SMSTool
 from ..controllers.curried_proxy import CurriedProxy
 from ..context.context_provider import ContextProvider
 from ..context.crew_context_enhancer import CrewContextEnhancer, CrewContextConfig
+from datetime import datetime
 
 persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 
@@ -242,7 +243,11 @@ async def execute_task(task_id: str, persistence_model) -> Dict[str, Any]:
         
         # Update task with execution logs
         task.execution_logs = crew.process_outputs()
-        persistence_model.tasks.update(task)
+        # Update task with the result
+        task.result = result
+        task.status = "completed"
+        task.updated_at = datetime.now()
+        persistence_model.tasks.update(task.id, task)
         
         return {
             "task_id": task_id,

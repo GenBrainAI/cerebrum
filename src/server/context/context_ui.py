@@ -39,12 +39,14 @@ class ContextManagerUI:
             
         # Initialize global components
         self.global_context_provider = ContextProvider()
+        self.global_context_provider.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
         self.global_vector_store = VectorStore()
         self.global_code_catalog = CodeCatalog()
         self.global_knowledge_base = KnowledgeBase(base_path="persistent_state/global_knowledge_base")
         
         # Initialize state-specific components
         self.context_provider = ContextProvider()
+        self.context_provider.persistence_model = st.session_state.persistence_model
         self.vector_store = VectorStore()
         self.code_catalog = CodeCatalog()
         self.knowledge_base = KnowledgeBase()
@@ -997,8 +999,11 @@ class ContextManagerUI:
                         print(f"\nDEBUG - Processing index: {idx['name']}")
                         print(f"  Index details: {idx}")
                         
-                        # Get files from collection
-                        files = await self.vector_store.get_index_contents(idx['name'])
+                        # Get files from collection using get_filtered_items_from_index instead of get_index_contents
+                        files = await self.vector_store.get_filtered_items_from_index(
+                            index_name=idx['name'],
+                            limit=100  # Increase limit to get more items
+                        )
                         print(f"  Raw files retrieved: {len(files)}")
                         
                         # Debug raw files
@@ -1223,8 +1228,11 @@ class ContextManagerUI:
                             
                             if st.button("Add Vector Context"):
                                 try:
-                                    # Get index contents for metadata
-                                    index_contents = await self.vector_store.get_index_contents(selected_index)
+                                    # Get index contents for metadata using get_filtered_items_from_index
+                                    index_contents = await self.vector_store.get_filtered_items_from_index(
+                                        index_name=selected_index,
+                                        limit=1000  # High limit to get an accurate count
+                                    )
                                     
                                     # Create context metadata
                                     metadata = {

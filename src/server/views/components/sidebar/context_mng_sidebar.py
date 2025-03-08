@@ -256,23 +256,22 @@ class ContextManagementSidebar:
             task_info = {}
             manager_info = {}
             
-            if not self.context_manager.global_context_provider.is_global:
-                persistence_model = self.context_manager.persistence_model
-                tasks = persistence_model.tasks.list()
-                managers = persistence_model.tasksmanagers.list()
-                
-                # Build lookups
-                task_info = {t.id: t for t in tasks}
-                manager_info = {m.id: m for m in managers}
-                
-                # Get all task associations for each source
-                for ctx in global_contexts:
-                    source_assocs = await self.context_manager.context_provider.get_contexts_by_source(
-                        source_id=ctx["id"],
-                        type=ctx["type"]
-                    )
-                    if source_assocs:
-                        task_associations[ctx["id"]] = source_assocs
+            persistence_model = self.context_manager.persistence_model
+            tasks = persistence_model.tasks.list()
+            managers = persistence_model.tasksmanagers.list()
+            
+            # Build lookups
+            task_info = {t.id: t for t in tasks}
+            manager_info = {m.id: m for m in managers}
+            
+            # Get all task associations for each source
+            for ctx in global_contexts:
+                source_assocs = await self.context_manager.context_provider.get_contexts_by_source(
+                    source_id=ctx["id"],
+                    type=ctx["type"]
+                )
+                if source_assocs:
+                    task_associations[ctx["id"]] = source_assocs
             
             # Group contexts by type
             type_contexts = {
