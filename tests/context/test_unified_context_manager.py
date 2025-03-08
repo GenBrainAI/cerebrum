@@ -14,17 +14,21 @@ from src.server.context.unified_context_manager import (
     PreparedData,
     DataSource
 )
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
 
 @pytest.fixture(autouse=True)
 async def clear_context_db(context_manager):
     """Clear the context database before each test."""
-    if hasattr(context_manager.context_provider, 'context_db'):
-        await context_manager.context_provider.context_db.clear()
-    if hasattr(context_manager, 'vector_store'):
-        # Reset vector store collections
-        for collection in context_manager.vector_store.client.list_collections():
-            context_manager.vector_store.client.delete_collection(collection.name)
+    # Reset any existing data
+    await context_manager.context_db.clear()
+    await context_manager.knowledge_base.clear()
+    await context_manager.vector_store.clear()
     yield
+    # Clean up after test
+    await context_manager.context_db.clear()
+    await context_manager.knowledge_base.clear()
+    await context_manager.vector_store.clear()
 
 @pytest.fixture
 def temp_data_dir():
@@ -36,7 +40,12 @@ def temp_data_dir():
 @pytest.fixture
 async def context_manager(temp_data_dir):
     """Create a UnifiedContextManager instance with temporary storage."""
-    manager = UnifiedContextManager(data_dir=temp_data_dir)
+    # Reset the persistence model factory to ensure a clean state
+    PersistenceModelFactory.reset()
+    # Create a new persistence model
+    persistence_model = InMemoryPersistenceModel()
+    # Create the context manager with the persistence model
+    manager = UnifiedContextManager(data_dir=temp_data_dir, persistence_model=persistence_model)
     await manager.initialize()
     return manager
 

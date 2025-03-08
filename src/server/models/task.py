@@ -79,6 +79,7 @@ class Task(BaseModel):
     tree_flow_id: Optional[str] = Field(default=None, description="ID of the task tree flow associated with this task")
     agent_role: Optional[str] = Field(default=None, description="Role of the agent assigned to this task")
     framework: Optional[str] = Field(default="crewai", description="Framework to use for task execution (e.g. crewai, autogen)")
+    model: Optional[str] = Field(default=None, description="Model to use for task execution")
     created_at: Optional[datetime] = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = Field(default_factory=datetime.now)
     config: Optional[Dict[str, Any]] = Field(default_factory=dict)
