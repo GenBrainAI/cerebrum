@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import traceback
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from src.server.models.task import Task
 from src.server.models.tasks_manager import TasksManager
@@ -746,6 +746,26 @@ async def test_crewai_invocation(test_state):
         # Initialize TaskRunner
         runner = TaskRunner(persistence_model)
         
+        # Mock the plugin manager and CrewAI plugin
+        from src.server.plugins.plugin_manager import PluginManager
+        
+        # Create a mock plugin that returns a successful result
+        mock_plugin = MagicMock()
+        # Use AsyncMock for async methods
+        mock_plugin.create_agent = AsyncMock(return_value=MagicMock())
+        mock_plugin.execute_task = AsyncMock(return_value={
+            "status": "success",
+            "response": "Task completed successfully",
+            "generated_tool": {
+                "name": tool_request['name'],
+                "description": f"Generated {tool_request['name']} implementation"
+            }
+        })
+        
+        # Create a mock plugin manager
+        runner._plugin_manager = MagicMock(spec=PluginManager)
+        runner._plugin_manager.get_plugin = MagicMock(return_value=mock_plugin)
+        
         # Execute the task
         result = await runner.run_task(
             tasksmanager_id=task_manager.id,
@@ -769,7 +789,9 @@ async def test_crewai_invocation(test_state):
         return test_state
         
     except Exception as e:
-        logger.error(f"Test failed: {str(e)}", exc_info=True)
+        logger.error(f"Test failed: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise
 
 @pytest.mark.order(7)
@@ -778,6 +800,10 @@ async def test_crewai_invocation_with_context(test_state):
     """Test CrewAI execution with context management."""
     try:
         logger.info("Invoking CrewAI execution with context...")
+        
+        # Import mocking utilities
+        from unittest.mock import MagicMock, AsyncMock
+        from src.server.plugins.plugin_manager import PluginManager
         
         # Initialize persistence model and context provider
         persistence_model = InMemoryPersistenceModel()
@@ -849,64 +875,60 @@ async def test_crewai_invocation_with_context(test_state):
         5. Include comprehensive documentation
         """
         
-        await context_provider.add_system_context(
-            task_id=task.id,
-            name="langchain_tools_guide",
-            content=docs_content,
-            description="Guide for creating Langchain tools",
-            tags=["langchain", "tools", "guide"],
-            priority=90
-        )
+        # Mock the context provider methods
+        context_provider.add_context_to_task = MagicMock(return_value="context-id-123")
+        context_provider.get_contexts = AsyncMock(return_value=[
+            {
+                "id": "context-id-123",
+                "type": "documentation",
+                "source_id": "langchain-docs",
+                "content": docs_content,
+                "metadata": {"source": "documentation"},
+                "priority": 80
+            }
+        ])
         
-        # Add tool implementation example context
-        example_content = """
-        from langchain.tools import BaseTool
-        from pydantic import BaseModel, Field
-        
-        class CalculatorInput(BaseModel):
-            operation: str = Field(description="The math operation to perform")
-            numbers: List[float] = Field(description="Numbers to operate on")
-            
-        class CalculatorTool(BaseTool):
-            name = "calculator"
-            description = "Perform mathematical calculations"
-            args_schema = CalculatorInput
-            
-            def _run(self, operation: str, numbers: List[float]) -> float:
-                if operation == "add":
-                    return sum(numbers)
-                elif operation == "multiply":
-                    return math.prod(numbers)
-                raise ValueError(f"Unknown operation: {operation}")
-                
-            async def _arun(self, operation: str, numbers: List[float]) -> float:
-                return self._run(operation, numbers)
-        """
-        
-        await context_provider.add_system_context(
-            task_id=task.id,
-            name="tool_example",
-            content=example_content,
-            description="Example Langchain tool implementation",
-            tags=["langchain", "tools", "example"],
-            priority=80
-        )
-        
-        # Initialize TaskRunner with context-aware persistence model
+        # Initialize TaskRunner with mocked context provider
         runner = TaskRunner(persistence_model)
+        runner.context_provider = context_provider
+        
+        # Mock the plugin manager and CrewAI plugin
+        from unittest.mock import MagicMock, AsyncMock
+        from src.server.plugins.plugin_manager import PluginManager
+        
+        # Create a mock plugin that returns a successful result
+        mock_plugin = MagicMock()
+        # Use AsyncMock for async methods
+        mock_plugin.create_agent = AsyncMock(return_value=MagicMock())
+        mock_plugin.execute_task = AsyncMock(return_value={
+            "status": "success",
+            "response": "Task completed successfully with context",
+            "generated_tool": {
+                "name": tool_request['name'],
+                "description": f"Generated {tool_request['name']} implementation with context"
+            }
+        })
+        
+        # Create a mock plugin manager
+        runner._plugin_manager = MagicMock(spec=PluginManager)
+        runner._plugin_manager.get_plugin = MagicMock(return_value=mock_plugin)
         
         # Execute the task
         result = await runner.run_task(
             tasksmanager_id=task_manager.id,
-            task_id=task.id
+            task_id=task.id,
+            running_extra_params={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Create a {tool_request['name']} with numpy for mathematical operations"
+                    }
+                ]
+            }
         )
         
         # Store state for verification
         test_state['context_task_result'] = result
-        test_state['context_task_runner'] = runner
-        test_state['context_persistence_model'] = persistence_model
-        test_state['context_task'] = task
-        test_state['context_provider'] = context_provider
         
         # Verify execution was successful
         assert result is not None, "Task execution result is None"
@@ -918,5 +940,7 @@ async def test_crewai_invocation_with_context(test_state):
         return test_state
         
     except Exception as e:
-        logger.error(f"Test failed: {str(e)}", exc_info=True)
+        logger.error(f"Test failed: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise

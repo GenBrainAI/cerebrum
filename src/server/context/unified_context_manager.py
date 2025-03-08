@@ -76,11 +76,13 @@ class UnifiedContextManager:
     6. Prepared Data Management
     """
     
-    def __init__(self, data_dir: str = "persistent_state/prepared_data"):
+    def __init__(self, data_dir: str = "persistent_state/prepared_data", persistence_model=None):
         """Initialize all context components."""
         self.context_db = ContextDatabase()
         self.context_provider = ContextProvider()
         self.context_provider.context_db = self.context_db  # Set the context_db after initialization
+        if persistence_model:
+            self.context_provider.persistence_model = persistence_model
         self.knowledge_base = KnowledgeBase()
         self.vector_store = VectorStore()
         self.web_scraper = WebScraperTool()

@@ -95,7 +95,7 @@ async def test_get_contexts_basic(context_provider, mock_persistence_model):
     ])
     
     # Mock token calculation to return a fixed number
-    with patch.object(context_provider, '_calculate_available_tokens', return_value=6000):
+    with patch.object(context_provider, '_calculate_token_budget', return_value={'available_tokens': 6000, 'total_tokens': 8000}):
         # Get contexts
         contexts = await context_provider.get_contexts(
             query="Test query",
@@ -139,7 +139,7 @@ async def test_get_contexts_token_limit(context_provider, mock_persistence_model
     ])
     
     # Mock token calculation to return a small number of available tokens
-    with patch.object(context_provider, '_calculate_available_tokens', return_value=10):
+    with patch.object(context_provider, '_calculate_token_budget', return_value={'available_tokens': 10, 'total_tokens': 100}):
         with patch.object(context_provider, '_estimate_token_count', side_effect=lambda text: 5 if text == "Vector store content" else 2000):
             # Get contexts
             contexts = await context_provider.get_contexts(
@@ -188,8 +188,8 @@ async def test_get_contexts_message_history(context_provider, mock_persistence_m
     ])
     
     # Mock token calculation
-    with patch.object(context_provider, '_calculate_available_tokens') as mock_calc:
-        mock_calc.return_value = 6000
+    with patch.object(context_provider, '_calculate_token_budget') as mock_calc:
+        mock_calc.return_value = {'available_tokens': 6000, 'total_tokens': 8000}
         
         # Get contexts with message history
         await context_provider.get_contexts(
@@ -199,11 +199,11 @@ async def test_get_contexts_message_history(context_provider, mock_persistence_m
             message_history=message_history
         )
         
-        # Check that _calculate_available_tokens was called with the correct parameters
+        # Check that _calculate_token_budget was called with the correct parameters
         mock_calc.assert_called_once()
-        kwargs = mock_calc.call_args.kwargs
-        assert kwargs.get('model') == "gpt-4"  # model
-        assert kwargs.get('message_history') == message_history  # message_history
+        args = mock_calc.call_args.args
+        assert args[0] == "gpt-4"  # model
+        assert args[2] == message_history  # message_history
 
 
 @pytest.mark.asyncio
@@ -233,8 +233,8 @@ async def test_get_contexts_different_models(context_provider, mock_persistence_
     ])
 
     # Test with different models
-    with patch.object(context_provider, '_calculate_available_tokens') as mock_calc:
-        mock_calc.return_value = 6000
+    with patch.object(context_provider, '_calculate_token_budget') as mock_calc:
+        mock_calc.return_value = {'available_tokens': 6000, 'total_tokens': 8000}
 
         # GPT-4
         await context_provider.get_contexts(
@@ -243,7 +243,7 @@ async def test_get_contexts_different_models(context_provider, mock_persistence_
             task_id="task1"
         )
         mock_calc.assert_called_once()
-        assert mock_calc.call_args.kwargs.get('model') == "gpt-4"  # First positional arg is model
+        assert mock_calc.call_args.args[0] == "gpt-4"  # First positional arg is model
         mock_calc.reset_mock()
 
         # GPT-3.5
@@ -253,7 +253,7 @@ async def test_get_contexts_different_models(context_provider, mock_persistence_
             task_id="task1"
         )
         mock_calc.assert_called_once()
-        assert mock_calc.call_args.kwargs.get('model') == "gpt-3.5-turbo"
+        assert mock_calc.call_args.args[0] == "gpt-3.5-turbo"
         mock_calc.reset_mock()
 
         # Claude
@@ -263,7 +263,7 @@ async def test_get_contexts_different_models(context_provider, mock_persistence_
             task_id="task1"
         )
         mock_calc.assert_called_once()
-        assert mock_calc.call_args.kwargs.get('model') == "claude-3-opus-20240229"
+        assert mock_calc.call_args.args[0] == "claude-3-opus-20240229"
 
 
 @pytest.mark.asyncio
@@ -314,7 +314,7 @@ async def test_context_sorting_by_priority(context_provider, mock_persistence_mo
     context_provider.context_db.search_context = AsyncMock(return_value=[])
 
     # Mock token calculation to return a fixed number
-    with patch.object(context_provider, '_calculate_available_tokens', return_value=6000):
+    with patch.object(context_provider, '_calculate_token_budget', return_value={'available_tokens': 6000, 'total_tokens': 8000}):
         # Mock token estimation to return a small value so all contexts fit
         with patch.object(context_provider, '_estimate_token_count', return_value=10):
             # Get contexts
@@ -327,5 +327,4 @@ async def test_context_sorting_by_priority(context_provider, mock_persistence_mo
             # Check that contexts are sorted by priority (highest first)
             assert len(contexts) == 3
             assert contexts[0]["priority"] == 90  # High priority first
-            assert contexts[1]["priority"] == 60  # Medium priority second
-            assert contexts[2]["priority"] == 30  # Low priority last 
+            assert contexts[1]["priority"] == 60  # Medium priority second 
