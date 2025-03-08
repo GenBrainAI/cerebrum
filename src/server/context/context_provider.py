@@ -547,12 +547,12 @@ class ContextProvider:
             estimated_contexts = max(1, remaining_tokens // 500)
             print(f"📊 DEBUG: Estimated contexts to retrieve: {estimated_contexts}")
             
-            # Search with the specific index
-            print(f"🔍 DEBUG: search_context called with query='{query}', filters=None, limit={estimated_contexts}, min_relevance=0.7, index_name={vector_index_name}")
+            # Search with the specific index - use lower relevance threshold (0.5 instead of 0.7)
+            print(f"🔍 DEBUG: search_context called with query='{query}', filters=None, limit={estimated_contexts}, min_relevance=0.5, index_name={vector_index_name}")
             vector_contexts = await self.context_db.search_context(
                 query=query,
                 limit=estimated_contexts,
-                min_relevance=0.7,
+                min_relevance=0.3,
                 index_name=vector_index_name
             )
             print(f"📊 DEBUG: Found {len(vector_contexts)} vector contexts")

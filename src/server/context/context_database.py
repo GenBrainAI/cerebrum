@@ -186,7 +186,7 @@ class ContextDatabase:
         query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         limit: int = 5,
-        min_relevance: float = 0.7,
+        min_relevance: float = 0.5,
         index_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Enhanced context search with filtering and relevance threshold."""
@@ -267,6 +267,12 @@ class ContextDatabase:
                 if not results:
                     print("🔄 DEBUG: No results from semantic search, trying fallback")
                     return await self._get_all_documents_fallback(index_name, limit)
+                
+                # Log individual result relevance scores for debugging
+                print("📊 DEBUG: Result relevance scores:")
+                for i, result in enumerate(results):
+                    relevance = result.get('relevance', 0)
+                    print(f"  Result {i+1}: relevance={relevance:.4f} {'✅ (above threshold)' if relevance >= min_relevance else '❌ (below threshold)'}")
                 
                 # Filter by relevance threshold
                 filtered_results = [r for r in results if r.get('relevance', 0) >= min_relevance]

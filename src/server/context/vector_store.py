@@ -282,7 +282,18 @@ class VectorStore:
             # Check if collection already exists in indices
             if collection_name in self.indices:
                 print(f"✅ DEBUG: Collection {collection_name} already exists in indices")
-                return self.indices[collection_name]
+                
+                # Verify the collection is healthy
+                try:
+                    # Try a simple operation to check if the collection is working properly
+                    collection = self.indices[collection_name]
+                    count = collection.count()
+                    print(f"📊 DEBUG: Collection {collection_name} contains {count} documents")
+                    return collection
+                except Exception as e:
+                    print(f"⚠️ DEBUG: Collection {collection_name} exists but has errors: {str(e)}")
+                    print(f"🔄 DEBUG: Attempting to repair collection {collection_name}")
+                    return self._repair_collection(collection_name)
                 
             # Try to get existing collection
             try:
@@ -320,6 +331,93 @@ class VectorStore:
             import traceback
             print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             raise
+            
+    def _repair_collection(self, collection_name: str) -> chromadb.Collection:
+        """Repair a potentially corrupted collection by recreating it."""
+        print(f"🔧 DEBUG: Repairing collection {collection_name}")
+        
+        try:
+            # First, try to get all documents from the collection
+            old_collection = self.indices.get(collection_name)
+            documents = []
+            metadatas = []
+            ids = []
+            
+            if old_collection:
+                try:
+                    # Get all documents from the collection
+                    print(f"📄 DEBUG: Retrieving documents from collection {collection_name}")
+                    results = old_collection.get(include=["documents", "metadatas", "embeddings"])
+                    
+                    if results and 'documents' in results and results['documents']:
+                        documents = results['documents']
+                        metadatas = results['metadatas']
+                        ids = results['ids']
+                        print(f"📊 DEBUG: Retrieved {len(documents)} documents from collection {collection_name}")
+                except Exception as e:
+                    print(f"⚠️ DEBUG: Error retrieving documents from collection {collection_name}: {str(e)}")
+            
+            # Remove the collection from indices
+            if collection_name in self.indices:
+                del self.indices[collection_name]
+            
+            # Delete the collection if it exists
+            try:
+                print(f"🗑️ DEBUG: Deleting collection {collection_name}")
+                self.client.delete_collection(name=collection_name)
+            except Exception as e:
+                print(f"⚠️ DEBUG: Error deleting collection {collection_name}: {str(e)}")
+            
+            # Create a new collection
+            print(f"🔄 DEBUG: Creating new collection {collection_name}")
+            new_collection = self.client.create_collection(
+                name=collection_name,
+                embedding_function=self.embedding_function
+            )
+            
+            # Add the collection to indices
+            self.indices[collection_name] = new_collection
+            
+            # Restore documents if we have any
+            if documents:
+                print(f"🔄 DEBUG: Restoring {len(documents)} documents to collection {collection_name}")
+                
+                # Add documents in batches to avoid overwhelming the system
+                batch_size = 100
+                for i in range(0, len(documents), batch_size):
+                    end_idx = min(i + batch_size, len(documents))
+                    
+                    # Generate new embeddings for the documents
+                    batch_embeddings = []
+                    for doc in documents[i:end_idx]:
+                        embedding = self._safe_embed([doc])[0]
+                        batch_embeddings.append(embedding)
+                    
+                    # Add the batch to the collection
+                    new_collection.add(
+                        documents=documents[i:end_idx],
+                        metadatas=metadatas[i:end_idx],
+                        ids=ids[i:end_idx],
+                        embeddings=batch_embeddings
+                    )
+                    
+                print(f"✅ DEBUG: Restored {len(documents)} documents to collection {collection_name}")
+            
+            return new_collection
+            
+        except Exception as e:
+            print(f"❌ DEBUG: Error repairing collection {collection_name}: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+            
+            # As a last resort, create a new empty collection
+            print(f"🔄 DEBUG: Creating new empty collection {collection_name} as fallback")
+            new_collection = self.client.create_collection(
+                name=collection_name,
+                embedding_function=self.embedding_function
+            )
+            self.indices[collection_name] = new_collection
+            return new_collection
 
     async def search_in_index(self, index_name: str, embedding: List[float], 
                          filters: Optional[Dict[str, Any]] = None, 
@@ -351,15 +449,45 @@ class VectorStore:
                         chroma_filter = {"domain": filter_dict['domain']}
             
             # Query the collection
-            results = collection.query(
-                query_embeddings=[embedding],
-                n_results=limit,
-                where=chroma_filter
-            )
+            print(f"🔍 DEBUG: Executing query against collection with {count} documents")
+            try:
+                results = collection.query(
+                    query_embeddings=[embedding],
+                    n_results=limit,
+                    where=chroma_filter
+                )
+                
+                # Log raw results structure
+                print(f"📊 DEBUG: Raw results keys: {list(results.keys())}")
+                if 'documents' in results:
+                    print(f"📊 DEBUG: Found {len(results['documents'][0])} documents")
+                if 'distances' in results:
+                    print(f"📊 DEBUG: Distance range: min={min(results['distances'][0]) if results['distances'][0] else 'N/A'}, max={max(results['distances'][0]) if results['distances'][0] else 'N/A'}")
+                
+            except Exception as e:
+                print(f"❌ DEBUG: Error querying collection: {str(e)}")
+                import traceback
+                print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+                
+                # Try to repair the collection and query again
+                print(f"🔄 DEBUG: Attempting to repair collection and retry query")
+                collection = self._repair_collection(index_name)
+                
+                # If the collection is now empty, return empty results
+                if collection.count() == 0:
+                    print(f"⚠️ DEBUG: Repaired collection {index_name} is empty")
+                    return []
+                
+                # Retry the query
+                results = collection.query(
+                    query_embeddings=[embedding],
+                    n_results=limit,
+                    where=chroma_filter
+                )
             
             # Process results
             processed_results = []
-            if results and 'documents' in results and results['documents']:
+            if results and 'documents' in results and results['documents'] and results['documents'][0]:
                 documents = results['documents'][0]  # First query result
                 metadatas = results['metadatas'][0]  # First query result
                 distances = results['distances'][0]  # First query result
@@ -376,8 +504,16 @@ class VectorStore:
                         "content": doc,
                         "metadata": metadatas[i],
                         "id": ids[i],
-                        "relevance": relevance
+                        "relevance": relevance,
+                        "distance": distance  # Include raw distance for debugging
                     })
+                    
+                    # Log detailed information about each result
+                    print(f"📄 DEBUG: Result {i+1}:")
+                    print(f"  - ID: {ids[i]}")
+                    print(f"  - Distance: {distance:.4f}")
+                    print(f"  - Relevance: {relevance:.4f}")
+                    print(f"  - Content preview: {doc[:100]}..." if len(doc) > 100 else doc)
             
             print(f"📊 DEBUG: Vector search returned {len(processed_results)} results")
             return processed_results
