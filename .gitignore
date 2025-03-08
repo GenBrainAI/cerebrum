@@ -159,6 +159,7 @@ temp_repos/
 # Test directories
 test_context_db/
 test_context_db/**
+persistent_state/*
 
 test_persistent_state/vector_store/
 test_persistent_state/vector_store/**
