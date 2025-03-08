@@ -1,3 +1,9 @@
+"""
+DEPRECATED: This module is deprecated and will be removed in a future version.
+Please use task_tree_flow.py instead.
+"""
+
+import warnings
 from typing import List, Dict, Callable, Optional, Set, Any, Union, Tuple
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -7,6 +13,13 @@ from ..models.task import Task
 import asyncio
 from collections import defaultdict
 
+# Show deprecation warning
+warnings.warn(
+    "tasks_tree_controller.py is deprecated and will be removed in a future version. "
+    "Please use task_tree_flow.py instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 class TaskStatus(Enum):
     PENDING = "pending"

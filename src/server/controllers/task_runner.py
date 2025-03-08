@@ -2,18 +2,19 @@ from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
 import asyncio
+import uuid
 
-from ..models.message import Message
-from ..models.tasks_manager import TasksManager
-from ..models.task import Task
+from src.server.models.task import Task, Message
+from src.server.models.tasks_manager import TasksManager
+from src.server.persistence.persistence_model import PersistenceModelBase
+from src.server.controllers.prompt_transformer import PromptTransformer, MessageTransformer
 from ..controllers.tools_operator import ToolsOperator
 from ..controllers.operator import ToolsOperator as APIOperator
 from ..controllers.curried_proxy import CurriedProxy
 from ..controllers.crew_runner import run_crew_task
 from ..context.context_provider import ContextProvider
 from ..context.context_analytics import ContextAnalytics
-from ..controllers.task_tree_controller import TaskNode
-from ..persistence.persistence_model import PersistenceModelBase
+from ..controllers.task_tree_flow import TaskNode
 from .task_observability import TaskObservabilityManager, ObservabilityLevel
 from ..plugins.plugin_manager import PluginManager
 
@@ -215,6 +216,9 @@ class TaskRunner:
                 # Check if this is a CrewAI task
                 if hasattr(task, 'crewai_config_id') and task.crewai_config_id:
                     result = await self._run_crewai_task(task, manager, running_extra_params)
+                # Check if this is a Tree Flow task
+                elif hasattr(task, 'tree_flow_id') and task.tree_flow_id:
+                    result = await self._run_tree_flow_task(task, manager, running_extra_params)
                 else:
                     # Execute standard task
                     result = await self._run_standard_task(task, running_extra_params or {}, manager)
@@ -222,7 +226,7 @@ class TaskRunner:
                 # Normalize result format
                 if isinstance(result, dict):
                     status = result.get("status", "completed")
-                    response = result.get("result", result.get("response", ""))
+                    response = result.get("response", result.get("result", ""))
                     error = result.get("error")
                 else:
                     status = "completed"
@@ -353,7 +357,6 @@ class TaskRunner:
             if query:
                 try:
                     # Use the context provider that's already set on the TaskRunner
-                    # This allows tests to replace it with a mock
                     self.context_provider.persistence_model = self.persistence_model
                     contexts = await self.context_provider.get_contexts(
                         query=query,
@@ -566,6 +569,66 @@ class TaskRunner:
             logger.exception(e)
             raise TaskExecutionError(f"Failed to run CrewAI task: {str(e)}")
 
+    async def _run_tree_flow_task(
+        self,
+        task: Task,
+        tasksmanager: TasksManager,
+        running_extra_params: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Execute a Task Tree Flow task."""
+        try:
+            logger.info(f"\n🌳 Running Task Tree Flow task: {task.id}")
+            
+            # Check if tree flow exists
+            if not task.tree_flow_id:
+                raise ValueError(f"Task {task.id} has no associated tree flow")
+                
+            # Get contexts if needed
+            query = running_extra_params.get("context_query") if running_extra_params else None
+            logger.info(f"🔍 Getting contexts with query: {query}")
+            contexts = await self.context_provider.get_contexts(query) if query else []
+            logger.info(f"✅ Found {len(contexts)} contexts")
+            
+            # Prepare running parameters
+            params = {"contexts": contexts}
+            if running_extra_params:
+                params.update(running_extra_params)
+            logger.info(f"🔧 Running params: {params}")
+            
+            # Initialize tree flow manager
+            from src.server.controllers.task_tree_flow import TaskTreeFlowManager
+            tree_flow_manager = TaskTreeFlowManager(self, self.persistence_model)
+            await tree_flow_manager.initialize()
+            
+            # Create from model and execute
+            logger.info(f"\n🚀 Executing tree flow: {task.tree_flow_id}")
+            tree_flow_manager.create_from_model(task.tree_flow_id)
+            result = await tree_flow_manager.execute_tree(params)
+            logger.info("✅ Tree flow executed successfully")
+            
+            # Format the result
+            if isinstance(result, dict):
+                response = "\n".join([f"{node_id}: {node_result}" for node_id, node_result in result.items()])
+            else:
+                response = str(result)
+                
+            return {
+                "status": "completed",
+                "response": response,
+                "result": result,
+                "error": None
+            }
+            
+        except Exception as e:
+            error_msg = f"Error in Task Tree Flow execution: {str(e)}"
+            logger.error(error_msg)
+            logger.info(f"❌ {error_msg}")
+            return {
+                "status": "failed",
+                "error": error_msg,
+                "response": error_msg
+            }
+
     def _get_or_create_curried_proxy(
         self,
         task: Task,
@@ -671,3 +734,206 @@ class TaskRunner:
     def wrap_task(self, task: Task) -> TaskExecutor:
         """Wrap a Task model in a TaskExecutor."""
         return TaskExecutor(task, self)
+
+    async def run_flow(
+        self,
+        flow_id: str,
+        initial_context: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a task flow with the given ID.
+        
+        Args:
+            flow_id: The ID of the flow to execute
+            initial_context: Optional initial context for the flow
+            session_id: Optional session ID to use for the flow
+            
+        Returns:
+            A dictionary with the flow results
+        """
+        try:
+            logger.info(f"\n🚀 Running flow {flow_id}")
+            
+            # Get the flow from the persistence model
+            from ..controllers.task_flow_manager import TaskFlowManager
+            flow_manager = TaskFlowManager(self.persistence_model)
+            await flow_manager.initialize()
+            
+            flow = flow_manager.get_flow(flow_id)
+            if not flow:
+                raise ValueError(f"Flow with ID {flow_id} not found")
+                
+            if session_id:
+                flow.session_id = session_id
+                
+            context = initial_context.copy() if initial_context else {}
+            context["flow_id"] = flow_id
+            context["session_id"] = flow.session_id
+            
+            # Validate messages in context using helper method
+            if 'messages' in context and isinstance(context['messages'], list):
+                context['messages'] = self._validate_messages(context['messages'], "context")
+            
+            results = []
+            
+            for i, step in enumerate(flow.steps):
+                try:
+                    # Mark step as started
+                    step.mark_started()
+                    
+                    # Get the task for this step
+                    task = self.persistence_model.tasks.read(step.task_id)
+                    
+                    # Get the previous step result if available
+                    previous_result = None
+                    if i > 0:
+                        previous_step = flow.steps[i - 1]
+                        previous_result = previous_step.result
+                    
+                    # Prepare the context for this step
+                    step_context = context.copy()
+                    
+                    # Apply transformer if available
+                    if step.transformer and previous_result:
+                        print(f"\n🔄 DEBUG - Applying transformer for step {i}: {step.name}")
+                        print(f"  transformer type: {type(step.transformer)}")
+                        print(f"  previous_result: {previous_result}")
+                        
+                        if isinstance(step.transformer, PromptTransformer):
+                            print(f"  Applying PromptTransformer")
+                            # Transform the prompt and create messages
+                            messages = step.transformer.create_messages(previous_result, task)
+                            print(f"  created messages count: {len(messages)}")
+                            print(f"  created messages types: {[type(m) for m in messages]}")
+                            # Validate transformer messages using helper method
+                            step_context["messages"] = self._validate_messages(messages, "prompt transformer")
+                        elif isinstance(step.transformer, MessageTransformer):
+                            print(f"  Applying MessageTransformer")
+                            # Get the previous task
+                            previous_task = self.persistence_model.tasks.read(flow.steps[i - 1].task_id)
+                            
+                            # Transform messages between tasks
+                            messages = step.transformer.transform(
+                                previous_task,
+                                task,
+                                session_id=flow.session_id,
+                                additional_content=step_context.get("additional_content")
+                            )
+                            print(f"  transformed messages count: {len(messages)}")
+                            print(f"  transformed messages types: {[type(m) for m in messages]}")
+                            # Validate transformer messages using helper method
+                            step_context["messages"] = self._validate_messages(messages, "message transformer")
+                    
+                    # Call pre-execute hook if available
+                    if step.pre_execute_hook:
+                        hook_result = step.pre_execute_hook(step_context, previous_result, task)
+                        if hook_result:
+                            step_context.update(hook_result)
+                            
+                            # Validate hook messages using helper method
+                            if 'messages' in hook_result and isinstance(hook_result['messages'], list):
+                                step_context["messages"] = self._validate_messages(hook_result['messages'], "pre-execute hook")
+                    
+                    # Execute the task
+                    result = await self.run_task(
+                        tasksmanager_id=flow.tasksmanager_id,
+                        task_id=step.task_id,
+                        running_extra_params=step_context
+                    )
+                    
+                    # Call post-execute hook if available
+                    if step.post_execute_hook:
+                        hook_result = step.post_execute_hook(result, step_context, task)
+                        if hook_result:
+                            result = hook_result
+                    
+                    # Mark step as completed
+                    step.mark_completed(result)
+                    
+                    # Add result to results list
+                    results.append({
+                        "step_index": i,
+                        "task_id": step.task_id,
+                        "name": step.name or task.name,
+                        "result": result,
+                        "status": "completed"
+                    })
+                    
+                    # Update context with this step's result
+                    context[f"step_{i}_result"] = result
+                    context["previous_result"] = result
+                    
+                except Exception as e:
+                    error_msg = f"Flow step execution failed: {str(e)}"
+                    logger.error(f"❌ {error_msg}")
+                    
+                    # Mark step as failed
+                    step.mark_failed(str(e))
+                    
+                    # Add error to results list
+                    results.append({
+                        "step_index": i,
+                        "task_id": step.task_id,
+                        "name": step.name or "Unknown",
+                        "error": str(e),
+                        "status": "failed"
+                    })
+                    
+                    # Stop execution if a step fails
+                    break
+            
+            # Update the flow in the persistence model
+            flow_manager.update_flow(flow)
+            
+            return {
+                "flow_id": flow_id,
+                "session_id": flow.session_id,
+                "results": results,
+                "completed": all(step.status == "completed" for step in flow.steps),
+                "context": context
+            }
+            
+        except Exception as e:
+            error_msg = f"Flow execution failed: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            return {
+                "flow_id": flow_id,
+                "error": error_msg,
+                "completed": False,
+                "results": []
+            }
+
+    def _validate_messages(self, messages: List[Any], source: str = "unknown") -> List[Message]:
+        """
+        Validate that all messages are Pydantic Message objects.
+        
+        Args:
+            messages: List of messages to validate
+            source: Source of the messages for error reporting
+            
+        Returns:
+            List of validated Message objects
+            
+        Raises:
+            TypeError: If any message is not a Pydantic Message object
+        """
+        print(f"\n🔍 DEBUG - _validate_messages called from source: {source}")
+        print(f"  messages count: {len(messages) if messages else 0}")
+        print(f"  messages type: {type(messages)}")
+        
+        validated_messages = []
+        for i, msg in enumerate(messages):
+            print(f"  message {i} type: {type(msg)}")
+            print(f"  message {i} dir: {dir(msg) if hasattr(msg, '__dict__') else 'N/A'}")
+            
+            if isinstance(msg, Message):
+                print(f"  ✅ message {i} is a valid Message object")
+                validated_messages.append(msg)
+            else:
+                print(f"  ❌ message {i} is NOT a valid Message object")
+                print(f"  message {i} content: {msg}")
+                raise TypeError(f"Invalid message type from {source}: {type(msg)}. Only Pydantic Message objects are allowed.")
+        
+        print(f"  ✅ Validated {len(validated_messages)} messages successfully")
+        return validated_messages

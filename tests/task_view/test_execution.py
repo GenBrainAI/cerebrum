@@ -588,7 +588,7 @@ async def test_standard_task_execution():
         task=task,
         running_extra_params={
             "messages": [
-                {"role": "user", "content": "What is the capital of France?"}
+                Message(role="user", content="What is the capital of France?")
             ]
         },
         tasksmanager=tasksmanager
@@ -603,7 +603,7 @@ async def test_standard_task_execution():
         task=task,
         running_extra_params={
             "messages": [
-                {"role": "user", "content": "What is the population of Paris?"}
+                Message(role="user", content="What is the population of Paris?")
             ]
         },
         tasksmanager=tasksmanager
@@ -618,7 +618,7 @@ async def test_standard_task_execution():
         task=task,
         running_extra_params={
             "messages": [
-                {"role": "user", "content": "What is the GDP of Mars?"}
+                Message(role="user", content="What is the GDP of Mars?")
             ]
         },
         tasksmanager=tasksmanager
