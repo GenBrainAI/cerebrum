@@ -8,9 +8,14 @@ import asyncio
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch, AsyncMock
+import uuid
+import json
+import os
+import sys
 
-from src.server.models.task import Task, Message
+from src.server.models.task import Task
+from src.server.models.message import Message
 from src.server.models.tasks_manager import TasksManager
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
 from src.server.controllers.task_runner import TaskRunner

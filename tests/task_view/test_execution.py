@@ -121,14 +121,23 @@ class MockOperator:
             raise ValueError("No messages found")
             
         # Simulate AI responses based on the question
-<<<<<<< HEAD
         try:
-            last_message = messages[-1]['content'].lower()
+            # Try to handle both dict-style messages and object-style messages
+            if isinstance(messages[-1], dict):
+                last_message = messages[-1].get('content', '').lower()
+            else:
+                last_message = messages[-1].content.lower()
+                
             if "capital of france" in last_message:
                 return "The capital of France is Paris."
             elif "population of paris" in last_message:
                 return "The population of Paris is approximately 2.2 million people."
-            return f"I'm not sure about: {messages[-1]['content']}"
+            
+            # Return appropriate response based on message format
+            if isinstance(messages[-1], dict):
+                return f"I'm not sure about: {messages[-1].get('content', '')}"
+            else:
+                return f"I'm not sure about: {messages[-1].content}"
         except (IndexError, KeyError, TypeError):
             # Handle cases where messages might not be in the expected format
             return "I don't understand the question."
@@ -174,14 +183,6 @@ class MockContextProvider:
         """Mock implementation of prepare_task_messages."""
         # Just return the messages unchanged
         return messages
-=======
-        last_message = messages[-1].content.lower()
-        if "capital of france" in last_message:
-            return "The capital of France is Paris."
-        elif "population of paris" in last_message:
-            return "The population of Paris is approximately 2.2 million people."
-        return f"I'm not sure about: {messages[-1].content}"
->>>>>>> origin/main
 
 @pytest.fixture
 def sample_tree():
