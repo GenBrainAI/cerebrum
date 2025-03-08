@@ -354,8 +354,10 @@ class ContextManagementSidebar:
                                 if assoc.get("task_id"):
                                     task = task_info.get(assoc["task_id"])
                                     if task:
+                                        # Create a unique ID for this task node by combining task ID with manager ID and context ID
+                                        unique_task_id = f"{task.id}_{manager_id}_{ctx['id']}"
                                         task_node = TreeNode(
-                                            id=UUID(task.id) if isinstance(task.id, str) else task.id,
+                                            id=UUID(f"00000000-0000-4000-8000-{abs(hash(unique_task_id)) % 0xFFFFFFFFF:012x}"),
                                             name=task.name,
                                             type="task",
                                             metadata={
@@ -370,8 +372,10 @@ class ContextManagementSidebar:
                     for assoc in standalone_tasks:
                         task = task_info.get(assoc["task_id"])
                         if task:
+                            # Create a unique ID for this standalone task node by combining task ID with context ID
+                            unique_task_id = f"{task.id}_standalone_{ctx['id']}"
                             task_node = TreeNode(
-                                id=UUID(task.id) if isinstance(task.id, str) else task.id,
+                                id=UUID(f"00000000-0000-4000-8000-{abs(hash(unique_task_id)) % 0xFFFFFFFFF:012x}"),
                                 name=task.name,
                                 type="task",
                                 metadata={
