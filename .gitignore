@@ -175,6 +175,6 @@ state/specialized/task_generation/**
 state/sessions/**
 test_cerebrum_data/
 test_storage/
-
+tests/db/chroma.sqlite3
 
 
