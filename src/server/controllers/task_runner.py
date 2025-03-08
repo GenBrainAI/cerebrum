@@ -296,6 +296,7 @@ class TaskRunner:
     ) -> Dict[str, Any]:
         """Run a standard task."""
         try:
+<<<<<<< HEAD
             # Get the task manager if not provided
             if not tasksmanager and task.tasksmanager_id:
                 tasksmanager = self.persistence_model.tasksmanagers.read(task.tasksmanager_id)
@@ -328,6 +329,46 @@ class TaskRunner:
                 logger.info("📝 No context query found")
             
             # Get model to use for context retrieval
+=======
+            logger.info(f"🔄 Running standard task: {task.name}")
+            task_data = task.dict() if hasattr(task, 'dict') else task.model_dump()
+            
+            # Add running_extra_params to task_data
+            if running_extra_params:
+                task_data.update(running_extra_params)
+
+            # If a plugin is configured, try to use it
+            if hasattr(task, 'framework') and task.framework and self._plugin_manager:
+                try:
+                    plugin = self._plugin_manager.get_plugin(task.framework)
+                    if plugin:
+                        agent = await plugin.create_agent(task_data)
+                        return await plugin.execute_task(agent, task_data)
+                except Exception as plugin_error:
+                    logger.warning(f"Plugin execution failed: {str(plugin_error)}, falling back to standard execution")
+
+            # Get or create curried proxy for standard execution
+            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager) if tasksmanager else None
+
+            # Standard task execution using operator for completions
+            messages_input = running_extra_params.get('messages', [])
+            
+            # Validate messages using helper method
+            formatted_messages = self._validate_messages(messages_input, "input parameters")
+            
+            # If no messages provided, use task's default messages
+            if not formatted_messages and task.messages:
+                formatted_messages = self._validate_messages(task.messages, "task messages")
+
+            if not formatted_messages:
+                return {
+                    "status": "failed",
+                    "response": "No messages found for task execution",
+                    "error": "Missing messages"
+                }
+
+            # Get model from tasksmanager or use default
+>>>>>>> origin/main
             model = None
             if tasksmanager and hasattr(tasksmanager, 'model') and tasksmanager.model:
                 model = tasksmanager.model
@@ -436,7 +477,7 @@ class TaskRunner:
             response = await self.completion(
                 tasksmanager_id=task.tasksmanager_id,
                 task_id=task.id,
-                messages=messages,
+                messages=formatted_messages,
                 model=model,
                 curried_proxy=curried_proxy
             )
@@ -450,10 +491,22 @@ class TaskRunner:
                 "response": response,
                 "task": task.to_dict() if hasattr(task, 'to_dict') else task
             }
+<<<<<<< HEAD
         except Exception as e:
             logger.error(f"❌ Error running standard task: {str(e)}")
             logger.exception(e)
             raise TaskExecutionError(f"Failed to run standard task: {str(e)}")
+=======
+            
+        except Exception as e:
+            error_msg = f"Task execution failed: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            return {
+                "status": "failed",
+                "response": error_msg,
+                "error": str(e)
+            }
+>>>>>>> origin/main
 
     async def _run_crewai_task(
         self,
