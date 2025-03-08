@@ -88,6 +88,7 @@ class Task(BaseModel):
     execution_logs: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Logs from task execution")
     input_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Input data for task execution")
     result: Optional[str] = Field(default=None, description="Result of task execution")
+    last_response: Optional[str] = Field(default=None, description="Last response from the task execution")
 
     def create_session(self, name: Optional[str] = None) -> str:
         """Create a new chat session"""

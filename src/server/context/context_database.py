@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import backoff
 from tqdm.asyncio import tqdm
 import numpy as np
-from .chroma_vector_store import ChromaVectorStore, VectorStoreConfig
+from .vector_store import VectorStore, VectorStoreConfig
 from openai import OpenAI
 import json
 import chromadb
@@ -20,48 +20,13 @@ class ContextDatabase:
     def __init__(self, persist_directory: str = None, batch_size: int = 100):
         """Initialize context database components."""
         if persist_directory is None:
-            # Default to context_db in the project root
-            project_root = Path(__file__).parents[3]  # Adjust based on directory structure
-            persist_directory = str(project_root / "context_db")
+            # Default to persistent_state/chroma_db
+            persist_directory = "persistent_state/chroma_db"
         
         print(f"Debug - Using persist directory: {persist_directory}")
         self.persist_directory = persist_directory
         self.batch_size = batch_size
         self._setup_logging()
-        
-        # Initialize vector store
-        self.vector_store = ChromaVectorStore(
-            config=VectorStoreConfig(
-                batch_size=batch_size,
-                persist_directory=persist_directory
-            ),
-            base_path=persist_directory
-        )
-        
-        # Initialize OpenAI client for embeddings
-        self.client = OpenAI(
-            api_key=os.environ.get("OPENAI_API_KEY")
-        )
-        
-        # Initialize ChromaDB client
-        self.chromadb_client = chromadb.PersistentClient(
-            path=str(Path(persist_directory) / "chroma"),
-            settings=chromadb.Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
-        )
-        
-        # Initialize embedding function
-        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.environ.get("OPENAI_API_KEY"),
-            model_name="text-embedding-3-small"
-        )
-        
-        # Initialize collections
-        self._initialize_collections()
-        
-        self.executor = ThreadPoolExecutor(max_workers=4)
         
         # Initialize OpenAI client
         api_key = os.getenv("OPENAI_API_KEY")
@@ -72,6 +37,9 @@ class ContextDatabase:
             
         self.openai_client = OpenAI(api_key=api_key)
         
+        # Initialize vector store with the same persist directory
+        self.vector_store = VectorStore(base_path=persist_directory)
+        
         # Initialize embeddings configuration
         self.embeddings = {
             "model": "text-embedding-3-small",
@@ -79,47 +47,62 @@ class ContextDatabase:
         }
 
         self.contexts = {}  # Dictionary to store contexts by task_id
+        self.executor = ThreadPoolExecutor(max_workers=4)
 
     def _setup_logging(self):
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
 
-    def _initialize_collections(self):
-        """Initialize collections in ChromaDB."""
-        try:
-            # Initialize main collection for contexts
-            self.collection = self.chromadb_client.get_or_create_collection(
-                name="contexts",
-                embedding_function=self.embedding_function
-            )
-            
-            # Initialize code collection
-            self.code_collection = self.chromadb_client.get_or_create_collection(
-                name="code_contexts",
-                embedding_function=self.embedding_function
-            )
-            
-            logging.info("Initialized context database collections")
-        except Exception as e:
-            logging.error(f"Error initializing collections: {str(e)}")
-            raise
-
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def _safe_embed(self, texts: List[str]) -> np.ndarray:
-        """Safely embed texts with error handling and retries."""
+    async def _safe_embed(self, texts: List[str]) -> Optional[List[List[float]]]:
+        """Safely generate embeddings with error handling and retries."""
+        if not texts:
+            print("⚠️ DEBUG: No texts provided for embedding")
+            return None
+            
+        print(f"🔤 DEBUG: Generating embeddings for {len(texts)} texts")
+        print(f"🔤 DEBUG: First text preview: {texts[0][:100]}...")
+        
+        # Try OpenAI embeddings first
         try:
-            # Use the vector store's embedding function
-            embeddings = []
-            for text in texts:
-                response = await self.client.embeddings.create(
-                    input=text,
+            if self.openai_client:
+                print("🔄 DEBUG: Using OpenAI for embeddings")
+                response = self.openai_client.embeddings.create(
+                    input=texts,
                     model="text-embedding-3-small"
                 )
-                embeddings.append(response.data[0].embedding)
-            return embeddings
+                embeddings = [item.embedding for item in response.data]
+                print(f"✅ DEBUG: Generated {len(embeddings)} OpenAI embeddings")
+                print(f"🔢 DEBUG: First embedding dimensions: {len(embeddings[0])}")
+                print(f"🔢 DEBUG: First 5 values of first embedding: {embeddings[0][:5]}")
+                return embeddings
+            else:
+                print("⚠️ DEBUG: OpenAI client not available")
         except Exception as e:
-            self.logger.error(f"Error embedding texts: {str(e)}")
-            raise
+            print(f"❌ DEBUG: Error generating OpenAI embeddings: {str(e)}")
+            self.logger.error(f"OpenAI embedding error: {str(e)}")
+            
+        # Fall back to local embeddings
+        try:
+            print("🔄 DEBUG: Falling back to local embeddings")
+            # Use the embedding function from vector_store
+            if hasattr(self.vector_store, 'embedding_function') and self.vector_store.embedding_function:
+                embeddings = self.vector_store.embedding_function(texts)
+                print(f"✅ DEBUG: Generated {len(embeddings)} local embeddings")
+                if embeddings:
+                    print(f"🔢 DEBUG: First embedding dimensions: {len(embeddings[0])}")
+                    print(f"🔢 DEBUG: First 5 values of first embedding: {embeddings[0][:5]}")
+                return embeddings
+            else:
+                print("❌ DEBUG: Local embedding function not available")
+        except Exception as e:
+            print(f"❌ DEBUG: Error generating local embeddings: {str(e)}")
+            self.logger.error(f"Local embedding error: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+            
+        print("❌ DEBUG: Failed to generate embeddings through any method")
+        return None
 
     async def ingest_code_directory(
         self,
@@ -203,121 +186,150 @@ class ContextDatabase:
         query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         limit: int = 5,
-        min_relevance: float = 0.7
+        min_relevance: float = 0.7,
+        index_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Enhanced context search with filtering and relevance threshold."""
         try:
-            print(f"Debug - Search context called with filters: {filters}")
+            print(f"\n🔍 DEBUG: search_context called with query='{query}', filters={filters}, limit={limit}, min_relevance={min_relevance}, index_name={index_name}")
+            
+            # Ensure index_name has the vs_ prefix if provided
+            if index_name:
+                original_index_name = index_name
+                index_name = self.vector_store.get_full_index_name(index_name)
+                if original_index_name != index_name:
+                    print(f"🔄 DEBUG: Added vs_ prefix to index_name: {original_index_name} -> {index_name}")
+            else:
+                print("⚠️ DEBUG: No index_name provided, will use default collection")
             
             if filters and 'file_ids' in filters.get('filters', {}):
                 # Direct lookup by file IDs - no need for embedding search
+                print(f"📂 DEBUG: Performing direct file ID lookup with {len(filters['filters']['file_ids'])} file IDs")
                 results = []
                 for file_id in filters['filters']['file_ids']:
                     try:
-                        print(f"Debug - Looking up file ID: {file_id}")
-                        file_info = await self.vector_store.get_file_info(file_id)
-                        print(f"Debug - Found file info: {file_info}")
-                        if file_info:
-                            results.append({
-                                "content": file_info.get('content', ''),
-                                "metadata": file_info,
-                                "relevance": 1.0  # Direct match
-                            })
+                        print(f"📄 DEBUG: Looking up file ID: {file_id}")
+                        # Use get_filtered_items_from_index instead of get_file_info
+                        file_results = await self.vector_store.get_filtered_items_from_index(
+                            index_name=index_name or "default",
+                            filters={"id": file_id},
+                            limit=1
+                        )
+                        if file_results:
+                            print(f"📄 DEBUG: Found file info")
+                            results.extend(file_results)
+                        else:
+                            print(f"⚠️ DEBUG: File ID {file_id} not found")
                     except Exception as e:
-                        print(f"Debug - Error getting file {file_id}: {str(e)}")
+                        print(f"❌ DEBUG: Error getting file {file_id}: {str(e)}")
                         continue
-                print(f"Debug - Direct lookup results: {results}")
+                print(f"📊 DEBUG: Direct lookup returned {len(results)} results")
                 return results[:limit]
             
             # If we have a query, do semantic search
             if query and query.strip():
+                print(f"🔤 DEBUG: Generating embedding for query: '{query}'")
                 query_embedding = await self._safe_embed([query])
                 if not query_embedding:
+                    print("❌ DEBUG: Failed to generate embedding for query")
                     self.logger.warning("No embedding generated for query")
-                    return []
+                    
+                    # Fallback: Return all documents from the specified index or default collection
+                    print("🔄 DEBUG: Falling back to returning all documents without embedding search")
+                    return await self._get_all_documents_fallback(index_name, limit)
+                
+                print(f"🔢 DEBUG: Generated embedding with dimensions: {len(query_embedding[0])}")
+                print(f"🔢 DEBUG: First 5 embedding values: {query_embedding[0][:5]}")
                 
                 # Search vector store
-                results = await self.vector_store.search(
-                    embedding=query_embedding[0],
-                    filters=filters,
-                    limit=limit * 2  # Get extra results for filtering
-                )
+                # If index_name is provided, use it to search in the specific collection
+                if index_name:
+                    print(f"🔎 DEBUG: Searching in specific index: {index_name}")
+                    # Search in the specific collection
+                    results = await self.vector_store.search_in_index(
+                        index_name=index_name,
+                        embedding=query_embedding[0],
+                        filters=filters,
+                        limit=limit * 2  # Get extra results for filtering
+                    )
+                else:
+                    # Search in the default collection
+                    print(f"🔎 DEBUG: Searching in default collection")
+                    results = await self.vector_store.search(
+                        embedding=query_embedding[0],
+                        filters=filters,
+                        limit=limit * 2  # Get extra results for filtering
+                    )
                 
-                # Filter by relevance
-                filtered_results = []
-                for result in results:
-                    if result["relevance"] >= min_relevance:
-                        filtered_results.append({
-                            "content": result["content"],
-                            "metadata": result["metadata"],
-                            "relevance": result["relevance"]
-                        })
-                    if len(filtered_results) >= limit:
-                        break
-                        
-                return filtered_results
+                print(f"📊 DEBUG: Vector search returned {len(results)} results")
+                
+                # If no results from semantic search, try fallback
+                if not results:
+                    print("🔄 DEBUG: No results from semantic search, trying fallback")
+                    return await self._get_all_documents_fallback(index_name, limit)
+                
+                # Filter by relevance threshold
+                filtered_results = [r for r in results if r.get('relevance', 0) >= min_relevance]
+                print(f"📊 DEBUG: After relevance filtering ({min_relevance}): {len(filtered_results)} results")
+                
+                # Sort by relevance and limit
+                filtered_results.sort(key=lambda x: x.get('relevance', 0), reverse=True)
+                return filtered_results[:limit]
             
-            # If no query but have filters, return filtered results without relevance scoring
-            elif filters:
-                results = await self.vector_store.get_filtered_items(
-                    filters=filters,
-                    limit=limit
-                )
-                return [{
-                    "content": item["content"],
-                    "metadata": item["metadata"],
-                    "relevance": 1.0  # Default relevance for filtered results
-                } for item in results]
-            
-            return []
+            # If no query, return all documents
+            print("🔄 DEBUG: No query provided, returning all documents")
+            return await self._get_all_documents_fallback(index_name, limit)
             
         except Exception as e:
-            self.logger.error(f"Search failed: {str(e)}")
+            print(f"❌ DEBUG: Error in search_context: {str(e)}")
+            self.logger.error(f"Error searching context: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             return []
 
-    async def update_embeddings(
-        self,
-        collection_name: str,
-        batch_size: int = 100,
-        callback: Optional[callable] = None
-    ) -> Dict[str, Any]:
-        """Update embeddings for an entire collection."""
-        stats = {"processed": 0, "failed": 0}
-        
+    async def _get_all_documents_fallback(self, index_name: Optional[str] = None, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get all documents from a collection as a fallback."""
         try:
-            # Get all documents
-            documents = await self.vector_store.get_all(collection_name)
-            total_batches = len(documents) // batch_size + 1
+            print(f"🔄 DEBUG: Using fallback to get all documents from index {index_name}")
             
-            async for i in tqdm(range(total_batches)):
-                start_idx = i * batch_size
-                end_idx = start_idx + batch_size
-                batch = documents[start_idx:end_idx]
+            if index_name:
+                # Get documents from specific index
+                results = await self.vector_store.get_filtered_items_from_index(
+                    index_name=index_name,
+                    limit=limit
+                )
+            else:
+                # Try to get documents from any available index
+                indices = await self.vector_store.list_indices()
+                results = []
                 
-                try:
-                    # Generate new embeddings
-                    contents = [doc["content"] for doc in batch]
-                    new_embeddings = await self._safe_embed(contents)
-                    
-                    # Update vector store
-                    await self.vector_store.update_embeddings(
-                        ids=[doc["id"] for doc in batch],
-                        embeddings=new_embeddings
+                if indices:
+                    # Try each index until we get some results
+                    for idx in indices:
+                        idx_results = await self.vector_store.get_filtered_items_from_index(
+                            index_name=idx["name"],
+                            limit=limit
+                        )
+                        if idx_results:
+                            results.extend(idx_results)
+                            if len(results) >= limit:
+                                break
+                
+                # If still no results, try the default collection
+                if not results:
+                    default_results = await self.vector_store.get_filtered_items_from_index(
+                        index_name="default",
+                        limit=limit
                     )
-                    
-                    stats["processed"] += len(batch)
-                    if callback:
-                        await callback(stats)
-                        
-                except Exception as e:
-                    stats["failed"] += len(batch)
-                    self.logger.error(f"Batch update failed: {str(e)}")
-                    
-            return stats
+                    results.extend(default_results)
+            
+            print(f"📊 DEBUG: Fallback returned {len(results)} results")
+            return results[:limit]
             
         except Exception as e:
-            self.logger.error(f"Embedding update failed: {str(e)}")
-            raise
+            print(f"❌ DEBUG: Error in fallback document retrieval: {str(e)}")
+            self.logger.error(f"Error in fallback document retrieval: {str(e)}")
+            return []
 
     async def store_context(
         self,
@@ -366,22 +378,40 @@ class ContextDatabase:
     async def delete_context(self, context_id: str) -> bool:
         """Delete a context from the database."""
         try:
-            self.collection.delete(ids=[context_id])
-            logging.info(f"Deleted context {context_id}")
+            # Remove from in-memory contexts
+            for task_id, contexts in self.contexts.items():
+                self.contexts[task_id] = [ctx for ctx in contexts if ctx["id"] != context_id]
+            
+            # Remove from vector store if it exists there
+            await self.vector_store.remove_context(context_id)
+            
             return True
         except Exception as e:
-            logging.error(f"Error deleting context: {str(e)}")
+            self.logger.error(f"Error deleting context: {str(e)}")
             return False
-
+    
     async def update_context(self, context_id: str, metadata: Dict[str, Any]) -> bool:
         """Update context metadata."""
         try:
-            self.collection.update(
-                ids=[context_id],
-                metadatas=[metadata]
-            )
-            logging.info(f"Updated context {context_id}")
-            return True
+            # Update in-memory contexts
+            for task_id, contexts in self.contexts.items():
+                for ctx in contexts:
+                    if ctx["id"] == context_id:
+                        ctx["metadata"].update(metadata)
+                        return True
+            return False
         except Exception as e:
-            logging.error(f"Error updating context: {str(e)}")
+            self.logger.error(f"Error updating context: {str(e)}")
+            return False
+            
+    async def remove_context(self, task_id: str, context_id: str) -> bool:
+        """Remove a context from a task."""
+        try:
+            if task_id in self.contexts:
+                initial_length = len(self.contexts[task_id])
+                self.contexts[task_id] = [ctx for ctx in self.contexts[task_id] if ctx["id"] != context_id]
+                return len(self.contexts[task_id]) < initial_length
+            return False
+        except Exception as e:
+            self.logger.error(f"Error removing context: {str(e)}")
             return False
