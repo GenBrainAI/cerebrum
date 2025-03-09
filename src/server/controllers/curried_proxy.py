@@ -167,7 +167,11 @@ class CurriedProxy(BaseModel):
 
         # Create a name based on the tools if available
         proxy_name = "New CurriedProxy"
-        if tools and len(tools) > 0:
+        if hasattr(self, 'name') and self.name:
+            # Use the proxy's existing name
+            proxy_name = self.name
+        elif tools and len(tools) > 0:
+            # Only generate a name based on tools if no name is set
             # Use the first tool name as part of the proxy name
             first_tool = tools[0].name.split('.')[-1]
             proxy_name = f"Proxy for {first_tool}" + (f" +{len(tools)-1}" if len(tools) > 1 else "")

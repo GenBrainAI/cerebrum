@@ -8,11 +8,9 @@ from ...models.toolset import Toolset, Tool
 from ...controllers.curried_proxy import CurriedProxy
 from ...tools.tools_catalog import tools_catalog
 import networkx as nx
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('Agg')
 import io
 import base64
+import plotly.graph_objects as go
 
 class TaskToolRelationshipComponent:
     """Component to visualize the relationship between tasks, curried proxies, and tools."""
@@ -187,7 +185,8 @@ class TaskToolRelationshipComponent:
         # Create New CurriedProxy section (collapsible)
         with st.expander("Create New CurriedProxy", expanded=False):
             # New CurriedProxy Name
-            new_proxy_name = st.text_input("New CurriedProxy Name", value="New CurriedProxy")
+            default_proxy_name = f"Proxy for {selected_task.name}" if selected_task and selected_task.name else "New CurriedProxy"
+            new_proxy_name = st.text_input("New CurriedProxy Name", value=default_proxy_name)
             
             # Multi-select tools from catalog
             selected_tools = st.multiselect(
@@ -250,6 +249,19 @@ class TaskToolRelationshipComponent:
                             st.rerun()
                 else:
                     st.success("This proxy is already linked to the task.")
+                    
+                    # Add Edit button for the linked proxy
+                    if st.button("✏️ Edit This CurriedProxy", key="edit_linked_proxy"):
+                        # Initialize the session state variables if they don't exist
+                        if 'editing_proxy' not in st.session_state:
+                            st.session_state.editing_proxy = False
+                        if 'editing_proxy_id' not in st.session_state:
+                            st.session_state.editing_proxy_id = None
+                            
+                        # Set the editing state
+                        st.session_state.editing_proxy = True
+                        st.session_state.editing_proxy_id = selected_proxy_id
+                        st.rerun()
         else:
             # No proxy selected
             st.info("Please select a CurriedProxy to view its contents")
@@ -495,20 +507,37 @@ class TaskToolRelationshipComponent:
             # Add CurriedProxy if available
             if task.curried_proxy_id:
                 proxy_id = f"proxy_{task.curried_proxy_id}"
-                proxy_label = f"Proxy {str(task.curried_proxy_id)[:8]}"
-                G.add_node(proxy_id, label=proxy_label, type="proxy")
+                
+                # Try to get proxy name
+                try:
+                    proxy = self.persistence_model.curried_proxies.read(task.curried_proxy_id)
+                    proxy_name = proxy.name if hasattr(proxy, 'name') and proxy.name else f"Proxy {str(task.curried_proxy_id)[:8]}"
+                except:
+                    proxy_name = f"Proxy {str(task.curried_proxy_id)[:8]}"
+                
+                G.add_node(proxy_id, label=proxy_name, type="proxy")
                 G.add_edge(task_id, proxy_id)
                 
                 # Try to get tools from the proxy
                 try:
                     proxy = self.persistence_model.curried_proxies.read(task.curried_proxy_id)
-                    if proxy and hasattr(proxy, 'tools'):
+                    
+                    # Check for tools in the 'tools' attribute (CurriedProxyInfo)
+                    if proxy and hasattr(proxy, 'tools') and proxy.tools:
                         for tool in proxy.tools:
-                            tool_id = f"tool_{tool.name}"
-                            G.add_node(tool_id, label=tool.name, type="tool")
+                            tool_name = tool.name if hasattr(tool, 'name') else str(tool)
+                            tool_id = f"tool_{tool_name}"
+                            G.add_node(tool_id, label=tool_name, type="tool")
                             G.add_edge(proxy_id, tool_id)
-                except:
-                    pass
+                    
+                    # Check for tools in the 'tool_names' attribute (CurriedProxy)
+                    elif proxy and hasattr(proxy, 'tool_names') and proxy.tool_names:
+                        for tool_name in proxy.tool_names:
+                            tool_id = f"tool_{tool_name}"
+                            G.add_node(tool_id, label=tool_name, type="tool")
+                            G.add_edge(proxy_id, tool_id)
+                except Exception as e:
+                    print(f"Error getting tools for proxy {task.curried_proxy_id}: {str(e)}")
             
             # Add toolsets and their tools
             if task.toolsets:
@@ -537,45 +566,92 @@ class TaskToolRelationshipComponent:
         if not G.nodes():
             st.info("No data available for graph visualization.")
             return
-            
-        # Set node colors based on type
-        node_colors = []
-        for node in G.nodes():
-            if G.nodes[node]['type'] == 'task':
-                node_colors.append('lightblue')
-            elif G.nodes[node]['type'] == 'proxy':
-                node_colors.append('lightgreen')
-            elif G.nodes[node]['type'] == 'toolset':
-                node_colors.append('orange')
-            else:  # tool
-                node_colors.append('pink')
         
-        # Create the plot
-        plt.figure(figsize=(12, 8))
+        # Create node lists for Plotly
+        node_x = []
+        node_y = []
+        node_text = []
+        node_color = []
+        node_size = []
+        
+        # Use networkx to calculate layout
         pos = nx.spring_layout(G, seed=42)
-        nx.draw(G, pos, with_labels=False, node_color=node_colors, node_size=700, arrows=True)
         
-        # Add labels with better positioning
-        labels = {node: G.nodes[node]['label'] for node in G.nodes()}
-        nx.draw_networkx_labels(G, pos, labels=labels, font_size=10)
+        # Color mapping
+        color_map = {
+            'task': 'rgba(135, 206, 250, 0.8)',      # lightblue
+            'proxy': 'rgba(144, 238, 144, 0.8)',     # lightgreen
+            'toolset': 'rgba(255, 165, 0, 0.8)',     # orange
+            'tool': 'rgba(255, 192, 203, 0.8)'       # pink
+        }
         
-        # Add a legend
-        legend_elements = [
-            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightblue', markersize=10, label='Task'),
-            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='lightgreen', markersize=10, label='CurriedProxy'),
-            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='orange', markersize=10, label='Toolset'),
-            plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='pink', markersize=10, label='Tool')
+        # Add nodes to lists
+        for node in G.nodes():
+            x, y = pos[node]
+            node_x.append(x)
+            node_y.append(y)
+            node_text.append(G.nodes[node]['label'])
+            node_color.append(color_map[G.nodes[node]['type']])
+            node_size.append(20)  # Consistent node size
+        
+        # Create edges lists
+        edge_x = []
+        edge_y = []
+        
+        for edge in G.edges():
+            x0, y0 = pos[edge[0]]
+            x1, y1 = pos[edge[1]]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+        
+        # Create edge trace
+        edge_trace = go.Scatter(
+            x=edge_x, y=edge_y,
+            line=dict(width=1, color='#888'),
+            hoverinfo='none',
+            mode='lines')
+        
+        # Create node trace
+        node_trace = go.Scatter(
+            x=node_x, y=node_y,
+            mode='markers',
+            hoverinfo='text',
+            text=node_text,
+            marker=dict(
+                color=node_color,
+                size=node_size,
+                line=dict(width=2, color='#333')
+            ))
+        
+        # Create figure
+        fig = go.Figure(data=[edge_trace, node_trace],
+                        layout=go.Layout(
+                            title={
+                                'text': 'Task-Tool Relationship Graph',
+                                'font': {'size': 16}
+                            },
+                            showlegend=False,
+                            hovermode='closest',
+                            margin=dict(b=20, l=5, r=5, t=40),
+                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            height=600,
+                            clickmode='event+select'
+                        ))
+        
+        # Add legend as annotations
+        legend_items = [
+            dict(text="Task", x=1.02, y=0.98, showarrow=False, font=dict(color="black"), bgcolor=color_map['task']),
+            dict(text="CurriedProxy", x=1.02, y=0.93, showarrow=False, font=dict(color="black"), bgcolor=color_map['proxy']),
+            dict(text="Toolset", x=1.02, y=0.88, showarrow=False, font=dict(color="black"), bgcolor=color_map['toolset']),
+            dict(text="Tool", x=1.02, y=0.83, showarrow=False, font=dict(color="black"), bgcolor=color_map['tool'])
         ]
-        plt.legend(handles=legend_elements, loc='upper right')
         
-        # Save figure to a buffer
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', bbox_inches='tight')
-        buf.seek(0)
+        for item in legend_items:
+            fig.add_annotation(item)
         
-        # Display the image in Streamlit
-        st.image(buf, use_column_width=True)
-        plt.close()
+        # Display the interactive graph in Streamlit
+        st.plotly_chart(fig, use_container_width=True)
 
 def render_task_tool_relationship(persistence_model: PersistenceModelBase, tools_controller=None):
     """Render the task-tool relationship component."""

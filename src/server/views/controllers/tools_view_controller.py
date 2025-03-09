@@ -7,6 +7,8 @@ import importlib.util
 from typing import Optional, Dict, Any, List
 from uuid import UUID, uuid4
 from datetime import datetime
+import streamlit as st
+from src.chat import save_current_state
 from ...models.exceptions import StateError, StateNotFoundError, StateValidationError
 from ...models.toolset import Tool
 from ..models.view_state import ViewState
@@ -25,7 +27,6 @@ from ...controllers.task_runner import TaskRunner
 import logging
 import json
 from pathlib import Path
-import streamlit as st
 from .remove_proxy_method import remove_proxy_from_task
 
 class ToolsCatalogController:
@@ -625,6 +626,7 @@ class ToolsCatalogController:
             # Create a new CurriedProxy
             from ...controllers.curried_proxy import CurriedProxy
             curried_proxy = CurriedProxy()
+            curried_proxy.name = proxy_name  # Set the name directly on the CurriedProxy
             self.logger.info(f"Created new CurriedProxy '{proxy_name}' with ID: {curried_proxy.id}")
             
             # Add tools from the tools catalog
@@ -650,18 +652,11 @@ class ToolsCatalogController:
             # Log the tools added
             self.logger.info(f"Added {len(curried_proxy.tool_names)} tools to proxy: {', '.join(curried_proxy.tool_names)}")
             
-            # Convert CurriedProxy to CurriedProxyInfo for persistence
-            curried_proxy_info = curried_proxy.to_info()
-            
-            # Add name to the proxy info if possible
-            if hasattr(curried_proxy_info, 'name'):
-                curried_proxy_info.name = proxy_name
-            
-            # Save the CurriedProxyInfo object
-            created_proxy = active_persistence.curried_proxies.create(curried_proxy_info)
+            # Save the CurriedProxy object directly (not the CurriedProxyInfo)
+            created_proxy = active_persistence.curried_proxies.create(curried_proxy)
             
             if not created_proxy:
-                self.logger.error("Failed to create CurriedProxyInfo in persistence model")
+                self.logger.error("Failed to create CurriedProxy in persistence model")
                 return None
                 
             # Link the proxy to the task
@@ -679,6 +674,28 @@ class ToolsCatalogController:
                 except Exception as e:
                     self.logger.error(f"Failed to update task with proxy: {str(e)}")
                     return None
+            
+            # Save the current state to persist the changes
+            try:
+                if hasattr(st, 'session_state') and hasattr(st.session_state, 'state_location') and hasattr(st.session_state.state_location, 'state_name'):
+                    state_name = st.session_state.state_location.state_name
+                    self.logger.info(f"Saving state after creating proxy for task: {state_name}")
+                    
+                    # Set save status to pending
+                    st.session_state.save_status = "pending"
+                    
+                    # Save the state
+                    save_current_state(state_name)
+                    
+                    # Set save status to saved and update last save time
+                    st.session_state.save_status = "saved"
+                    import time
+                    st.session_state.last_save_time = time.time()
+            except Exception as save_error:
+                self.logger.error(f"Error saving state after creating proxy: {str(save_error)}")
+                # Reset save status on error
+                st.session_state.save_status = None
+                # Continue even if saving fails - the operation itself succeeded
             
             return str(curried_proxy.id)
         except Exception as e:
@@ -712,8 +729,13 @@ class ToolsCatalogController:
                 tools = []
                 tool_count = 0
                 try:
+                    # Check for tools in the 'tools' attribute (CurriedProxyInfo)
                     if hasattr(proxy, 'tools') and proxy.tools:
                         tools = [getattr(tool, 'name', f"Tool-{i}") for i, tool in enumerate(proxy.tools)]
+                        tool_count = len(tools)
+                    # Check for tools in the 'tool_names' attribute (CurriedProxy)
+                    elif hasattr(proxy, 'tool_names') and proxy.tool_names:
+                        tools = proxy.tool_names
                         tool_count = len(tools)
                 except Exception as tools_error:
                     self.logger.warning(f"Error extracting tools from proxy {proxy_id}: {str(tools_error)}")
@@ -756,12 +778,58 @@ class ToolsCatalogController:
             try:
                 active_persistence.tasks.update(task_id, task)
                 self.logger.info(f"Updated task {task_id} with CurriedProxy {proxy_id}")
+                
+                # Save the current state to persist the changes
+                try:
+                    if hasattr(st, 'session_state') and hasattr(st.session_state, 'state_location') and hasattr(st.session_state.state_location, 'state_name'):
+                        state_name = st.session_state.state_location.state_name
+                        self.logger.info(f"Saving state after linking proxy to task: {state_name}")
+                        
+                        # Set save status to pending
+                        st.session_state.save_status = "pending"
+                        
+                        # Save the state
+                        save_current_state(state_name)
+                        
+                        # Set save status to saved and update last save time
+                        st.session_state.save_status = "saved"
+                        import time
+                        st.session_state.last_save_time = time.time()
+                except Exception as save_error:
+                    self.logger.error(f"Error saving state after linking proxy: {str(save_error)}")
+                    # Reset save status on error
+                    st.session_state.save_status = None
+                    # Continue even if saving fails - the operation itself succeeded
+                
                 return True
             except AttributeError:
                 # If update doesn't exist, try other methods
                 try:
                     active_persistence.tasks.create(task)
                     self.logger.info(f"Created task {task_id} with CurriedProxy {proxy_id}")
+                    
+                    # Save the current state to persist the changes
+                    try:
+                        if hasattr(st, 'session_state') and hasattr(st.session_state, 'state_location') and hasattr(st.session_state.state_location, 'state_name'):
+                            state_name = st.session_state.state_location.state_name
+                            self.logger.info(f"Saving state after creating task with proxy: {state_name}")
+                            
+                            # Set save status to pending
+                            st.session_state.save_status = "pending"
+                            
+                            # Save the state
+                            save_current_state(state_name)
+                            
+                            # Set save status to saved and update last save time
+                            st.session_state.save_status = "saved"
+                            import time
+                            st.session_state.last_save_time = time.time()
+                    except Exception as save_error:
+                        self.logger.error(f"Error saving state after creating task with proxy: {str(save_error)}")
+                        # Reset save status on error
+                        st.session_state.save_status = None
+                        # Continue even if saving fails - the operation itself succeeded
+                    
                     return True
                 except Exception as e:
                     self.logger.error(f"Failed to update task with proxy: {str(e)}")
@@ -850,7 +918,32 @@ class ToolsCatalogController:
         """Remove the CurriedProxy association from a task."""
         from ...controllers.curried_proxy import CurriedProxy
         active_persistence = self.get_active_persistence()
-        return CurriedProxy.remove_from_task(active_persistence, task_id, self.logger)
+        result = CurriedProxy.remove_from_task(active_persistence, task_id, self.logger)
+        
+        # If the operation was successful, save the state
+        if result:
+            try:
+                if hasattr(st, 'session_state') and hasattr(st.session_state, 'state_location') and hasattr(st.session_state.state_location, 'state_name'):
+                    state_name = st.session_state.state_location.state_name
+                    self.logger.info(f"Saving state after removing proxy from task: {state_name}")
+                    
+                    # Set save status to pending
+                    st.session_state.save_status = "pending"
+                    
+                    # Save the state
+                    save_current_state(state_name)
+                    
+                    # Set save status to saved and update last save time
+                    st.session_state.save_status = "saved"
+                    import time
+                    st.session_state.last_save_time = time.time()
+            except Exception as save_error:
+                self.logger.error(f"Error saving state after removing proxy: {str(save_error)}")
+                # Reset save status on error
+                st.session_state.save_status = None
+                # Continue even if saving fails - the operation itself succeeded
+        
+        return result
 
     def add_tools_to_proxy(self, proxy_id: str, tool_names: List[str]) -> bool:
         """Add tools to an existing CurriedProxy.
@@ -871,31 +964,62 @@ class ToolsCatalogController:
                 
             # Convert to CurriedProxy
             from ...controllers.curried_proxy import CurriedProxy
-            proxy = CurriedProxy.from_info(proxy_info)
+            from ...models.curried_proxy_info import CurriedProxyInfo
+            
+            # Log the type of proxy_info for debugging
+            self.logger.info(f"Proxy info type: {type(proxy_info).__name__}")
+            
+            # Check if proxy_info is already a CurriedProxy or a CurriedProxyInfo
+            if isinstance(proxy_info, CurriedProxy):
+                proxy = proxy_info
+                self.logger.info("Using proxy_info directly as it's already a CurriedProxy")
+            else:
+                self.logger.info("Converting CurriedProxyInfo to CurriedProxy")
+                proxy = CurriedProxy.from_info(proxy_info)
+                # Preserve the name if it exists
+                if hasattr(proxy_info, 'name') and proxy_info.name:
+                    proxy.name = proxy_info.name
             
             # Add tools from the tools catalog
             from ...tools.tools_catalog import tools_catalog
-            tools_added = 0
             for tool_name in tool_names:
-                if tool_name in tools_catalog.list_tools():
-                    if tool_name not in proxy.tool_names:
-                        proxy.tool_names.append(tool_name)
-                        tools_added += 1
-                        self.logger.info(f"Added tool {tool_name} to proxy {proxy_id}")
+                try:
+                    if tool_name in tools_catalog.list_tools():
+                        # Add the tool to the proxy's tool_names list directly
+                        if tool_name not in proxy.tool_names:
+                            proxy.tool_names.append(tool_name)
+                            self.logger.info(f"Added tool {tool_name} to proxy {proxy_id}")
                     else:
-                        self.logger.info(f"Tool {tool_name} already in proxy {proxy_id}")
-                else:
-                    self.logger.warning(f"Tool {tool_name} not found in tools catalog")
+                        self.logger.warning(f"Tool {tool_name} not found in tools catalog")
+                except Exception as tool_error:
+                    self.logger.error(f"Error adding tool {tool_name}: {str(tool_error)}")
             
-            if tools_added == 0:
-                self.logger.info(f"No new tools added to proxy {proxy_id}")
-                return True  # Still return success as this isn't an error
-                
-            # Convert back to CurriedProxyInfo and save
-            new_proxy_info = proxy.to_info()
-            active_persistence.curried_proxies.update(proxy_id, new_proxy_info)
+            # Save the CurriedProxy object directly (not the CurriedProxyInfo)
+            active_persistence.curried_proxies.update(proxy_id, proxy)
+            self.logger.info(f"Updated CurriedProxy {proxy_id} with {len(tool_names)} new tools")
             
-            self.logger.info(f"Added {tools_added} tools to proxy {proxy_id}")
+            # Save the current state to persist the changes
+            try:
+                if hasattr(st, 'session_state') and hasattr(st.session_state, 'state_location') and hasattr(st.session_state.state_location, 'state_name'):
+                    state_name = st.session_state.state_location.state_name
+                    self.logger.info(f"Saving state after adding tools to proxy: {state_name}")
+                    
+                    # Set save status to pending
+                    st.session_state.save_status = "pending"
+                    
+                    # Save the state
+                    save_current_state(state_name)
+                    
+                    # Set save status to saved and update last save time
+                    st.session_state.save_status = "saved"
+                    import time
+                    st.session_state.last_save_time = time.time()
+            except Exception as save_error:
+                self.logger.error(f"Error saving state after adding tools to proxy: {str(save_error)}")
+                # Reset save status on error
+                st.session_state.save_status = None
+                # Continue even if saving fails - the operation itself succeeded
+            
             return True
         except Exception as e:
             self.logger.error(f"Error adding tools to proxy: {str(e)}")
@@ -922,9 +1046,23 @@ class ToolsCatalogController:
                 
             # Convert to CurriedProxy
             from ...controllers.curried_proxy import CurriedProxy
-            proxy = CurriedProxy.from_info(proxy_info)
+            from ...models.curried_proxy_info import CurriedProxyInfo
             
-            # Remove tools
+            # Log the type of proxy_info for debugging
+            self.logger.info(f"Proxy info type: {type(proxy_info).__name__}")
+            
+            # Check if proxy_info is already a CurriedProxy or a CurriedProxyInfo
+            if isinstance(proxy_info, CurriedProxy):
+                proxy = proxy_info
+                self.logger.info("Using proxy_info directly as it's already a CurriedProxy")
+            else:
+                self.logger.info("Converting CurriedProxyInfo to CurriedProxy")
+                proxy = CurriedProxy.from_info(proxy_info)
+                # Preserve the name if it exists
+                if hasattr(proxy_info, 'name') and proxy_info.name:
+                    proxy.name = proxy_info.name
+            
+            # Remove tools from the proxy
             tools_removed = 0
             for tool_name in tool_names:
                 if tool_name in proxy.tool_names:
@@ -932,17 +1070,39 @@ class ToolsCatalogController:
                     tools_removed += 1
                     self.logger.info(f"Removed tool {tool_name} from proxy {proxy_id}")
                 else:
-                    self.logger.info(f"Tool {tool_name} not in proxy {proxy_id}")
+                    self.logger.warning(f"Tool {tool_name} not found in proxy {proxy_id}")
             
             if tools_removed == 0:
                 self.logger.info(f"No tools removed from proxy {proxy_id}")
                 return True  # Still return success as this isn't an error
-                
-            # Convert back to CurriedProxyInfo and save
-            new_proxy_info = proxy.to_info()
-            active_persistence.curried_proxies.update(proxy_id, new_proxy_info)
+            
+            # Save the CurriedProxy object directly (not the CurriedProxyInfo)
+            active_persistence.curried_proxies.update(proxy_id, proxy)
             
             self.logger.info(f"Removed {tools_removed} tools from proxy {proxy_id}")
+            
+            # Save the current state to persist the changes
+            try:
+                if hasattr(st, 'session_state') and hasattr(st.session_state, 'state_location') and hasattr(st.session_state.state_location, 'state_name'):
+                    state_name = st.session_state.state_location.state_name
+                    self.logger.info(f"Saving state after removing tools from proxy: {state_name}")
+                    
+                    # Set save status to pending
+                    st.session_state.save_status = "pending"
+                    
+                    # Save the state
+                    save_current_state(state_name)
+                    
+                    # Set save status to saved and update last save time
+                    st.session_state.save_status = "saved"
+                    import time
+                    st.session_state.last_save_time = time.time()
+            except Exception as save_error:
+                self.logger.error(f"Error saving state after removing tools from proxy: {str(save_error)}")
+                # Reset save status on error
+                st.session_state.save_status = None
+                # Continue even if saving fails - the operation itself succeeded
+            
             return True
         except Exception as e:
             self.logger.error(f"Error removing tools from proxy: {str(e)}")
@@ -951,7 +1111,7 @@ class ToolsCatalogController:
             return False
             
     def rename_proxy(self, proxy_id: str, new_name: str) -> bool:
-        """Rename an existing CurriedProxy.
+        """Rename a CurriedProxy.
         
         Args:
             proxy_id: The ID of the CurriedProxy to rename
@@ -966,19 +1126,58 @@ class ToolsCatalogController:
             if not proxy_info:
                 self.logger.error(f"CurriedProxy not found: {proxy_id}")
                 return False
-                
-            # Check if proxy_info has a name attribute
-            if not hasattr(proxy_info, 'name'):
-                self.logger.error(f"CurriedProxyInfo object does not have a name attribute")
+            
+            # Convert to CurriedProxy if needed
+            from ...controllers.curried_proxy import CurriedProxy
+            from ...models.curried_proxy_info import CurriedProxyInfo
+            
+            # Log the type of proxy_info for debugging
+            self.logger.info(f"Proxy info type: {type(proxy_info).__name__}")
+            
+            # Check if proxy_info is already a CurriedProxy or a CurriedProxyInfo
+            if isinstance(proxy_info, CurriedProxy):
+                proxy = proxy_info
+                self.logger.info("Using proxy_info directly as it's already a CurriedProxy")
+            else:
+                self.logger.info("Converting CurriedProxyInfo to CurriedProxy")
+                proxy = CurriedProxy.from_info(proxy_info)
+            
+            # Check if the proxy has a name attribute
+            if not hasattr(proxy, 'name'):
+                self.logger.error(f"CurriedProxy {proxy_id} does not have a name attribute")
                 return False
                 
-            # Update the name directly on the CurriedProxyInfo object
-            proxy_info.name = new_name
+            # Update the name
+            old_name = proxy.name if hasattr(proxy, 'name') and proxy.name else "Unnamed Proxy"
+            proxy.name = new_name
             
             # Save the updated proxy
-            active_persistence.curried_proxies.update(proxy_id, proxy_info)
+            active_persistence.curried_proxies.update(proxy_id, proxy)
             
-            self.logger.info(f"Renamed proxy {proxy_id} to '{new_name}'")
+            self.logger.info(f"Renamed CurriedProxy {proxy_id} from '{old_name}' to '{new_name}'")
+            
+            # Save the current state to persist the changes
+            try:
+                if hasattr(st, 'session_state') and hasattr(st.session_state, 'state_location') and hasattr(st.session_state.state_location, 'state_name'):
+                    state_name = st.session_state.state_location.state_name
+                    self.logger.info(f"Saving state after renaming proxy: {state_name}")
+                    
+                    # Set save status to pending
+                    st.session_state.save_status = "pending"
+                    
+                    # Save the state
+                    save_current_state(state_name)
+                    
+                    # Set save status to saved and update last save time
+                    st.session_state.save_status = "saved"
+                    import time
+                    st.session_state.last_save_time = time.time()
+            except Exception as save_error:
+                self.logger.error(f"Error saving state after renaming proxy: {str(save_error)}")
+                # Reset save status on error
+                st.session_state.save_status = None
+                # Continue even if saving fails - the operation itself succeeded
+            
             return True
         except Exception as e:
             self.logger.error(f"Error renaming proxy: {str(e)}")

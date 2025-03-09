@@ -200,6 +200,25 @@ async def render_tools_catalog_view():
         if 'persistence_model' not in st.session_state:
             st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
         
+        # Ensure state_location is properly initialized
+        if 'state_location' not in st.session_state or not st.session_state.state_location:
+            from src.chat import get_last_used_state, get_state_dir
+            from server.models.persistence_models import StorageLocation, StorageType
+            import os
+            
+            # Get the last used state from metadata
+            metadata = get_last_used_state()
+            if metadata.get("last_used_state"):
+                state_path = str(get_state_dir() / metadata["last_used_state"])
+                
+                # Create and store the location in session state
+                st.session_state.state_location = StorageLocation(
+                    type=StorageType.file,
+                    location=os.path.dirname(state_path),
+                    state_name=os.path.basename(state_path)
+                )
+                print(f"📍 Initialized state_location from last used state: {st.session_state.state_location.state_name}")
+        
         # Initialize tools controller if not in session state
         if 'tools_controller' not in st.session_state:
             st.session_state.tools_controller = ToolsCatalogController(st.session_state.persistence_model)

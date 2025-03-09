@@ -11,6 +11,12 @@ class ToolsCatalogSidebar:
     
     def __init__(self, controller=None):
         self.controller = controller
+        
+        # Initialize save status in session state if not exists
+        if 'save_status' not in st.session_state:
+            st.session_state.save_status = None
+        if 'last_save_time' not in st.session_state:
+            st.session_state.last_save_time = None
     
     async def render(self):
         """Render the tools catalog sidebar."""
@@ -21,7 +27,21 @@ class ToolsCatalogSidebar:
             if self.controller and self.controller.local_persistence:
                 status = self.controller.view_state.task_status
                 if status["loaded"]:
-                    st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
+                    # Show state status with save indicator
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
+                    with col2:
+                        import time
+                        if st.session_state.save_status == "pending":
+                            st.markdown("💾 *Saving...*")
+                        elif st.session_state.save_status == "saved" and st.session_state.last_save_time:
+                            time_diff = time.time() - st.session_state.last_save_time
+                            if time_diff < 5:  # Show saved status for 5 seconds
+                                st.markdown("✅ *Saved*")
+                            else:
+                                st.session_state.save_status = None
+                    
                     st.markdown("**State:** Tools Management loaded")
                 else:
                     st.markdown("🔴 State loaded but no task context found")
