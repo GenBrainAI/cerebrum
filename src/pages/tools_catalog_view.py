@@ -9,6 +9,7 @@ from server.views.models.view_types import ViewType
 from typing import Dict, Any
 from server.models.message import Message
 from server.controllers.task_runner import TaskRunner
+from server.views.components.task_tool_relationship import render_task_tool_relationship
 
 class ToolsCatalogView(BaseView):
     def __init__(self):
@@ -222,7 +223,7 @@ async def render_tools_catalog_view():
         await render_tools_catalog_sidebar()
         
         # Add view mode toggle
-        col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
+        col1, col2, col3, col4 = st.columns([0.1, 0.7, 0.1, 0.1])
         with col1:
             if st.button("💬", help="Switch to chat view"):
                 st.session_state.active_tab = 0
@@ -230,6 +231,10 @@ async def render_tools_catalog_view():
         with col3:
             if st.button("📊", help="Switch to observability view"):
                 st.session_state.active_tab = 1
+                st.rerun()
+        with col4:
+            if st.button("🔄", help="Switch to relationship view"):
+                st.session_state.active_tab = 2
                 st.rerun()
         
         # Initialize active tab if not set
@@ -268,9 +273,104 @@ async def render_tools_catalog_view():
                 st.rerun()
         
         # Observability View
-        else:
-            st.subheader("Tools Execution Observability")
+        elif st.session_state.active_tab == 1:
             render_observability_view()
+            
+        # Task-Tool Relationship View
+        elif st.session_state.active_tab == 2:
+            st.subheader("Task-Tool Relationship View")
+            st.markdown("""
+            This view helps you visualize the relationships between Tasks, CurriedProxy instances, and Tools.
+            You can see how tools are connected to tasks either directly through toolsets or via CurriedProxy instances.
+            """)
+            
+            # Ensure global persistence is used by default
+            if not st.session_state.tools_controller.using_global_persistence:
+                st.session_state.tools_controller.use_global_persistence()
+            
+            # Use global persistence by default
+            active_persistence = st.session_state.tools_controller.global_persistence
+            
+            # Display task count
+            tasks = active_persistence.tasks.list()
+            st.info(f"Found {len(tasks)} tasks in the global persistence model.")
+            
+            # Check if we have tasks to visualize
+            if tasks:
+                # Render the task-tool relationship component
+                render_task_tool_relationship(
+                    active_persistence,
+                    st.session_state.tools_controller
+                )
+            else:
+                st.warning("No tasks found in the global persistence model.")
+                
+                # Add a button to create a dummy relationship for demonstration
+                if st.button("Create Demo Relationship"):
+                    from server.controllers.curried_proxy import CurriedProxy
+                    from server.models.task import Task
+                    from server.models.toolset import Toolset, Tool
+                    from server.tools.tools_catalog import tools_catalog
+                    from uuid import uuid4
+                    
+                    # Create a persistence model if not exists
+                    if 'persistence_model' not in st.session_state:
+                        st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+                    
+                    persistence_model = st.session_state.persistence_model
+                    
+                    # Create a sample task
+                    task = Task(
+                        id=str(uuid4()),
+                        name="Demo Task",
+                        description="A demonstration task",
+                        status="pending"
+                    )
+                    
+                    # Create a CurriedProxy
+                    proxy = CurriedProxy()
+                    
+                    # Register some tools
+                    for tool_name in ["http_get", "readfile", "writefile"]:
+                        if tool_name in tools_catalog.list_tools():
+                            proxy.add_tool(tool_name, tools_catalog.get_tool(tool_name))
+                    
+                    # Link the task to the CurriedProxy
+                    task.curried_proxy_id = str(proxy.id)
+                    
+                    # Create a toolset
+                    toolset = Toolset(
+                        id=str(uuid4()),
+                        name="Demo Toolset",
+                        description="A toolset for demonstration"
+                    )
+                    
+                    # Create some tools
+                    tool_ids = []
+                    for name in ["calculator", "weather", "translator"]:
+                        tool = Tool(
+                            id=str(uuid4()),
+                            function=type("FunctionModel", (), {"name": name})(),
+                            name=name,
+                            description=f"A {name} tool for demonstration"
+                        )
+                        persistence_model.tools.save(tool)
+                        tool_ids.append(tool.id)
+                    
+                    # Link tools to toolset
+                    toolset.tool_ids = tool_ids
+                    persistence_model.toolsets.save(toolset)
+                    
+                    # Link toolset to task
+                    task.toolsets = [toolset.id]
+                    
+                    # Save task and proxy
+                    persistence_model.tasks.save(task)
+                    persistence_model.curried_proxies.save(proxy)
+                    
+                    # Set as local persistence and reload page
+                    st.session_state.tools_controller.local_persistence = persistence_model
+                    st.rerun()
             
     except Exception as e:
         st.error(f"Error rendering tools catalog view: {str(e)}")
