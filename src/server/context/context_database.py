@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import backoff
 from tqdm.asyncio import tqdm
 import numpy as np
-from .chroma_vector_store import ChromaVectorStore, VectorStoreConfig
+from .vector_store import VectorStore, VectorStoreConfig
 from openai import OpenAI
 import json
 import chromadb
@@ -27,40 +27,6 @@ class ContextDatabase:
         self.persist_directory = persist_directory
         self.batch_size = batch_size
         self._setup_logging()
-        
-        # Initialize vector store
-        self.vector_store = ChromaVectorStore(
-            config=VectorStoreConfig(
-                batch_size=batch_size,
-                persist_directory=persist_directory
-            ),
-            base_path=persist_directory
-        )
-        
-        # Initialize OpenAI client for embeddings
-        self.client = OpenAI(
-            api_key=os.environ.get("OPENAI_API_KEY")
-        )
-        
-        # Initialize ChromaDB client
-        self.chromadb_client = chromadb.PersistentClient(
-            path=str(Path(persist_directory) / "chroma"),
-            settings=chromadb.Settings(
-                anonymized_telemetry=False,
-                allow_reset=True
-            )
-        )
-        
-        # Initialize embedding function
-        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.environ.get("OPENAI_API_KEY"),
-            model_name="text-embedding-3-small"
-        )
-        
-        # Initialize collections
-        self._initialize_collections()
-        
-        self.executor = ThreadPoolExecutor(max_workers=4)
         
         # Initialize OpenAI client
         api_key = os.getenv("OPENAI_API_KEY")
@@ -87,42 +53,56 @@ class ContextDatabase:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
 
-    def _initialize_collections(self):
-        """Initialize collections in ChromaDB."""
-        try:
-            # Initialize main collection for contexts
-            self.collection = self.chromadb_client.get_or_create_collection(
-                name="contexts",
-                embedding_function=self.embedding_function
-            )
-            
-            # Initialize code collection
-            self.code_collection = self.chromadb_client.get_or_create_collection(
-                name="code_contexts",
-                embedding_function=self.embedding_function
-            )
-            
-            logging.info("Initialized context database collections")
-        except Exception as e:
-            logging.error(f"Error initializing collections: {str(e)}")
-            raise
-
     @backoff.on_exception(backoff.expo, Exception, max_tries=3)
-    async def _safe_embed(self, texts: List[str]) -> np.ndarray:
-        """Safely embed texts with error handling and retries."""
+    async def _safe_embed(self, texts: List[str]) -> Optional[List[List[float]]]:
+        """Safely generate embeddings with error handling and retries."""
+        if not texts:
+            print("⚠️ DEBUG: No texts provided for embedding")
+            return None
+            
+        print(f"🔤 DEBUG: Generating embeddings for {len(texts)} texts")
+        print(f"🔤 DEBUG: First text preview: {texts[0][:100]}...")
+        
+        # Try OpenAI embeddings first
         try:
-            # Use the vector store's embedding function
-            embeddings = []
-            for text in texts:
-                response = await self.client.embeddings.create(
-                    input=text,
+            if self.openai_client:
+                print("🔄 DEBUG: Using OpenAI for embeddings")
+                response = self.openai_client.embeddings.create(
+                    input=texts,
                     model="text-embedding-3-small"
                 )
-                embeddings.append(response.data[0].embedding)
-            return embeddings
+                embeddings = [item.embedding for item in response.data]
+                print(f"✅ DEBUG: Generated {len(embeddings)} OpenAI embeddings")
+                print(f"🔢 DEBUG: First embedding dimensions: {len(embeddings[0])}")
+                print(f"🔢 DEBUG: First 5 values of first embedding: {embeddings[0][:5]}")
+                return embeddings
+            else:
+                print("⚠️ DEBUG: OpenAI client not available")
         except Exception as e:
-            self.logger.error(f"Error embedding texts: {str(e)}")
-            raise
+            print(f"❌ DEBUG: Error generating OpenAI embeddings: {str(e)}")
+            self.logger.error(f"OpenAI embedding error: {str(e)}")
+            
+        # Fall back to local embeddings
+        try:
+            print("🔄 DEBUG: Falling back to local embeddings")
+            # Use the embedding function from vector_store
+            if hasattr(self.vector_store, 'embedding_function') and self.vector_store.embedding_function:
+                embeddings = self.vector_store.embedding_function(texts)
+                print(f"✅ DEBUG: Generated {len(embeddings)} local embeddings")
+                if embeddings:
+                    print(f"🔢 DEBUG: First embedding dimensions: {len(embeddings[0])}")
+                    print(f"🔢 DEBUG: First 5 values of first embedding: {embeddings[0][:5]}")
+                return embeddings
+            else:
+                print("❌ DEBUG: Local embedding function not available")
+        except Exception as e:
+            print(f"❌ DEBUG: Error generating local embeddings: {str(e)}")
+            self.logger.error(f"Local embedding error: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+            
+        print("❌ DEBUG: Failed to generate embeddings through any method")
+        return None
 
     async def ingest_code_directory(
         self,

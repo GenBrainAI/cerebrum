@@ -176,9 +176,6 @@ state/specialized/task_generation/**
 state/sessions/**
 test_cerebrum_data/
 test_storage/
+tests/db/chroma.sqlite3
 
-# Add vector_store directory to prevent large files from being committed
-persistent_state/cerebrum_system/vector_store/
-
-persistent_state/context_manager/contexts/*
 

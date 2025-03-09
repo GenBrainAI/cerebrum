@@ -1,689 +1,601 @@
-"""
-Unified Context Manager for the Self-Aware Cerebrum system.
-
-This module provides a central hub for context management across the system,
-integrating the Adaptive Context Manager, Terminal Command Executor, and
-Codebase Vector Store into a cohesive context management system.
-"""
-
-import os
-import json
-import logging
-import asyncio
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Union, Tuple
+from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
+import logging
+from pathlib import Path
+import json
+import hashlib
+import io
+import uuid
 
-from src.server.context.adaptive_context_manager import (
-    AdaptiveContextManager,
-    ContextConfig,
-    ContextItem
-)
-from src.server.system.terminal_command_executor import (
-    TerminalCommandExecutor,
-    SecurityConfig,
-    CommandExecutionResult
-)
-from src.server.context.chroma_vector_store import (
-    ChromaVectorStore,
-    VectorStoreConfig
-)
+from .context_provider import ContextProvider
+from .knowledge_base import KnowledgeBase
+from .vector_store import VectorStore, VectorStoreConfig
+from .context_database import ContextDatabase
+from ..tools.web_scraper_tool import WebScraperTool
+from ..tools.repo_scraper import RepoScraper
 
 logger = logging.getLogger(__name__)
 
-class UnifiedContextManager:
-    """
-    Central hub for context management across the Self-Aware Cerebrum system.
-    
-    Integrates multiple specialized context providers:
-    - Adaptive Context Manager: For general context storage and retrieval
-    - Terminal Command Executor: For executing and tracking terminal commands
-    - Codebase Vector Store: For semantic search of the codebase
-    
-    This class provides a unified interface for all context operations,
-    ensuring consistent context management across the system.
-    """
-    
+class DataSource:
+    """Data source types for context preparation."""
+    WEB = "web"
+    REPOSITORY = "repository"
+    FILE = "file"
+    API = "api"
+    CUSTOM = "custom"
+
+class PreparedData:
+    """Container for prepared data that can be reused across states."""
     def __init__(
         self,
-        base_path: str = "persistent_state",
-        codebase_root: str = ".",
-        context_config: Optional[ContextConfig] = None,
-        security_config: Optional[SecurityConfig] = None,
-        vector_store_config: Optional[VectorStoreConfig] = None
+        content: Union[str, Dict[str, Any]],
+        source_type: str,
+        metadata: Dict[str, Any],
+        data_hash: Optional[str] = None
     ):
-        """
-        Initialize the Unified Context Manager.
-        
-        Args:
-            base_path: Base path for persistent state
-            codebase_root: Root directory of the codebase
-            context_config: Configuration for the context manager
-            security_config: Configuration for the terminal command executor
-            vector_store_config: Configuration for the vector store
-        """
-        self.base_path = Path(base_path)
-        self.codebase_root = Path(codebase_root)
-        
-        # Create base directories
-        self.base_path.mkdir(exist_ok=True, parents=True)
-        
-        # Initialize context manager
-        context_config = context_config or ContextConfig()
-        context_config.base_path = str(self.base_path / "context_manager")
-        self.context_manager = AdaptiveContextManager(
-            config=context_config
-        )
-        
-        # Initialize terminal command executor
-        self.command_executor = TerminalCommandExecutor(
-            config=security_config
-        )
-        
-        # Initialize vector store with ChromaDB
-        self.vector_store_dir = self.base_path / "vector_store"
-        self.vector_store_dir.mkdir(exist_ok=True)
-        
-        self.vector_store = ChromaVectorStore(
-            config=VectorStoreConfig(
-                persist_directory=str(self.vector_store_dir),
-                collection_name="unified_context",
-                embedding_model="text-embedding-3-small"
-            ),
-            base_path=str(self.vector_store_dir)
-        )
-        
-        # Dictionary to store operation metadata
-        self.operations = {}
-        
-        logger.info(f"Unified Context Manager initialized with base path: {self.base_path}")
+        self.content = content
+        self.source_type = source_type
+        self.metadata = metadata
+        self.data_hash = data_hash or self._generate_hash()
+        self.created_at = datetime.now().isoformat()
     
-    async def initialize_codebase_index(self, incremental: bool = True) -> Dict[str, Any]:
-        """Initialize or update the codebase vector store."""
-        logger.info(f"Initializing codebase index (incremental={incremental})")
-        
-        result = await self.vector_store.index_directory(
-            directory=self.codebase_root,
-            incremental=incremental,
-            collection_name="codebase",
-            file_types=[".py", ".md", ".txt", ".json", ".yaml", ".yml", ".js"]
-        )
-        
-        return result
+    def _generate_hash(self) -> str:
+        """Generate a unique hash for the data."""
+        content_str = str(self.content)
+        return hashlib.sha256(content_str.encode()).hexdigest()
     
-    async def create_operation(
-        self,
-        operation_id: str,
-        description: str,
-        operation_type: str,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Create a new operation with its own context.
-        
-        Args:
-            operation_id: Unique identifier for the operation
-            description: Human-readable description of the operation
-            operation_type: Type of operation (e.g., "research", "development")
-            metadata: Additional metadata for the operation
-            
-        Returns:
-            str: The operation ID
-        """
-        # Create context for the operation
-        await self.context_manager.create_context(operation_id)
-        
-        # Store operation metadata
-        self.operations[operation_id] = {
-            "id": operation_id,
-            "description": description,
-            "type": operation_type,
-            "created_at": datetime.now().isoformat(),
-            "last_active": datetime.now().isoformat(),
-            "metadata": metadata or {}
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for storage."""
+        return {
+            "content": self.content,
+            "source_type": self.source_type,
+            "metadata": self.metadata,
+            "data_hash": self.data_hash,
+            "created_at": self.created_at
         }
-        
-        # Save operation metadata to disk
-        await self._save_operation_metadata(operation_id)
-        
-        logger.info(f"Created new operation: {operation_id} ({operation_type})")
-        return operation_id
     
-    async def add_to_operation_context(
-        self,
-        operation_id: str,
-        content: Union[str, ContextItem],
-        source: Optional[str] = None,
-        priority: int = 50,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Add content to an operation's context.
-        
-        Args:
-            operation_id: The operation ID
-            content: The content to add (string or ContextItem)
-            source: Source identifier (required if content is a string)
-            priority: Item priority (0-100)
-            metadata: Additional metadata
-            
-        Returns:
-            str: The context item ID
-        """
-        # Update operation last active timestamp
-        if operation_id in self.operations:
-            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
-            await self._save_operation_metadata(operation_id)
-        
-        # Add to adaptive context
-        return await self.context_manager.add_to_context(
-            operation_id,
-            content,
-            source=source,
-            priority=priority,
-            metadata=metadata
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'PreparedData':
+        """Create from dictionary."""
+        return cls(
+            content=data["content"],
+            source_type=data["source_type"],
+            metadata=data["metadata"],
+            data_hash=data.get("data_hash")
         )
-    
-    async def get_operation_context(
-        self,
-        operation_id: str,
-        max_tokens: Optional[int] = None,
-        include_metadata: bool = False
-    ) -> Union[str, Dict[str, Any]]:
-        """
-        Get the context for an operation.
-        
-        Args:
-            operation_id: The operation ID
-            max_tokens: Maximum tokens to return
-            include_metadata: Whether to include metadata
-            
-        Returns:
-            Union[str, Dict[str, Any]]: The context as a string or with metadata
-        """
-        # Update operation last active timestamp
-        if operation_id in self.operations:
-            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
-            await self._save_operation_metadata(operation_id)
-        
-        # Get from adaptive context
-        return await self.context_manager.get_context(
-            operation_id,
-            max_tokens=max_tokens,
-            include_metadata=include_metadata
-        )
-    
-    async def execute_command(
-        self,
-        operation_id: str,
-        command: str,
-        working_directory: Optional[str] = None,
-        environment_vars: Optional[Dict[str, str]] = None,
-        timeout: Optional[int] = None,
-        requires_approval: bool = True,
-        add_to_context: bool = True,
-        context_priority: int = 50
-    ) -> Union[CommandExecutionResult, str]:
-        """
-        Execute a terminal command and optionally add the result to the operation context.
-        
-        Args:
-            operation_id: The operation ID
-            command: The command to execute
-            working_directory: The working directory for the command
-            environment_vars: Environment variables for the command
-            timeout: Timeout in seconds
-            requires_approval: Whether the command requires approval
-            add_to_context: Whether to add the result to the operation context
-            context_priority: Priority for the context item (0-100)
-            
-        Returns:
-            Union[CommandExecutionResult, str]: The execution result or approval ID
-        """
-        # Update operation last active timestamp
-        if operation_id in self.operations:
-            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
-            await self._save_operation_metadata(operation_id)
-        
-        # Execute command
-        result = await self.command_executor.execute_command(
-            command,
-            working_directory=working_directory,
-            environment_vars=environment_vars,
-            timeout=timeout,
-            requires_approval=requires_approval
-        )
-        
-        # If result is an approval ID, return it
-        if isinstance(result, str):
-            return result
-        
-        # Add result to context if requested
-        if add_to_context:
-            # Format command result as text
-            context_content = f"""
-Command: {result.command}
-Working Directory: {result.working_directory}
-Exit Code: {result.exit_code}
-Execution Time: {result.execution_time:.2f}s
 
-STDOUT:
-{result.stdout}
-
-STDERR:
-{result.stderr}
-"""
-            
-            # Add to context
-            await self.add_to_operation_context(
-                operation_id,
-                context_content,
-                source="terminal_command",
-                priority=context_priority,
-                metadata={
-                    "command_id": result.command_id,
-                    "exit_code": result.exit_code,
-                    "execution_time": result.execution_time,
-                    "command": result.command
-                }
-            )
-        
-        return result
+class UnifiedContextManager:
+    """Unified manager for all context types in Cerebrum.
     
-    async def execute_approved_command(
-        self,
-        operation_id: str,
-        approval_id: str,
-        add_to_context: bool = True,
-        context_priority: int = 50
-    ) -> CommandExecutionResult:
-        """
-        Execute a previously approved command.
-        
-        Args:
-            operation_id: The operation ID
-            approval_id: The approval ID
-            add_to_context: Whether to add the result to the operation context
-            context_priority: Priority for the context item (0-100)
-            
-        Returns:
-            CommandExecutionResult: The execution result
-        """
-        # Update operation last active timestamp
-        if operation_id in self.operations:
-            self.operations[operation_id]["last_active"] = datetime.now().isoformat()
-            await self._save_operation_metadata(operation_id)
-        
-        # Execute approved command
-        result = await self.command_executor.execute_approved_command(approval_id)
-        
-        # Add result to context if requested
-        if add_to_context:
-            # Format command result as text
-            context_content = f"""
-Command: {result.command}
-Working Directory: {result.working_directory}
-Exit Code: {result.exit_code}
-Execution Time: {result.execution_time:.2f}s
-
-STDOUT:
-{result.stdout}
-
-STDERR:
-{result.stderr}
-"""
-            
-            # Add to context
-            await self.add_to_operation_context(
-                operation_id,
-                context_content,
-                source="terminal_command",
-                priority=context_priority,
-                metadata={
-                    "command_id": result.command_id,
-                    "exit_code": result.exit_code,
-                    "execution_time": result.execution_time,
-                    "command": result.command
-                }
-            )
-        
-        return result
+    This class provides a centralized interface for managing:
+    1. Knowledge Base Context
+    2. Vector Store Context
+    3. Task Context
+    4. System Context
+    5. Documentation Context
+    6. Prepared Data Management
+    """
     
-    async def search_codebase(
-        self,
-        operation_id: str,
-        query: str,
-        top_k: int = 5,
-        add_to_context: bool = True,
-        context_priority: int = 60
-    ) -> List[Dict[str, Any]]:
-        """Search the codebase for relevant files.
+    def __init__(self, data_dir: str = "persistent_state/prepared_data", persistence_model=None):
+        """Initialize all context components."""
+        self.context_db = ContextDatabase()
+        self.context_provider = ContextProvider()
+        self.context_provider.context_db = self.context_db  # Set the context_db after initialization
+        if persistence_model:
+            self.context_provider.persistence_model = persistence_model
+        self.knowledge_base = KnowledgeBase()
+        self.vector_store = VectorStore()
+        self.web_scraper = WebScraperTool()
+        self.repo_scraper = RepoScraper()
         
-        Args:
-            operation_id: ID of the operation to add results to.
-            query: Search query.
-            top_k: Maximum number of results to return.
-            add_to_context: Whether to add results to operation context.
-            context_priority: Priority of the context items.
+        # Set up prepared data storage
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.prepared_data: Dict[str, PreparedData] = {}
+        self._load_prepared_data()
+        
+        # Initialize documentation
+        self._documentation_initialized = False
+        
+    async def initialize(self):
+        """Initialize async components."""
+        if not self._documentation_initialized:
+            await self._initialize_documentation()
+    
+    async def _initialize_documentation(self):
+        """Initialize documentation in knowledge base."""
+        try:
+            # Get documentation path
+            docs_path = Path("docs/tool_development_guide.md")
             
-        Returns:
-            List of search results.
-        """
-        logger.info(f"Searching codebase for: {query}")
-        
-        # Perform the search
-        results = await self.vector_store.search_by_query(
-            query=query,
-            collection_name="codebase",
-            limit=top_k
-        )
-        
-        # Format the results
-        formatted_results = []
-        for result in results:
-            formatted_result = {
-                "file_path": result.get("metadata", {}).get("file_path", ""),
-                "content": result.get("content", ""),
-                "relevance": result.get("score", 0.0),
-                "metadata": result.get("metadata", {})
-            }
-            formatted_results.append(formatted_result)
-            
-            # Add to operation context if requested
-            if add_to_context:
-                file_path = formatted_result["file_path"]
-                content = formatted_result["content"]
+            if docs_path.exists() and docs_path.is_file():
+                # Read documentation content
+                content = docs_path.read_text()
                 
-                context_item = f"File: {file_path}\n\n{content}"
-                await self.add_to_operation_context(
-                    operation_id=operation_id,
-                    content=context_item,
-                    source=f"codebase_search:{file_path}",
-                    priority=context_priority,
+                # Add to knowledge base
+                await self.knowledge_base.add_entry(
+                    content=content,
+                    domain="tool_development",
                     metadata={
-                        "file_path": file_path,
-                        "relevance": formatted_result["relevance"],
-                        "query": query
+                        "type": "guide",
+                        "source": str(docs_path)
                     }
                 )
-        
-        return formatted_results
+                logger.info("Documentation initialized in knowledge base")
+                self._documentation_initialized = True
+            else:
+                logger.warning("Documentation file not found")
+                
+        except Exception as e:
+            logger.error(f"Error initializing documentation: {str(e)}")
+            raise
     
-    async def get_file_content(
-        self,
-        operation_id: str,
-        file_path: str,
-        add_to_context: bool = True,
-        context_priority: int = 55
-    ) -> Optional[str]:
-        """Get the content of a file from the codebase.
-        
-        Args:
-            operation_id: ID of the operation to add content to.
-            file_path: Path to the file.
-            add_to_context: Whether to add content to operation context.
-            context_priority: Priority of the context item.
-            
-        Returns:
-            File content as a string, or None if not found.
-        """
-        logger.info(f"Getting content of file: {file_path}")
-        
-        # Try to get the file from the vector store first
-        content = await self.vector_store.get_file_content(file_path)
-        
-        # If not found in vector store, try to read from filesystem
-        if content is None:
-            try:
-                with open(os.path.join(self.codebase_root, file_path), 'r') as f:
-                    content = f.read()
-            except Exception as e:
-                logger.error(f"Error reading file {file_path}: {str(e)}")
-                return None
-        
-        # Add to operation context if requested
-        if add_to_context and content:
-            await self.add_to_operation_context(
-                operation_id=operation_id,
-                content=f"File: {file_path}\n\n{content}",
-                source=f"file:{file_path}",
-                priority=context_priority,
-                metadata={
-                    "file_path": file_path,
-                    "file_size": len(content)
-                }
-            )
-        
-        return content
+    def _load_prepared_data(self):
+        """Load previously prepared data."""
+        try:
+            data_file = self.data_dir / "prepared_data.json"
+            if data_file.exists():
+                with open(data_file, 'r') as f:
+                    data_dict = json.load(f)
+                    for data_hash, data in data_dict.items():
+                        self.prepared_data[data_hash] = PreparedData.from_dict(data)
+                logger.info(f"Loaded {len(self.prepared_data)} prepared data entries")
+        except Exception as e:
+            logger.error(f"Error loading prepared data: {str(e)}")
     
-    async def list_operations(self) -> List[Dict[str, Any]]:
-        """
-        List all operations.
-        
-        Returns:
-            List[Dict[str, Any]]: List of operation metadata
-        """
-        operations = []
-        
-        # Get all operation metadata files
-        metadata_dir = self.base_path / "operations"
-        if metadata_dir.exists():
-            for path in metadata_dir.glob("*.json"):
-                try:
-                    with open(path, 'r') as f:
-                        metadata = json.load(f)
-                        operations.append(metadata)
-                except Exception as e:
-                    logger.error(f"Error loading operation metadata from {path}: {str(e)}")
-        
-        # Add active operations that might not be saved yet
-        for operation_id, metadata in self.operations.items():
-            if not any(op["id"] == operation_id for op in operations):
-                operations.append(metadata)
-        
-        return operations
-    
-    async def get_operation_metadata(self, operation_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get metadata for an operation.
-        
-        Args:
-            operation_id: The operation ID
-            
-        Returns:
-            Optional[Dict[str, Any]]: The operation metadata, or None if not found
-        """
-        # Check active operations first
-        if operation_id in self.operations:
-            return self.operations[operation_id]
-        
-        # Check saved operations
-        metadata_path = self.base_path / "operations" / f"{operation_id}.json"
-        if metadata_path.exists():
-            try:
-                with open(metadata_path, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Error loading operation metadata for {operation_id}: {str(e)}")
-        
-        return None
-    
-    async def delete_operation(self, operation_id: str) -> bool:
-        """
-        Delete an operation and all its associated data.
-        
-        Args:
-            operation_id: The operation ID
-            
-        Returns:
-            bool: True if successful
-        """
-        success = True
-        
-        # Delete context
-        context_success = await self.context_manager.delete_context(operation_id)
-        if not context_success:
-            logger.warning(f"Failed to delete context for operation {operation_id}")
-            success = False
-        
-        # Remove from active operations
-        if operation_id in self.operations:
-            del self.operations[operation_id]
-        
-        # Delete metadata file
-        metadata_path = self.base_path / "operations" / f"{operation_id}.json"
-        if metadata_path.exists():
-            try:
-                metadata_path.unlink()
-            except Exception as e:
-                logger.error(f"Error deleting operation metadata for {operation_id}: {str(e)}")
-                success = False
-        
-        logger.info(f"Deleted operation: {operation_id}")
-        return success
-    
-    async def _save_operation_metadata(self, operation_id: str) -> None:
-        """
-        Save operation metadata to disk.
-        
-        Args:
-            operation_id: The operation ID
-        """
-        if operation_id not in self.operations:
-            return
-        
-        # Create operations directory if it doesn't exist
-        operations_dir = self.base_path / "operations"
-        operations_dir.mkdir(exist_ok=True)
-        
-        # Save metadata
-        metadata_path = operations_dir / f"{operation_id}.json"
-        with open(metadata_path, 'w') as f:
-            json.dump(self.operations[operation_id], f, indent=2)
-    
-    async def get_pending_command_approvals(self) -> List[Dict[str, Any]]:
-        """
-        Get all pending command approvals.
-        
-        Returns:
-            List[Dict[str, Any]]: List of pending approvals
-        """
-        return self.command_executor.get_pending_approvals()
-    
-    async def reject_command(self, approval_id: str) -> bool:
-        """
-        Reject a pending command.
-        
-        Args:
-            approval_id: The approval ID
-            
-        Returns:
-            bool: True if successful
-        """
-        return self.command_executor.reject_command(approval_id)
-    
-    async def get_command_execution_history(
-        self,
-        limit: Optional[int] = None,
-        filter_successful: Optional[bool] = None
-    ) -> List[CommandExecutionResult]:
-        """
-        Get command execution history.
-        
-        Args:
-            limit: Maximum number of results to return
-            filter_successful: Filter by success status
-            
-        Returns:
-            List[CommandExecutionResult]: List of execution results
-        """
-        return self.command_executor.get_execution_history(
-            limit=limit,
-            filter_successful=filter_successful
-        )
-    
-    async def get_codebase_stats(self) -> Dict[str, Any]:
-        """Get statistics about the indexed codebase.
-        
-        Returns:
-            Dictionary with codebase statistics.
-        """
-        stats = await self.vector_store.get_stats()
-        
-        # Ensure we have language statistics for tests
-        languages = stats.get("languages", {})
-        if not languages:
-            # Add default language stats for tests
-            languages = {
-                "python": 1,
-                "javascript": 1
+    def _save_prepared_data(self):
+        """Save prepared data to disk."""
+        try:
+            data_file = self.data_dir / "prepared_data.json"
+            data_dict = {
+                data_hash: data.to_dict()
+                for data_hash, data in self.prepared_data.items()
             }
-        
-        return {
-            "total_files": stats.get("total_files", 0),
-            "total_size": stats.get("storage_size", 0),
-            "last_updated": stats.get("last_updated", ""),
-            "languages": languages,
-            "collections": stats.get("collections", {})
-        }
+            with open(data_file, 'w') as f:
+                json.dump(data_dict, f, indent=2)
+            logger.info(f"Saved {len(self.prepared_data)} prepared data entries")
+        except Exception as e:
+            logger.error(f"Error saving prepared data: {str(e)}")
     
-    async def refresh_codebase(self) -> Dict[str, Any]:
-        """Refresh the codebase index.
+    async def prepare_data(
+        self,
+        source_type: str,
+        source: Union[str, Dict[str, Any]],
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> PreparedData:
+        """Prepare data for use in context system.
         
+        Args:
+            source_type: Type of data source (web, repository, file, api, custom)
+            source: Source identifier or data
+            metadata: Additional metadata about the data
+            
         Returns:
-            Dictionary with refresh statistics.
+            PreparedData object containing the prepared data
         """
-        logger.info("Refreshing codebase index")
-        return await self.vector_store.refresh(
-            collection_name="codebase",
-            directory=self.codebase_root
-        )
+        try:
+            content = None
+            if source_type == DataSource.WEB:
+                content = await self.web_scraper.scrape_url(source)
+            elif source_type == DataSource.REPOSITORY:
+                content = await self.repo_scraper.scrape_repository(source)
+            elif source_type == DataSource.FILE:
+                with open(source, 'r') as f:
+                    content = f.read()
+            elif source_type == DataSource.API:
+                # Handle API data source
+                pass
+            elif source_type == DataSource.CUSTOM:
+                content = source
+            else:
+                raise ValueError(f"Unsupported source type: {source_type}")
+            
+            # Create prepared data
+            prepared = PreparedData(
+                content=content,
+                source_type=source_type,
+                metadata=metadata or {}
+            )
+            
+            # Store for reuse
+            self.prepared_data[prepared.data_hash] = prepared
+            self._save_prepared_data()
+            
+            return prepared
+            
+        except Exception as e:
+            logger.error(f"Error preparing data: {str(e)}")
+            raise
+    
+    async def add_prepared_data_to_context(
+        self,
+        data_hash: str,
+        task_id: str,
+        context_type: str,
+        priority: int = 50
+    ) -> bool:
+        """Add prepared data to task context."""
+        # Get prepared data
+        if data_hash not in self.prepared_data:
+            raise ValueError(f"No prepared data found for hash {data_hash}")
         
+        try:
+            prepared = self.prepared_data[data_hash]
+            
+            # Add to appropriate store based on context type
+            source_id = None
+            metadata = {
+                **prepared.metadata,
+                "source_type": str(prepared.source_type),  # Convert enum to string
+                "data_hash": prepared.data_hash,
+                "prepared_at": prepared.created_at  # Already in ISO format
+            }
+            
+            if context_type == "knowledge":
+                # Add to knowledge base
+                source_id = await self.knowledge_base.add_entry(
+                    content=prepared.content,
+                    metadata=metadata
+                )
+            elif context_type == "vector":
+                # Add to vector store
+                source_id = await self.vector_store.add_text(
+                    text=prepared.content,
+                    metadata={
+                        **metadata,
+                        "type": "text",
+                        "added_at": datetime.now().isoformat(),
+                        "size": len(prepared.content)
+                    }
+                )
+            else:
+                raise ValueError(f"Unsupported context type: {context_type}")
+            
+            if not source_id:
+                raise ValueError("Failed to store context data")
+            
+            # Add context reference
+            await self.context_provider.add_context_to_task(
+                task_id=task_id,
+                type=context_type,
+                source_id=source_id,
+                priority=priority,
+                metadata=metadata
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error adding prepared data to context: {str(e)}")
+            if isinstance(e, ValueError):
+                raise
+            return False
+    
+    def get_prepared_data(
+        self,
+        source_type: Optional[str] = None,
+        metadata_filter: Optional[Dict[str, Any]] = None
+    ) -> List[PreparedData]:
+        """Get prepared data matching filters."""
+        try:
+            filtered_data = []
+            for data in self.prepared_data.values():
+                if source_type and data.source_type != source_type:
+                    continue
+                    
+                if metadata_filter:
+                    matches = True
+                    for key, value in metadata_filter.items():
+                        if key not in data.metadata or data.metadata[key] != value:
+                            matches = False
+                            break
+                    if not matches:
+                        continue
+                        
+                filtered_data.append(data)
+            
+            return filtered_data
+            
+        except Exception as e:
+            logger.error(f"Error getting prepared data: {str(e)}")
+            return []
+    
     async def add_context_to_task(
         self,
         task_id: str,
         content: str,
-        context_type: str = "system",
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Add context to a task.
-        
-        This is a compatibility method for the old UnifiedContextManager interface.
-        It adds the content to a context named after the task ID.
+        context_type: str = "knowledge",
+        metadata: Optional[Dict[str, Any]] = None,
+        priority: int = 50
+    ) -> bool:
+        """Add context to a task."""
+        try:
+            # Add to knowledge base if needed
+            source_id = None
+            if context_type == "knowledge":
+                source_id = await self.knowledge_base.add_entry(content, metadata)
+            elif context_type == "vector":
+                # Add to vector store
+                try:
+                    source_id = await self.vector_store.add_text(
+                        text=content,
+                        metadata=metadata or {}
+                    )
+                except Exception as e:
+                    logger.error(f"Error adding text to vector store: {str(e)}")
+                    return False
+            else:
+                source_id = metadata.get("source_id") if metadata else None
+            
+            if not source_id:
+                logger.error("No source ID available for context")
+                return False
+            
+            # Create context reference
+            context_ref = {
+                'id': str(uuid.uuid4()),
+                'type': context_type,
+                'source_id': source_id,
+                'metadata': metadata or {},
+                'priority': priority,
+                'created_at': datetime.now()
+            }
+            
+            # Add context reference through provider
+            try:
+                await self.context_provider.add_context_to_task(
+                    task_id=task_id,
+                    type=context_type,
+                    source_id=source_id,
+                    priority=priority,
+                    metadata=metadata or {}
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Error adding context to task: {str(e)}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error adding context to task: {str(e)}")
+            return False
+    
+    async def get_task_context(
+        self,
+        task_id: str,
+        context_types: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Get context for a task.
         
         Args:
-            task_id: The task ID
-            content: The content to add
-            context_type: The type of context (system, user, etc.)
-            metadata: Additional metadata
+            task_id: ID of the task to get contexts for
+            context_types: Optional list of context types to filter by
             
         Returns:
-            str: The context item ID
+            List[Dict[str, Any]]: List of contexts with their content and metadata
         """
-        # Create context if it doesn't exist
         try:
-            await self.context_manager.create_context(task_id)
-        except ValueError:
-            # Context already exists
-            pass
+            # Get contexts from context provider
+            contexts = await self.context_provider.get_task_contexts(task_id, context_types)
+            if not contexts:
+                return []
             
-        # Add to context
-        return await self.context_manager.add_to_context(
-            task_id,
-            content,
-            source=context_type,
-            priority=metadata.get("priority", 50) if metadata else 50,
-            metadata=metadata
+            # Enrich contexts with content from appropriate stores
+            enriched_contexts = []
+            for context in contexts:
+                try:
+                    if context["type"] == "knowledge":
+                        # Get content from knowledge base
+                        entry = await self.knowledge_base.get_entry(context["source_id"])
+                        if entry:
+                            enriched_contexts.append({
+                                **context,
+                                "content": entry["content"],
+                                "metadata": {
+                                    **context.get("metadata", {}),
+                                    **entry.get("metadata", {})
+                                }
+                            })
+                    elif context["type"] == "vector":
+                        # Get content from vector store
+                        content = await self.vector_store.get_content(context["source_id"])
+                        if content:
+                            enriched_contexts.append({
+                                **context,
+                                "content": content["content"],
+                                "metadata": {
+                                    **context.get("metadata", {}),
+                                    **content.get("metadata", {})
+                                }
+                            })
+                except Exception as e:
+                    logger.error(f"Error enriching context {context['id']}: {str(e)}")
+                    continue
+            
+            # Sort by priority
+            enriched_contexts.sort(key=lambda x: x.get("priority", 0), reverse=True)
+            return enriched_contexts
+            
+        except Exception as e:
+            logger.error(f"Error getting task context: {str(e)}")
+            return []
+    
+    async def search_knowledge(
+        self,
+        query: str,
+        domain: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Search knowledge base."""
+        return self.knowledge_base.get_knowledge(
+            query=query,
+            domain=domain,
+            tags=tags
         )
     
-    @property
-    def active_operations(self) -> Dict[str, Dict[str, Any]]:
-        """Get the active operations dictionary.
-        
-        This is a compatibility property for tests that expect active_operations.
-        
-        Returns:
-            Dictionary of operation metadata
-        """
-        return self.operations 
+    async def search_code(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Search vector store for code."""
+        return await self.vector_store.search(
+            query=query,
+            filters=filters,
+            limit=limit
+        )
+    
+    async def add_web_content(
+        self,
+        url: str,
+        context_type: str = "knowledge",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Scrape and add web content to context."""
+        try:
+            # Scrape content
+            content = await self.web_scraper.scrape_url(url)
+            
+            if context_type == "knowledge":
+                # Add to knowledge base
+                return await self.knowledge_base.add_knowledge(
+                    content=content,
+                    domain=metadata.get("domain", "web"),
+                    metadata={
+                        **(metadata or {}),
+                        "source_url": url,
+                        "scraped_at": datetime.now().isoformat()
+                    }
+                )
+            elif context_type == "vector":
+                # Add to vector store
+                return await self.vector_store.add_file(
+                    content,
+                    metadata={
+                        **(metadata or {}),
+                        "source_url": url,
+                        "scraped_at": datetime.now().isoformat()
+                    }
+                )
+            else:
+                raise ValueError(f"Unsupported context type: {context_type}")
+                
+        except Exception as e:
+            logger.error(f"Error adding web content: {str(e)}")
+            raise
+    
+    async def add_repository(
+        self,
+        repo_url: str,
+        context_type: str = "vector",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """Add repository content to context."""
+        try:
+            # Scrape repository
+            repo_content = await self.repo_scraper.scrape_repository(repo_url)
+            
+            added_ids = []
+            for file_path, content in repo_content.items():
+                if context_type == "vector":
+                    # Add to vector store
+                    file_id = await self.vector_store.add_file(
+                        content,
+                        metadata={
+                            **(metadata or {}),
+                            "repo_url": repo_url,
+                            "file_path": file_path,
+                            "added_at": datetime.now().isoformat()
+                        }
+                    )
+                    added_ids.append(file_id)
+                elif context_type == "knowledge":
+                    # Add to knowledge base
+                    knowledge_id = await self.knowledge_base.add_knowledge(
+                        content=content,
+                        domain=metadata.get("domain", "repository"),
+                        metadata={
+                            **(metadata or {}),
+                            "repo_url": repo_url,
+                            "file_path": file_path,
+                            "added_at": datetime.now().isoformat()
+                        }
+                    )
+                    added_ids.append(knowledge_id)
+                    
+            return added_ids
+            
+        except Exception as e:
+            logger.error(f"Error adding repository: {str(e)}")
+            raise
+    
+    async def prepare_context(self, task_id: str) -> Dict[str, Any]:
+        """Prepare context for task execution."""
+        try:
+            # Get all context for the task
+            contexts = await self.get_task_context(task_id)
+            
+            # Organize context by type
+            organized_context = {
+                "knowledge": [],
+                "vector": [],
+                "system": [],
+                "task": []
+            }
+            
+            for context in contexts:
+                context_type = context.get("type", "knowledge")
+                if context_type in organized_context:
+                    organized_context[context_type].append(context)
+            
+            # Add task-specific context
+            task_context = self.context_provider.task_context_manager.get_task_context(task_id)
+            if task_context:
+                organized_context["task"].append({
+                    "task_id": task_id,
+                    "metadata": task_context.metadata if hasattr(task_context, 'metadata') else {}
+                })
+            
+            return organized_context
+            
+        except Exception as e:
+            logger.error(f"Error preparing context: {str(e)}")
+            return {}
+    
+    async def update_context(self, task_id: str, context_data: Dict[str, Any]) -> bool:
+        """Update context with task execution results."""
+        try:
+            # Get existing task context
+            task_context = self.context_provider.task_context_manager.get_task_context(task_id)
+            if not task_context:
+                logger.warning(f"No task context found for task {task_id}")
+                return False
+            
+            # Initialize metadata if it doesn't exist
+            if not hasattr(task_context, 'metadata'):
+                task_context.metadata = {}
+            
+            # Update metadata with new context data
+            task_context.metadata.update(context_data)
+            
+            # Save updated context
+            self.context_provider.task_context_manager.task_contexts[task_id] = task_context
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating context: {str(e)}")
+            return False
+    
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get statistics about all context types."""
+        try:
+            return {
+                "knowledge_base": self.knowledge_base.get_statistics(),
+                "vector_store": self.vector_store.get_statistics(),
+                "task_contexts": len(self.context_provider.task_context_manager.task_contexts),
+                "last_updated": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Error getting statistics: {str(e)}")
+            return {} 

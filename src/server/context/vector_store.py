@@ -225,7 +225,7 @@ class VectorStore:
                        contents: List[str]) -> Dict[str, Any]:
         """Add items to the default collection."""
         if not embeddings or not metadatas or not contents:
-            return {"added": 0}
+            return {"processed": 0, "failed": 0, "ids": []}
             
         if len(embeddings) != len(metadatas) or len(embeddings) != len(contents):
             raise ValueError("Embeddings, metadatas, and contents must have the same length")
@@ -233,23 +233,49 @@ class VectorStore:
         # Generate IDs for the items
         ids = [str(hashlib.md5(content.encode()).hexdigest()) for content in contents]
         
-        # Ensure default collection exists
-        collection = self._ensure_collection("default")
-        
-        # Add items to collection
-        collection.add(
-            embeddings=embeddings,
-            metadatas=metadatas,
-            documents=contents,
-            ids=ids
-        )
-        
-        return {"added": len(ids), "ids": ids}
+        try:
+            # Ensure collection exists
+            collection_name = self.config.collection_name
+            collection = self._ensure_collection(collection_name)
+            
+            # Add items to collection
+            collection.add(
+                embeddings=embeddings,
+                metadatas=metadatas,
+                documents=contents,
+                ids=ids
+            )
+            
+            return {
+                "processed": len(ids),
+                "failed": 0,
+                "ids": ids
+            }
+        except Exception as e:
+            logging.error(f"Error adding items to vector store: {str(e)}")
+            return {
+                "processed": 0,
+                "failed": len(ids),
+                "ids": [],
+                "error": str(e)
+            }
 
     async def search(self, embedding: List[float], filters: Optional[Dict[str, Any]] = None, 
                     limit: int = 10) -> List[Dict[str, Any]]:
         """Search across all collections."""
         results = []
+        
+        # If no indices are available, search in the default collection
+        if not self.indices:
+            try:
+                collection_name = self.config.collection_name
+                # Create the collection if it doesn't exist
+                collection = self._ensure_collection(collection_name)
+                # Add to indices
+                self.indices[collection_name] = collection
+            except Exception as e:
+                logging.error(f"Error ensuring collection {self.config.collection_name}: {str(e)}")
+                return []
         
         # Search in each collection
         for name, collection in self.indices.items():
@@ -267,6 +293,39 @@ class VectorStore:
         # Sort by relevance and limit results
         results.sort(key=lambda x: x.get("relevance", 0), reverse=True)
         return results[:limit]
+
+    async def update_embeddings(self, ids: List[str], embeddings: List[List[float]]) -> Dict[str, Any]:
+        """Update embeddings for existing items."""
+        if not ids or not embeddings:
+            return {"processed": 0, "failed": 0}
+            
+        if len(ids) != len(embeddings):
+            raise ValueError("IDs and embeddings must have the same length")
+            
+        processed = 0
+        failed = 0
+        
+        try:
+            # Ensure collection exists
+            collection_name = self.config.collection_name
+            collection = self._ensure_collection(collection_name)
+            
+            # Update embeddings in collection
+            collection.update(
+                ids=ids,
+                embeddings=embeddings
+            )
+            
+            processed = len(ids)
+            
+        except Exception as e:
+            logging.error(f"Error updating embeddings: {str(e)}")
+            failed = len(ids)
+            
+        return {
+            "processed": processed,
+            "failed": failed
+        }
 
     def _ensure_collection(self, collection_name: str) -> chromadb.Collection:
         """Ensure a collection exists and return it."""
@@ -597,6 +656,29 @@ class VectorStore:
             logging.error(f"Error deleting index {index_name}: {str(e)}")
             return False
 
+    async def clear(self) -> bool:
+        """Clear all collections in the vector store."""
+        try:
+            # Get all collections
+            collections = self.client.list_collections()
+            
+            # Delete each collection
+            for collection in collections:
+                try:
+                    self.client.delete_collection(name=collection.name)
+                except Exception as e:
+                    logging.error(f"Error deleting collection {collection.name}: {str(e)}")
+            
+            # Clear indices dictionary
+            self.indices = {}
+            
+            logging.info(f"Cleared all collections from vector store")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error clearing vector store: {str(e)}")
+            return False
+
     def _calculate_storage_size(self) -> float:
         """Calculate the size of the ChromaDB storage in MB."""
         try:
@@ -820,3 +902,30 @@ class VectorStore:
         except Exception as e:
             logging.error(f"Error adding text to vector store: {str(e)}")
             raise
+
+    async def get_content(self, content_id: str) -> Optional[Dict[str, Any]]:
+        """Get content by ID from any collection."""
+        try:
+            # Search in all collections
+            for collection_name, collection in self.indices.items():
+                try:
+                    # Try to get the document by ID
+                    results = collection.get(ids=[content_id])
+                    if results and results['ids'] and len(results['ids']) > 0:
+                        # Found the document
+                        idx = results['ids'].index(content_id)
+                        return {
+                            "content": results['documents'][idx],
+                            "metadata": results['metadatas'][idx] if 'metadatas' in results and results['metadatas'] else {}
+                        }
+                except Exception as e:
+                    logging.error(f"Error getting content from collection {collection_name}: {str(e)}")
+                    continue
+                    
+            # If we get here, the content wasn't found
+            logging.warning(f"Content with ID {content_id} not found in any collection")
+            return None
+            
+        except Exception as e:
+            logging.error(f"Error getting content: {str(e)}")
+            return None
