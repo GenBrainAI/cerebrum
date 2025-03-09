@@ -14,6 +14,19 @@ class ViewState(BaseModel):
     chat_history: List[Dict[str, Any]] = []
     selected_node: Optional[str] = None
     expanded_nodes: List[str] = []
+    
+    # Task management specific fields
+    selected_task_manager: Optional[str] = None
+    selected_task: Optional[str] = None
+    available_models: List[str] = [
+        "gpt-4",
+        "gpt-4-turbo",
+        "gpt-3.5-turbo",
+        "claude-3-opus",
+        "claude-3-sonnet",
+        "claude-3-haiku",
+        "ollama/llama3"
+    ]
 
     def set_active_task(self, task_id: str, task_name: str, manager_id: str, manager_name: str):
         """Set active task context."""

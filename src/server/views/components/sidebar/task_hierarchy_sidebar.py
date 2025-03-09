@@ -1,5 +1,6 @@
 # src/server/views/components/sidebar/task_hierarchy_sidebar.py
 import streamlit as st
+import logging
 from ...models.view_state import ViewState
 from ...models.view_types import ViewType
 from .utils import truncate_tree_node_names
@@ -9,6 +10,7 @@ class TaskHierarchySidebar:
     
     def __init__(self, controller=None):
         self.controller = controller
+        self.logger = logging.getLogger(__name__)
     
     async def render(self):
         """Render the task hierarchy sidebar."""
@@ -28,47 +30,76 @@ class TaskHierarchySidebar:
             
             st.markdown("---")
             
-            # Add quick actions at the top
-            # if st.button("➕ Add New Task"):
-            #     st.info("Task creation coming soon")
-                
-            # if st.button("🔄 Refresh Tasks"):
-            #     st.rerun()
-            
             # Render task hierarchy as main sidebar content
             st.subheader("Task Structure")
             if self.controller:
-                print("\n🌳 Getting task tree for sidebar...")
-                tree_data = await self.controller.get_task_tree()
-                
-                if tree_data:
-                    print(f"Tree data received: {len(tree_data.children)} root children")
-                    try:
+                try:
+                    # Get task tree data
+                    tree_data = await self.controller.get_task_tree()
+                    
+                    if tree_data and tree_data.children:
                         # Apply smart name truncation
                         truncate_tree_node_names(tree_data)
                         
+                        # Set up the tree component's internal state
+                        if self.controller.view_state.expanded_nodes:
+                            self.controller.tree_component._expanded_nodes = self.controller.view_state.expanded_nodes
+                            
+                        if self.controller.view_state.selected_node:
+                            self.controller.tree_component._selected_nodes = [str(self.controller.view_state.selected_node)]
+                        
+                        # Render the tree
                         result = self.controller.tree_component.render(
-                            tree_data,
+                            tree_data, 
                             key="task_tree_sidebar"
                         )
-                        if result is None:
-                            print("❌ Tree render returned None")
-                            st.warning("Failed to load task tree")
-                        else:
-                            print("✅ Tree rendered successfully")
-                    except Exception as e:
-                        print(f"❌ Error rendering tree: {str(e)}")
-                        st.error(f"Error rendering tree: {str(e)}")
-                else:
-                    print("❌ No tree data received")
-                    st.info("No tasks available")
+                        
+                        # Process result
+                        if result and 'selected' in result:
+                            # Update selected and expanded nodes in view state
+                            self.controller.view_state.selected_node = result.get("selected")
+                            self.controller.view_state.expanded_nodes = result.get("expanded", [])
+                            
+                            # Handle the node click
+                            if result.get("selected"):
+                                self.controller.handle_node_click(result.get("selected"))
+                    else:
+                        st.info("No tasks found. Use the Task Management tab to create task managers and tasks.")
+                except Exception as e:
+                    self.logger.error(f"Error rendering task tree: {str(e)}")
+                    st.error(f"Error rendering tree: {str(e)}")
+            else:
+                st.info("Controller not initialized")
+                
+            # Add navigation buttons
+            st.markdown("---")
+            
+            # Quick action buttons
+            st.subheader("Quick Actions")
+            
+            # Create new task manager button
+            if st.button("➕ New Task Manager", help="Create a new task manager"):
+                st.session_state.active_tab = 2  # Switch to task management tab
+                st.session_state.task_manager_select = "new"
+                st.rerun()
+                
+            # Create new task button
+            if st.button("➕ New Task", help="Create a new task"):
+                st.session_state.active_tab = 2  # Switch to task management tab
+                st.session_state.task_select = "new"
+                st.rerun()
+                
+            # Refresh button
+            if st.button("🔄 Refresh Tree", help="Refresh task tree"):
+                st.rerun()
 
-# Legacy function for backward compatibility
 async def render_task_hierarchy_sidebar():
-    """Legacy function to render the task hierarchy sidebar."""
+    """Render the task hierarchy sidebar."""
+    # Get controller from session state
+    controller = None
     if 'task_controller' in st.session_state:
-        sidebar = TaskHierarchySidebar(st.session_state.task_controller)
-        await sidebar.render()
-    else:
-        with st.sidebar:
-            st.warning("Task controller not initialized")
+        controller = st.session_state.task_controller
+        
+    # Create and render sidebar
+    sidebar = TaskHierarchySidebar(controller)
+    await sidebar.render()
