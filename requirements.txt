@@ -61,3 +61,5 @@ aiohttp>=3.9.0
 ratelimit>=2.2.1
 asyncio>=3.4.3
 python-dotenv>=1.0.0
+matplotlib
+plotly

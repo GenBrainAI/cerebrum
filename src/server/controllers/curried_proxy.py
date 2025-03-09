@@ -27,9 +27,64 @@ class CurriedProxy(BaseModel):
     tool_names: List[str] = Field(default_factory=list)
     catalog: ToolsCatalog = Field(default_factory=lambda: tools_catalog)
     name_counter: Dict[str, int] = {}
+    name: Optional[str] = Field(default="Unnamed Proxy")
     
     class Config:
         arbitrary_types_allowed = True
+
+    @staticmethod
+    def remove_from_task(persistence_model, task_id: str, logger=None) -> bool:
+        """Remove a CurriedProxy association from a task.
+        
+        Args:
+            persistence_model: The persistence model to use
+            task_id: The ID of the task to remove the proxy from
+            logger: Optional logger for logging messages
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Get the task
+            task = persistence_model.tasks.read(task_id)
+            if not task:
+                if logger:
+                    logger.error(f"Task not found: {task_id}")
+                return False
+                
+            # Check if the task has a CurriedProxy
+            if not task.curried_proxy_id:
+                if logger:
+                    logger.warning(f"Task {task_id} has no associated CurriedProxy")
+                return False
+                
+            # Remove the CurriedProxy association
+            old_proxy_id = task.curried_proxy_id
+            task.curried_proxy_id = None
+            
+            # Update the task
+            try:
+                persistence_model.tasks.update(task_id, task)
+                if logger:
+                    logger.info(f"Removed CurriedProxy {old_proxy_id} from task {task_id}")
+                return True
+            except AttributeError:
+                # If update doesn't exist, try other methods
+                try:
+                    persistence_model.tasks.create(task)
+                    if logger:
+                        logger.info(f"Updated task {task_id} to remove CurriedProxy")
+                    return True
+                except Exception as e:
+                    if logger:
+                        logger.error(f"Failed to update task: {str(e)}")
+                    return False
+        except Exception as e:
+            if logger:
+                logger.error(f"Error removing proxy from task: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+            return False
 
     def to_info(self) -> CurriedProxyInfo:
         """Convert CurriedProxy to CurriedProxyInfo for serialization."""
@@ -110,10 +165,22 @@ class CurriedProxy(BaseModel):
                             }
                         ))
 
+        # Create a name based on the tools if available
+        proxy_name = "New CurriedProxy"
+        if hasattr(self, 'name') and self.name:
+            # Use the proxy's existing name
+            proxy_name = self.name
+        elif tools and len(tools) > 0:
+            # Only generate a name based on tools if no name is set
+            # Use the first tool name as part of the proxy name
+            first_tool = tools[0].name.split('.')[-1]
+            proxy_name = f"Proxy for {first_tool}" + (f" +{len(tools)-1}" if len(tools) > 1 else "")
+
         return CurriedProxyInfo(
             id=self.id,
             tools=tools,
-            name_counter=self.name_counter
+            name_counter=self.name_counter,
+            name=proxy_name  # Include the name field
         )
 
     @classmethod
@@ -134,6 +201,10 @@ class CurriedProxy(BaseModel):
             
         # Restore name counter
         proxy.name_counter = info.name_counter
+        
+        # Store the name as an attribute if available
+        if hasattr(info, 'name') and info.name:
+            proxy.name = info.name
         
         return proxy
 

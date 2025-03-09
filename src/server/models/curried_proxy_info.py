@@ -13,6 +13,7 @@ class CurriedProxyInfo(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     tools: List[ToolInfo] = Field(default_factory=list)
     name_counter: Dict[str, int] = Field(default_factory=dict)
+    name: Optional[str] = Field(default="Unnamed Proxy")  # Optional name field with default value
 
     class Config:
         arbitrary_types_allowed = True

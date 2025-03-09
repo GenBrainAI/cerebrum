@@ -18,7 +18,7 @@ class TreeSelectComponent:
     
     def _convert_tree_node_to_dict(self, node: TreeNode) -> Dict[str, Any]:
         """Convert TreeNode to format expected by streamlit-tree-select."""
-        print(f"\n🔄 Converting node: {node.name} ({node.type})")
+        # print(f"\n🔄 Converting node: {node.name} ({node.type})")
         
         # Add icon based on type
         icon = {
@@ -49,7 +49,7 @@ class TreeSelectComponent:
                 for child in node.children
             ]
         
-        print(f"  Converted to: {result['label']}")
+        # print(f"  Converted to: {result['label']}")
         return result
     
     def render(self, root_node: Optional[TreeNode], key: Optional[str] = None) -> Optional[Dict[str, Any]]:
