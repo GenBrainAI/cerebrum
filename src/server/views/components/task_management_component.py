@@ -263,13 +263,13 @@ class TaskManagementComponent:
             st.subheader("Create New Task Manager")
             
             name = st.text_input("Name", value="New Task Manager")
-            description = st.text_area("Description", value="")
+            description = st.text_area("Description", value="", height=150)
             model = st.selectbox(
                 "Model",
                 options=[""] + self.controller.view_state.available_models,
                 index=0
             )
-            system_message = st.text_area("System Message", value="You are a helpful assistant.")
+            system_message = st.text_area("System Message", value="You are a helpful assistant.", height=250)
             
             submitted = st.form_submit_button("Create Task Manager")
             
@@ -301,7 +301,7 @@ class TaskManagementComponent:
             
             # Form fields
             name = st.text_input("Name", value=task_manager.name)
-            description = st.text_area("Description", value=task_manager.description or "")
+            description = st.text_area("Description", value=task_manager.description or "", height=150)
             
             # Find the index of the current model in the available models
             model_index = 0
@@ -317,7 +317,7 @@ class TaskManagementComponent:
                 index=model_index
             )
             
-            system_msg = st.text_area("System Message", value=system_message)
+            system_msg = st.text_area("System Message", value=system_message, height=250)
             
             col1, col2 = st.columns(2)
             with col1:
@@ -372,7 +372,7 @@ class TaskManagementComponent:
                 format_func=lambda x: tm_options[x]
             )
             
-            description = st.text_area("Description", value="")
+            description = st.text_area("Description", value="", height=150)
             
             model = st.selectbox(
                 "Model",
@@ -382,7 +382,7 @@ class TaskManagementComponent:
             
             inherit_context = st.checkbox("Inherit Manager Context", value=False)
             
-            system_message = st.text_area("System Message", value="You are a helpful assistant.")
+            system_message = st.text_area("System Message", value="You are a helpful assistant.", height=250)
             
             submitted = st.form_submit_button("Create Task")
             
@@ -435,7 +435,7 @@ class TaskManagementComponent:
                 index=tm_index
             )
             
-            description = st.text_area("Description", value=task.description or "")
+            description = st.text_area("Description", value=task.description or "", height=150)
             
             # Find the index of the current model in the available models
             model_index = 0
@@ -453,7 +453,7 @@ class TaskManagementComponent:
             
             inherit_context = st.checkbox("Inherit Manager Context", value=task.inherit_manager_context)
             
-            system_msg = st.text_area("System Message", value=system_message)
+            system_msg = st.text_area("System Message", value=system_message, height=250)
             
             col1, col2 = st.columns(2)
             with col1:

@@ -1,6 +1,7 @@
 # src/server/views/components/sidebar/task_hierarchy_sidebar.py
 import streamlit as st
 import logging
+import time
 from ...models.view_state import ViewState
 from ...models.view_types import ViewType
 from .utils import truncate_tree_node_names
@@ -11,6 +12,20 @@ class TaskHierarchySidebar:
     def __init__(self, controller=None):
         self.controller = controller
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize save status if not set
+        if 'save_status' not in st.session_state:
+            st.session_state.save_status = None
+            self.logger.info("Initialized save_status to None")
+        if 'last_save_time' not in st.session_state:
+            st.session_state.last_save_time = None
+            self.logger.info("Initialized last_save_time to None")
+        
+        # Log current save status for debugging
+        if hasattr(st.session_state, 'save_status'):
+            self.logger.info(f"Current save_status: {st.session_state.save_status}")
+        if hasattr(st.session_state, 'last_save_time'):
+            self.logger.info(f"Current last_save_time: {st.session_state.last_save_time}")
     
     async def render(self):
         """Render the task hierarchy sidebar."""
@@ -20,11 +35,30 @@ class TaskHierarchySidebar:
             # Get state status from controller
             if self.controller and self.controller.view_state:
                 status = self.controller.view_state.task_status
-                if status["loaded"]:
-                    st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
-                    st.markdown("**State:** Task Management loaded")
-                else:
-                    st.markdown("🔴 State loaded but no task context found")
+                
+                # Show state status with save indicator
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    if status["loaded"]:
+                        st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
+                        st.markdown("**State:** Task Management loaded")
+                    else:
+                        st.markdown("🔴 State loaded but no task context found")
+                with col2:
+                    # Log save status for debugging
+                    self.logger.info(f"Rendering save status: {st.session_state.save_status}")
+                    
+                    if st.session_state.save_status == "pending":
+                        st.markdown("💾 *Saving...*")
+                        self.logger.info("Displaying 'Saving...' indicator")
+                    elif st.session_state.save_status == "saved" and st.session_state.last_save_time:
+                        time_diff = time.time() - st.session_state.last_save_time
+                        if time_diff < 5:  # Show saved status for 5 seconds
+                            st.markdown("✅ *Saved*")
+                            self.logger.info(f"Displaying 'Saved' indicator (time diff: {time_diff}s)")
+                        else:
+                            st.session_state.save_status = None
+                            self.logger.info(f"Cleared save status after {time_diff}s")
             else:
                 st.markdown("🔴 No task state loaded")
             
@@ -87,10 +121,6 @@ class TaskHierarchySidebar:
             if st.button("➕ New Task", help="Create a new task"):
                 st.session_state.active_tab = 2  # Switch to task management tab
                 st.session_state.task_select = "new"
-                st.rerun()
-                
-            # Refresh button
-            if st.button("🔄 Refresh Tree", help="Refresh task tree"):
                 st.rerun()
 
 async def render_task_hierarchy_sidebar():
