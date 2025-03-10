@@ -1,6 +1,7 @@
 # src/pages/task_hierarchy_view.py
 import streamlit as st
 import asyncio
+import pandas as pd
 from server.views.controllers.task_view_controller import TaskHierarchyController
 from server.persistence.persistence_model_factory import PersistenceModelFactory
 from server.views.components.tree_component import TreeComponent
@@ -12,189 +13,165 @@ from typing import Dict, Any
 from server.models.message import Message
 from datetime import datetime, timedelta
 from server.controllers.task_runner import TaskRunner
+from server.views.components.task_management_component import render_task_management
 
 class TaskHierarchyView(BaseView):
     def __init__(self):
         super().__init__(ViewType.TASK_HIERARCHY)
     
     def get_session_data(self) -> Dict[str, Any]:
-        """Get task hierarchy specific session data."""
+        """Get session data for persistence"""
         data = super().get_session_data()
         
-        # Debug chat history
-        if 'task_controller' in st.session_state:
-            chat_history = st.session_state.task_controller.view_state.chat_history
-            print(f"\n📝 Saving chat history:")
-            print(f"  Length: {len(chat_history)}")
-            print(f"  Content: {chat_history}")
-        else:
-            print("\n⚠️ No task controller in session state")
-        
-        # Add view-specific data
-        data.update({
-            'selected_task': st.session_state.get('selected_task'),
-            'expanded_nodes': st.session_state.get('expanded_nodes', []),
-            'chat_history': st.session_state.task_controller.view_state.chat_history,
-            'view_mode': st.session_state.get('view_mode', 'chat')
-        })
+        # Save chat history
+        if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            data["chat_history"] = st.session_state.task_controller.view_state.chat_history
+            data["selected_node"] = st.session_state.task_controller.view_state.selected_node
+            data["expanded_nodes"] = st.session_state.task_controller.view_state.expanded_nodes
+            data["task_status"] = st.session_state.task_controller.view_state.task_status
+            
+            # Store task management specific state
+            data["selected_task_manager"] = st.session_state.task_controller.view_state.selected_task_manager
+            data["selected_task"] = st.session_state.task_controller.view_state.selected_task
+            
+            # Save active tab
+            data["active_tab"] = st.session_state.get("active_tab", 0)
+            
         return data
-        
+    
     def restore_session_state(self, session_data: Dict[str, Any]):
-        """Restore task hierarchy specific session state."""
+        """Restore session state from saved data"""
         super().restore_session_state(session_data)
-        st.session_state.selected_task = session_data.get('selected_task')
-        st.session_state.expanded_nodes = session_data.get('expanded_nodes', [])
-        st.session_state.view_mode = session_data.get('view_mode', 'chat')
         
-        # Debug restored chat history
-        chat_history = session_data.get('chat_history', [])
-        print(f"\n📖 Restoring chat history:")
-        print(f"  Length: {len(chat_history)}")
-        print(f"  Content: {chat_history}")
-        
-        if 'task_controller' in st.session_state:
-            st.session_state.task_controller.view_state.chat_history = chat_history
+        if "chat_history" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.chat_history = session_data["chat_history"]
             
+        if "selected_node" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.selected_node = session_data["selected_node"]
+            
+        if "expanded_nodes" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.expanded_nodes = session_data["expanded_nodes"]
+            
+        if "task_status" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.task_status = session_data["task_status"]
+            
+        # Restore task management specific state
+        if "selected_task_manager" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.selected_task_manager = session_data["selected_task_manager"]
+            
+        if "selected_task" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.selected_task = session_data["selected_task"]
+            
+        # Restore active tab
+        if "active_tab" in session_data:
+            st.session_state.active_tab = session_data["active_tab"]
+    
     def clear_session(self):
-        """Clear the task hierarchy session data."""
-        if 'task_controller' in st.session_state:
-            # Clear chat history
+        """Clear chat history and other session state"""
+        if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
             st.session_state.task_controller.view_state.chat_history = []
+            st.session_state.task_controller.view_state.selected_node = None
+            st.session_state.task_controller.view_state.expanded_nodes = []
+            st.session_state.task_controller.view_state.task_status = {
+                "loaded": False,
+                "tasksmanager_name": "",
+                "task_name": ""
+            }
             
-            # Save empty session
-            self.save_session()
+            # Clear task management specific state
+            st.session_state.task_controller.view_state.selected_task_manager = None
+            st.session_state.task_controller.view_state.selected_task = None
             
-            print("\n🗑️ Cleared task hierarchy session")
+            # Reset active tab
+            st.session_state.active_tab = 0
 
 def render_chat_view():
-    """Render the chat interface."""
-    # Display messages - handle both Message objects and dicts
-    for msg in st.session_state.task_controller.view_state.chat_history:
-        if isinstance(msg, Message):
-            role = msg.role
-            content = msg.content
-        elif isinstance(msg, dict):
-            role = msg["role"]
-            content = msg["content"]
-        else:
-            role = getattr(msg, 'role', 'user')
-            content = str(msg)
+    """Render the chat interface"""
+    st.subheader("Task Interaction")
+    
+    # Get controller from session state
+    if not hasattr(st.session_state, "task_controller"):
+        st.warning("Task controller not initialized.")
+        return
+    
+    controller = st.session_state.task_controller
+    
+    # Check if a task is loaded
+    if not controller.view_state.task_status["loaded"]:
+        st.info("👈 Please select a task from the sidebar to start chatting.")
+        return
+    
+    # Display task info
+    st.markdown(f"**Current Task:** {controller.view_state.task_status['tasksmanager_name']} - {controller.view_state.task_status['task_name']}")
+    
+    # Display chat history
+    for message in controller.view_state.chat_history:
+        role = message.get("role", "")
+        content = message.get("content", "")
         
-        with st.chat_message(role):
-            st.write(content)
+        if role == "user":
+            st.chat_message("user").write(content)
+        elif role == "assistant":
+            st.chat_message("assistant").write(content)
     
     # Chat input
-    if prompt := st.chat_input("Type your message..."):
-        with st.chat_message("user"):
-            st.write(prompt)
+    if prompt := st.chat_input("Enter your message"):
+        # Add user message to chat history
+        st.chat_message("user").write(prompt)
+        controller.view_state.add_message("user", prompt)
         
-        asyncio.run(st.session_state.task_controller.handle_chat(prompt))
+        # TODO: Process user message with the task runner
+        
+        # Temporary mock response
+        response = f"This is a mock response to '{prompt}'. Task processing will be implemented soon."
+        
+        # Add assistant response to chat history
+        st.chat_message("assistant").write(response)
+        controller.view_state.add_message("assistant", response)
+        
+        # Save session state
+        view = TaskHierarchyView()
+        view.save_session()
+        
+        # Force re-render
         st.rerun()
 
 def render_observability_view():
-    """Render the observability interface."""
-    if 'task_controller' not in st.session_state:
-        st.warning("No active task controller")
-        return
-        
-    # Get active task from controller's view state
-    task_status = st.session_state.task_controller.view_state.task_status
-    if not task_status or not task_status.get("loaded"):
-        st.info("No active task loaded")
-        return
-        
-    task_id = task_status.get("task_id")
-    if not task_id:
-        st.info("No task ID available")
-        return
-        
-    # Initialize task runner if needed
-    if not hasattr(st.session_state.task_controller, 'task_runner'):
-        st.session_state.task_controller.task_runner = TaskRunner(st.session_state.task_controller.global_persistence)
-        
-    # Get observability manager
-    observability = st.session_state.task_controller.task_runner.get_task_observability(task_id)
+    """Render observability tools"""
+    st.subheader("Task Execution Observability")
     
-    if not observability:
-        st.info("No observability data available for this task")
-        return
+    with st.expander("System Logs", expanded=True):
+        st.markdown("""
+        #### System Logs
+        Monitor the execution of tasks and view any errors or warnings.
+        """)
         
-    entries = observability.get_all_entries()
-    if not entries:
-        st.info("No execution entries available")
-        return
+        # Mock log data
+        log_data = [
+            {"timestamp": "2025-03-09 20:30:45", "level": "INFO", "message": "Task initialized"},
+            {"timestamp": "2025-03-09 20:30:46", "level": "INFO", "message": "Loading models"},
+            {"timestamp": "2025-03-09 20:30:48", "level": "WARNING", "message": "Model loading took longer than expected"},
+            {"timestamp": "2025-03-09 20:30:50", "level": "INFO", "message": "Task execution completed"}
+        ]
         
-    # Create columns for stats and output
-    col1, col2 = st.columns([1, 2])
+        # Display logs in a dataframe
+        logs_df = pd.DataFrame(log_data)
+        st.dataframe(logs_df, use_container_width=True)
     
-    with col1:
-        st.subheader("Execution Stats")
-        stats_entries = [e for e in entries if e.get('metadata', {}).get('execution_stats')]
+    with st.expander("Metrics", expanded=True):
+        st.markdown("""
+        #### Performance Metrics
+        View execution time, token usage, and other metrics.
+        """)
         
-        if stats_entries:
-            latest_stats = stats_entries[-1]['metadata']['execution_stats']
-            st.json(latest_stats)
-        else:
-            st.info("No execution stats available")
-            
-    with col2:
-        st.subheader("Execution Output")
-        
-        # Format entries for display
-        formatted_lines = []
-        for entry in entries:
-            timestamp = entry['timestamp'].split('T')[1].split('.')[0]  # Extract time
-            level = entry['level']
-            message = entry['message']
-            
-            # Color-code based on level
-            if level == "ERROR":
-                message = f"🔴 {message}"
-            elif level == "WARNING":
-                message = f"🟡 {message}"
-            elif level == "INFO":
-                message = f"🟢 {message}"
-                
-            formatted_lines.append(f"[{timestamp}] {message}")
-            
-        # Create a scrollable container with auto-scroll
-        output_container = st.container()
-        with output_container:
-            # Calculate max height based on viewport
-            st.markdown("""
-                <style>
-                    .stMarkdown {
-                        max-height: 500px;
-                        overflow-y: auto;
-                    }
-                    .stMarkdown::-webkit-scrollbar {
-                        width: 10px;
-                        background: #f1f1f1;
-                    }
-                    .stMarkdown::-webkit-scrollbar-thumb {
-                        background: #888;
-                        border-radius: 5px;
-                    }
-                </style>
-            """, unsafe_allow_html=True)
-            
-            # Join lines and add newlines for proper markdown rendering
-            formatted_output = "\n".join(formatted_lines)
-            
-            # Use markdown with code block for monospace font
-            st.markdown(f"```\n{formatted_output}\n```")
-            
-            # Auto-scroll to bottom using JavaScript
-            if formatted_lines:
-                st.markdown("""
-                    <script>
-                        const elements = parent.document.querySelectorAll('.stMarkdown');
-                        const lastElement = elements[elements.length - 1];
-                        lastElement.scrollTop = lastElement.scrollHeight;
-                    </script>
-                    """, 
-                    unsafe_allow_html=True
-                )
+        # Mock metrics data
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(label="Execution Time", value="1.2s")
+        with col2:
+            st.metric(label="Token Usage", value="450")
+        with col3:
+            st.metric(label="Memory Usage", value="128MB")
 
 async def render_task_hierarchy_view():
     """Render the task hierarchy view."""
@@ -211,6 +188,16 @@ async def render_task_hierarchy_view():
             st.session_state.task_controller = TaskHierarchyController(st.session_state.persistence_model)
             await st.session_state.task_controller.initialize()
             
+            # Check if we need to create test tasks
+            task_managers = st.session_state.task_controller.get_task_managers()
+            if not task_managers:
+                try:
+                    from src.state_setup.tasks import setup_test_tasks
+                    setup_test_tasks(st.session_state.persistence_model)
+                    st.info("Created demo task managers and tasks for testing")
+                except Exception as e:
+                    st.warning(f"Failed to create test tasks: {str(e)}")
+            
             # Load saved session state
             view.load_session()
         
@@ -221,80 +208,120 @@ async def render_task_hierarchy_view():
         with st.sidebar:
             col1, col2 = st.columns([0.1, 0.9])
             with col1:
-                if st.button("🔄", help="Reset chat history"):
+                if st.button("🔄", help="Reset view"):
                     view.clear_session()
                     st.rerun()
         
         # Render sidebar
         await render_task_hierarchy_sidebar()
         
-        # Get task tree data
-        print("\n🌳 Getting task tree for sidebar...")
-        tree_data = await st.session_state.task_controller.get_task_tree()
-        if tree_data:
-            print(f"Tree data received: {len(tree_data.children)} root children")
-            print("✅ Tree rendered successfully")
-        
-        # Add view mode toggle
-        col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
+        # Add navigation tabs with icons, aligned like in tools catalog view
+        col1, col2, col3, col4 = st.columns([0.4, 0.2, 0.2, 0.2])
         with col1:
-            if st.button("💬", help="Switch to chat view"):
+            if st.button("💬", help="Switch to chat view", key="main_tab_chat"):
                 st.session_state.active_tab = 0
                 st.rerun()
         with col3:
-            if st.button("📊", help="Switch to observability view"):
+            if st.button("📊", help="Switch to observability view", key="main_tab_obs"):
                 st.session_state.active_tab = 1
+                st.rerun()
+        with col4:
+            if st.button("⚙️", help="Switch to task management view", key="main_tab_manage"):
+                st.session_state.active_tab = 2
                 st.rerun()
         
         # Initialize active tab if not set
         if 'active_tab' not in st.session_state:
             st.session_state.active_tab = 0
-            
-        # Chat View
+        
+        # Chat View (primary view)
         if st.session_state.active_tab == 0:
-            st.subheader("Task Management Chat")
-            
-            # Display messages
-            for msg in st.session_state.task_controller.view_state.chat_history:
-                if isinstance(msg, Message):
-                    role = msg.role
-                    content = msg.content
-                elif isinstance(msg, dict):
-                    role = msg["role"]
-                    content = msg["content"]
-                else:
-                    role = getattr(msg, 'role', 'user')
-                    content = str(msg)
-                
-                with st.chat_message(role):
-                    st.write(content)
-            
-            # Chat input
-            if prompt := st.chat_input("Type your message..."):
-                with st.chat_message("user"):
-                    st.write(prompt)
-                
-                await st.session_state.task_controller.handle_chat(prompt)
-                
-                # Save session after each message
-                view.save_session()
-                
-                st.rerun()
+            render_chat_view()
         
         # Observability View
-        else:
-            st.subheader("Task Execution Observability")
+        elif st.session_state.active_tab == 1:
             render_observability_view()
             
+        # Task Management View
+        elif st.session_state.active_tab == 2:
+            st.subheader("Task Management")
+            st.markdown("""
+            This view allows you to create, edit, and manage task managers and tasks.
+            You can configure task properties like model, description, and system messages.
+            """)
+            render_task_management(st.session_state.task_controller)
+        
+        # Handle keyboard shortcuts
+        st.markdown("""
+        <script>
+        const doc = window.parent.document;
+        doc.addEventListener('keydown', function(e) {
+            // Ctrl+Shift+R or Cmd+Shift+R to reset
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'r') {
+                e.preventDefault();
+                const resetButton = doc.querySelector('button[data-testid="stButton"]:has-text("🔄")');
+                if (resetButton) resetButton.click();
+            }
+            
+            // Numbered shortcuts for tabs
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key >= '1' && e.key <= '3') {
+                e.preventDefault();
+                let tabIndex;
+                switch(e.key) {
+                    case '1': tabIndex = 0; break; // Chat
+                    case '2': tabIndex = 1; break; // Observability
+                    case '3': tabIndex = 2; break; // Task Management
+                }
+                
+                const tabButtons = [
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_chat"]'),
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_obs"]'),
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_manage"]')
+                ];
+                
+                if (tabButtons && tabButtons[tabIndex]) {
+                    tabButtons[tabIndex].click();
+                }
+            }
+        });
+        </script>
+        """, unsafe_allow_html=True)
+        
+        # Auto-scroll to bottom
+        st.markdown("""
+        <script>
+        const elements = parent.document.querySelectorAll('.stMarkdown');
+        const lastElement = elements[elements.length - 1];
+        lastElement.scrollTop = lastElement.scrollHeight;
+        </script>
+        """, 
+        unsafe_allow_html=True
+        )
+        
+        # Save session state after rendering
+        view.save_session()
     except Exception as e:
-        st.error(f"Error rendering task hierarchy view: {str(e)}")
-        print(f"Error in render_task_hierarchy_view: {str(e)}")
-        raise
+        st.error(f"Error in task hierarchy view: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
 
 def main():
-    """Main entry point for task hierarchy view."""
-    st.set_page_config(page_title="Task Hierarchy", layout="wide")
-    asyncio.run(render_task_hierarchy_view())
+    """Main entry point"""
+    st.set_page_config(
+        page_title="Task Hierarchy - Cerebrum",
+        page_icon="🧠",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Create and run async loop
+    async_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(async_loop)
+    
+    try:
+        async_loop.run_until_complete(render_task_hierarchy_view())
+    finally:
+        async_loop.close()
 
 if __name__ == "__main__":
     main()

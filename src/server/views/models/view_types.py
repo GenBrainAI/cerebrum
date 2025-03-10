@@ -7,6 +7,7 @@ class ViewType(Enum):
     TASK_HIERARCHY = "task_hierarchy"
     TOOLS_CATALOG = "tools_catalog"
     AGENTIC_CONFIG = "agentic_config"
+    TASK_MANAGEMENT = "task_management"
     CHAT = "chat"
 
 @dataclass

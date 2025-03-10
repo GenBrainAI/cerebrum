@@ -4,10 +4,10 @@ from datetime import datetime
 import asyncio
 import uuid
 
-from src.server.models.task import Task, Message
-from src.server.models.tasks_manager import TasksManager
-from src.server.persistence.persistence_model import PersistenceModelBase
-from src.server.controllers.prompt_transformer import PromptTransformer, MessageTransformer
+from ..models.task import Task, Message
+from ..models.tasks_manager import TasksManager
+from ..persistence.persistence_model import PersistenceModelBase
+from ..controllers.prompt_transformer import PromptTransformer, MessageTransformer
 from ..controllers.tools_operator import ToolsOperator
 from ..controllers.operator import ToolsOperator as APIOperator
 from ..controllers.curried_proxy import CurriedProxy
