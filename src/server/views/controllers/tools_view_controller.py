@@ -28,6 +28,14 @@ import logging
 import json
 from pathlib import Path
 from .remove_proxy_method import remove_proxy_from_task
+import asyncio
+import re
+import traceback
+from numpy import isin
+from sympy import true
+
+from ...controllers.curried_proxy import CurriedProxy
+from ...controllers.tools_utils import filter_container_tools
 
 class ToolsCatalogController:
     """Controller for tools catalog view with specialized state support."""
@@ -238,8 +246,12 @@ class ToolsCatalogController:
                 catalog_tools = tools_loader.tools_catalog.list_tools()
                 print(f"✅ Found {len(catalog_tools)} catalog tools")
                 
+                # Filter out container tools (classes) to only show actual tools
+                filtered_catalog_tools = filter_container_tools(catalog_tools)
+                print(f"✅ Filtered to {len(filtered_catalog_tools)} usable tools")
+                
                 # Add catalog tools to categories
-                for tool_name in catalog_tools:
+                for tool_name in filtered_catalog_tools:
                     print(f"  Processing tool: {tool_name}")
                     
                     # Determine category based on tool name
