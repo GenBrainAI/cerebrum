@@ -979,11 +979,28 @@ class ContextManagerUI:
                 if dir_path and selected_index:
                     if st.button("Process Directory", use_container_width=True):
                         try:
+                            # Create a progress bar
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            def update_progress(message: str, current: int, total: int):
+                                if total > 0:
+                                    progress_bar.progress(current / total)
+                                status_text.text(message)
+                            
                             processed = await self.vector_store.process_directory(
                                 index_name=selected_index,
-                                directory_path=dir_path
+                                directory_path=dir_path,
+                                progress_callback=update_progress
                             )
+                            
+                            # Clear progress indicators
+                            progress_bar.empty()
+                            status_text.empty()
+                            
                             st.success(f"Processed {processed} files from directory")
+                            time.sleep(0.5)
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Error processing directory: {str(e)}")
 

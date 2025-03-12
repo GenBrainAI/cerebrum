@@ -44,31 +44,62 @@ class TaskHierarchySidebar:
             
             # Get state status from controller
             if self.controller and self.controller.view_state:
-                # Ensure controller is using global persistence
+                # Ensure controller is using the correct persistence model based on active tab
                 if hasattr(self.controller, 'global_persistence') and hasattr(self.controller, 'persistence_model'):
-                    if self.controller.persistence_model is not self.controller.global_persistence:
-                        print("🔧 Switching controller to global persistence in sidebar")
-                        self.controller.persistence_model = self.controller.global_persistence
+                    # For non-chat views (task tree, management), always use global persistence
+                    active_tab = st.session_state.get('active_tab', 0)
+                    if active_tab != 0:  # Not in chat view
+                        if self.controller.persistence_model is not self.controller.global_persistence:
+                            print("🔧 Switching controller to global persistence in sidebar for non-chat view")
+                            self.controller.persistence_model = self.controller.global_persistence
                 
                 status = self.controller.view_state.task_status
                 
                 # Fix: Ensure task_status is properly set if it's not already
                 if not status.get("loaded", False):
-                    # Try to find a task manager and task to set as active
-                    task_managers = self.controller.get_task_managers()
-                    if task_managers:
-                        tasks = self.controller.get_tasks(task_managers[0].id)
-                        if tasks:
-                            print(f"🔧 Setting active task from available tasks in sidebar")
-                            self.controller.view_state.set_active_task(
-                                task_id=tasks[0].id,
-                                task_name=tasks[0].name,
-                                manager_id=task_managers[0].id,
-                                manager_name=task_managers[0].name
+                    # For chat view (tab 0), prefer specialized state task if available
+                    active_tab = st.session_state.get('active_tab', 0)
+                    if active_tab == 0 and hasattr(self.controller, 'local_persistence') and self.controller.local_persistence:
+                        print(f"🔧 Setting active task from specialized state in sidebar for chat view")
+                        # Get tasks from specialized state
+                        local_task_managers = self.controller.local_persistence.tasksmanagers.list()
+                        if local_task_managers:
+                            local_task_manager = next(
+                                (m for m in local_task_managers if "Task Management" in m.name),
+                                local_task_managers[0]
                             )
-                            # Update status with the new values
-                            status = self.controller.view_state.task_status
-                            print(f"🔧 Updated task status in sidebar: {status}")
+                            local_tasks = self.controller.local_persistence.tasks.list()
+                            local_task = next(
+                                (t for t in local_tasks if t.tasksmanager_id == local_task_manager.id),
+                                None
+                            )
+                            if local_task:
+                                print(f"🔧 Found specialized task in sidebar: {local_task.name} for chat functionality")
+                                self.controller.view_state.set_active_task(
+                                    task_id=local_task.id,
+                                    task_name=local_task.name,
+                                    manager_id=local_task_manager.id,
+                                    manager_name=local_task_manager.name
+                                )
+                                # Update status with the new values
+                                status = self.controller.view_state.task_status
+                                print(f"🔧 Updated task status in sidebar with specialized task: {status}")
+                    else:
+                        # For non-chat views, always use global state tasks
+                        task_managers = self.controller.get_task_managers()
+                        if task_managers:
+                            tasks = self.controller.get_tasks(task_managers[0].id)
+                            if tasks:
+                                print(f"🔧 Setting active task from global state in sidebar")
+                                self.controller.view_state.set_active_task(
+                                    task_id=tasks[0].id,
+                                    task_name=tasks[0].name,
+                                    manager_id=task_managers[0].id,
+                                    manager_name=task_managers[0].name
+                                )
+                                # Update status with the new values
+                                status = self.controller.view_state.task_status
+                                print(f"🔧 Updated task status in sidebar with global task: {status}")
                 
                 # Log task status for debugging
                 print(f"🔍 Task status in sidebar: {status}")
@@ -82,8 +113,27 @@ class TaskHierarchySidebar:
                         tasksmanager_name = status.get("tasksmanager_name", "Unknown")
                         task_name = status.get("task_name", "Unknown")
                         print(f"🔍 Displaying active task: {tasksmanager_name}-{task_name}")
-                        st.markdown(f"🟢 **Active Task:** {tasksmanager_name}-{task_name}")
-                        st.markdown("**State:** Task Management loaded")
+                        
+                        # Indicate if this is a specialized state task (for chat) or global state task
+                        active_tab = st.session_state.get('active_tab', 0)
+                        if active_tab == 0 and hasattr(self.controller, 'local_persistence') and self.controller.local_persistence:
+                            # Check if this task is from specialized state
+                            task_id = status.get("task_id")
+                            try:
+                                # Try to find this task in specialized state
+                                specialized_task = self.controller.local_persistence.tasks.read(task_id)
+                                if specialized_task:
+                                    st.markdown(f"🟢 **Active Task:** {tasksmanager_name}-{task_name}")
+                                    st.markdown("**State:** Specialized Task Management")
+                                else:
+                                    st.markdown(f"🟢 **Active Task:** {tasksmanager_name}-{task_name}")
+                                    st.markdown("**State:** Global Task Management")
+                            except:
+                                st.markdown(f"🟢 **Active Task:** {tasksmanager_name}-{task_name}")
+                                st.markdown("**State:** Global Task Management")
+                        else:
+                            st.markdown(f"🟢 **Active Task:** {tasksmanager_name}-{task_name}")
+                            st.markdown("**State:** Global Task Management")
                     else:
                         print("🔍 No task context found, displaying error message")
                         st.markdown("🔴 State loaded but no task context found")
@@ -113,8 +163,17 @@ class TaskHierarchySidebar:
             st.subheader("Task Structure")
             if self.controller:
                 try:
+                    # Always use global persistence for task tree
+                    if hasattr(self.controller, 'global_persistence') and hasattr(self.controller, 'persistence_model'):
+                        original_persistence = self.controller.persistence_model
+                        self.controller.persistence_model = self.controller.global_persistence
+                    
                     # Get task tree data
                     tree_data = await self.controller.get_task_tree()
+                    
+                    # Restore original persistence if needed
+                    if hasattr(self.controller, 'global_persistence') and 'original_persistence' in locals():
+                        self.controller.persistence_model = original_persistence
                     
                     if tree_data and tree_data.children:
                         # Apply smart name truncation
@@ -158,12 +217,20 @@ class TaskHierarchySidebar:
             
             # Create new task manager button
             if st.button("➕ New Task Manager", help="Create a new task manager"):
+                # Ensure we're using global persistence for task management
+                if hasattr(self.controller, 'global_persistence'):
+                    self.controller.persistence_model = self.controller.global_persistence
+                
                 st.session_state.active_tab = 2  # Switch to task management tab
                 st.session_state.task_manager_select = "new"
                 st.rerun()
                 
             # Create new task button
             if st.button("➕ New Task", help="Create a new task"):
+                # Ensure we're using global persistence for task management
+                if hasattr(self.controller, 'global_persistence'):
+                    self.controller.persistence_model = self.controller.global_persistence
+                
                 st.session_state.active_tab = 2  # Switch to task management tab
                 st.session_state.task_select = "new"
                 st.rerun()

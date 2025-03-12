@@ -76,8 +76,16 @@ class VectorStore:
                     print(f"❌ DEBUG: Error in OpenAI API call: {str(e)}")
                     raise
             
+            # Create a class-based embedding function that matches ChromaDB's expected interface
+            class OpenAIEmbeddingFunctionWrapper:
+                def __init__(self, func):
+                    self.func = func
+                
+                def __call__(self, input):
+                    return self.func(input)
+            
             # Create the embedding function
-            self.embedding_function = embedding_function_with_retry
+            self.embedding_function = OpenAIEmbeddingFunctionWrapper(embedding_function_with_retry)
             print(f"✅ DEBUG: OpenAI embedding function initialized successfully")
             
         except ImportError:
@@ -142,6 +150,7 @@ class VectorStore:
             start_time = datetime.now()
             print(f"🔍 DEBUG: Starting embedding generation at {start_time}")
             
+            # Call the embedding function with the expected interface
             embeddings = self.embedding_function(texts)
             
             end_time = datetime.now()
@@ -174,13 +183,28 @@ class VectorStore:
                     name=index_name,
                     embedding_function=self.embedding_function
                 )
-            except:
+            except Exception as e:
+                print(f"⚠️ DEBUG: Error getting collection {index_name}: {str(e)}")
+                
                 # Create new collection if it doesn't exist
-                collection = self.client.create_collection(
-                    name=index_name,
-                    embedding_function=self.embedding_function,
-                    metadata={"description": description}
-                )
+                metadata = {}
+                if description:
+                    metadata["description"] = description
+                else:
+                    metadata["description"] = f"Index for {name} content"
+                
+                try:
+                    collection = self.client.create_collection(
+                        name=index_name,
+                        embedding_function=self.embedding_function,
+                        metadata=metadata
+                    )
+                except Exception as create_e:
+                    print(f"❌ DEBUG: Error creating collection {index_name}: {str(create_e)}")
+                    if "Expected metadata value to be a str, int, float or bool" in str(create_e):
+                        print(f"⚠️ DEBUG: Metadata issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                        print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
             
             # Store in indices dictionary
             self.indices[index_name] = collection
@@ -437,8 +461,10 @@ class VectorStore:
                     return collection
                 except Exception as e:
                     print(f"⚠️ DEBUG: Collection {collection_name} exists but has errors: {str(e)}")
-                    print(f"🔄 DEBUG: Attempting to repair collection {collection_name}")
-                    return self._repair_collection(collection_name)
+                    if "Expected EmbeddingFunction.__call__ to have the following signature" in str(e):
+                        print(f"⚠️ DEBUG: Embedding function interface issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                        print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
                 
             # Try to get existing collection
             try:
@@ -458,18 +484,31 @@ class VectorStore:
                 
             except Exception as e:
                 print(f"⚠️ DEBUG: Collection {collection_name} not found: {str(e)}")
+                if "Expected EmbeddingFunction.__call__ to have the following signature" in str(e):
+                    print(f"⚠️ DEBUG: Embedding function interface issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                    print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
                 
                 # Create new collection
                 print(f"🔄 DEBUG: Creating new collection: {collection_name}")
-                collection = self.client.create_collection(
-                    name=collection_name,
-                    embedding_function=self.embedding_function
-                )
-                
-                # Add to indices
-                self.indices[collection_name] = collection
-                print(f"✅ DEBUG: Created new collection: {collection_name}")
-                return collection
+                try:
+                    metadata = {"description": f"Index for {collection_name} content"}
+                    collection = self.client.create_collection(
+                        name=collection_name,
+                        embedding_function=self.embedding_function,
+                        metadata=metadata
+                    )
+                    
+                    # Add to indices
+                    self.indices[collection_name] = collection
+                    print(f"✅ DEBUG: Created new collection: {collection_name}")
+                    return collection
+                except Exception as create_e:
+                    print(f"❌ DEBUG: Error creating collection {collection_name}: {str(create_e)}")
+                    if "Expected metadata value to be a str, int, float or bool" in str(create_e):
+                        print(f"⚠️ DEBUG: Metadata issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                        print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
                 
         except Exception as e:
             print(f"❌ DEBUG: Error ensuring collection {collection_name}: {str(e)}")
@@ -557,12 +596,24 @@ class VectorStore:
             
             # As a last resort, create a new empty collection
             print(f"🔄 DEBUG: Creating new empty collection {collection_name} as fallback")
-            new_collection = self.client.create_collection(
-                name=collection_name,
-                embedding_function=self.embedding_function
-            )
-            self.indices[collection_name] = new_collection
-            return new_collection
+            try:
+                # Try to delete the collection first if it exists
+                try:
+                    self.client.delete_collection(name=collection_name)
+                except:
+                    pass
+                
+                # Create a new collection
+                new_collection = self.client.create_collection(
+                    name=collection_name,
+                    embedding_function=self.embedding_function
+                )
+                self.indices[collection_name] = new_collection
+                return new_collection
+            except Exception as inner_e:
+                print(f"❌ DEBUG: Failed to create fallback collection: {str(inner_e)}")
+                # If we can't create a new collection, return None and let the caller handle it
+                return None
 
     async def search_in_index(self, index_name: str, embedding: List[float], 
                          filters: Optional[Dict[str, Any]] = None, 
@@ -1019,7 +1070,6 @@ class VectorStore:
             # Get list of files to process
             files = [f for f in path.rglob("*") 
                      if f.is_file() and f.suffix.lower() in ['.txt', '.pdf', '.docx', '.py', '.md', '.json']]
-            
             total_files = len(files)
             print(f"🔍 DEBUG: Found {total_files} files to process in directory {directory_path}")
             

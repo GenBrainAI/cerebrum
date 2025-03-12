@@ -585,10 +585,12 @@ class TaskHierarchyController:
                     # Process response
                     if isinstance(response, dict) and 'response' in response:
                         response_text = response['response']
+                    elif isinstance(response, str):
+                        response_text = response
                     else:
                         response_text = str(response)
                     
-                    # Add assistant response to chat history
+                    # Add assistant message to chat history
                     assistant_message = {
                         "role": "assistant",
                         "content": response_text,
@@ -597,64 +599,41 @@ class TaskHierarchyController:
                     }
                     self.view_state.chat_history.append(assistant_message)
                     
-                    # Save updated chat history to session state
+                    # Update session state with new chat history
                     if 'task_controller' in st.session_state:
                         st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history
                     
-                    # Save chat history to global persistence
-                    if task_id:
-                        # Always save to global persistence
-                        global_task = self.global_persistence.tasks.read(task_id)
-                        if global_task:
-                            if not hasattr(global_task, 'chat_sessions'):
-                                global_task.chat_sessions = {}
-                            session_id = str(uuid4())
-                            global_task.chat_sessions[session_id] = self.view_state.chat_history
-                            self.global_persistence.tasks.update(task_id, global_task)
-                            print(f"🔄 Saved chat history to global task: {global_task.name}")
-                                
-                            # Save state after chat updates
-                            self.trigger_save_state()
-                        else:
-                            self.logger.warning(f"Task {task_id} not found in global persistence when saving chat history")
+                    # Display the assistant message in the UI
+                    if st.session_state.get('_current_page') == 'Task_Hierarchy':
+                        st.chat_message("assistant").write(response_text)
+                    
+                    return response_text
                 else:
-                    # Add simple response if no active task
-                    response_message = {
-                        "role": "assistant",
-                        "content": "No active task to process message.",
-                        "created_at": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat()
-                    }
-                    self.view_state.chat_history.append(response_message)
+                    print(f"❌ Missing task_id or manager_id in task_status: {self.view_state.task_status}")
+                    return "Error: Task context not properly set."
             else:
-                # Add simple response if no task loaded
-                response_message = {
-                    "role": "assistant",
-                    "content": "Task management not loaded. Please initialize first.",
-                    "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
-                }
-                self.view_state.chat_history.append(response_message)
-            
-            # Final save of chat history to session state
-            if 'task_controller' in st.session_state:
-                st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history
-                
+                print(f"❌ No active task found in task_status: {self.view_state.task_status}")
+                return "Error: No active task found."
         except Exception as e:
-            self.logger.error(f"Error handling chat: {str(e)}")
-            st.error(f"Error handling chat: {str(e)}")
+            error_msg = f"Error processing chat: {str(e)}"
+            print(f"❌ {error_msg}")
+            import traceback
+            print(traceback.format_exc())
+            
             # Add error message to chat history
-            error_message = {
+            error_response = {
                 "role": "assistant",
-                "content": f"Error processing message: {str(e)}",
+                "content": f"I encountered an error: {str(e)}",
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
             }
-            self.view_state.chat_history.append(error_message)
+            self.view_state.chat_history.append(error_response)
             
-            # Save error message to session state
+            # Update session state with new chat history
             if 'task_controller' in st.session_state:
                 st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history
+            
+            return error_msg
 
     async def save_state(self):
         """Save the current state to disk."""
