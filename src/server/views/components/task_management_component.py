@@ -16,9 +16,21 @@ class TaskManagementComponent:
     def __init__(self, controller: TaskHierarchyController):
         self.controller = controller
         
+        # Ensure we're using global persistence for task management
+        if hasattr(self.controller, 'global_persistence') and hasattr(self.controller, 'persistence_model'):
+            if self.controller.persistence_model is not self.controller.global_persistence:
+                print("🔧 Switching controller to global persistence in task management component")
+                self.controller.persistence_model = self.controller.global_persistence
+        
     def render(self):
         """Render the task management component."""
         st.subheader("Task Management")
+        
+        # Ensure we're using global persistence for task management
+        if hasattr(self.controller, 'global_persistence') and hasattr(self.controller, 'persistence_model'):
+            if self.controller.persistence_model is not self.controller.global_persistence:
+                print("🔧 Switching controller to global persistence in task management render")
+                self.controller.persistence_model = self.controller.global_persistence
         
         # Get all task managers and tasks
         task_managers = self.controller.get_task_managers()
@@ -497,5 +509,11 @@ class TaskManagementComponent:
 
 def render_task_management(controller: TaskHierarchyController):
     """Render the task management component."""
+    # Ensure we're using global persistence for task management
+    if hasattr(controller, 'global_persistence') and hasattr(controller, 'persistence_model'):
+        if controller.persistence_model is not controller.global_persistence:
+            print("🔧 Switching controller to global persistence in render_task_management")
+            controller.persistence_model = controller.global_persistence
+    
     component = TaskManagementComponent(controller)
     component.render() 

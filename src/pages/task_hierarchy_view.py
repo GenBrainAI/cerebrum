@@ -151,8 +151,26 @@ def render_chat_view():
         st.info("👈 Please select a task from the sidebar to start chatting.")
         return
     
-    # Display task info
-    st.markdown(f"**Current Task:** {controller.view_state.task_status['tasksmanager_name']} - {controller.view_state.task_status['task_name']}")
+    # Display task info with state indicator
+    task_status = controller.view_state.task_status
+    task_id = task_status.get("task_id")
+    
+    # Check if this is a specialized state task
+    is_specialized = False
+    if hasattr(controller, 'local_persistence') and controller.local_persistence:
+        try:
+            # Try to find this task in specialized state
+            specialized_task = controller.local_persistence.tasks.read(task_id)
+            if specialized_task:
+                is_specialized = True
+        except:
+            pass
+    
+    # Display task info with state indicator
+    if is_specialized:
+        st.markdown(f"**Current Task:** {task_status['tasksmanager_name']} - {task_status['task_name']} (Specialized State)")
+    else:
+        st.markdown(f"**Current Task:** {task_status['tasksmanager_name']} - {task_status['task_name']} (Global State)")
     
     # Display chat history
     for message in controller.view_state.chat_history:
@@ -170,14 +188,9 @@ def render_chat_view():
         st.chat_message("user").write(prompt)
         controller.view_state.add_message("user", prompt)
         
-        # TODO: Process user message with the task runner
-        
-        # Temporary mock response
-        response = f"This is a mock response to '{prompt}'. Task processing will be implemented soon."
-        
-        # Add assistant response to chat history
-        st.chat_message("assistant").write(response)
-        controller.view_state.add_message("assistant", response)
+        # Process user message with the task runner
+        # We'll use asyncio.create_task to run this asynchronously
+        asyncio.create_task(controller.handle_chat(prompt))
         
         # Save session state
         view = TaskHierarchyView()
@@ -254,10 +267,12 @@ async def render_task_hierarchy_view():
             view.load_session()
         else:
             print("🔄 Using existing task controller")
-            # Ensure controller is using global persistence
-            if hasattr(st.session_state.task_controller, 'global_persistence') and hasattr(st.session_state.task_controller, 'persistence_model'):
-                if st.session_state.task_controller.persistence_model is not st.session_state.task_controller.global_persistence:
-                    print("🔄 Switching controller to global persistence in main view")
+            # Ensure controller is using global persistence for UI operations
+            if hasattr(st.session_state.task_controller, 'global_persistence'):
+                # Always use global persistence for task tree and management
+                # This ensures we don't mix specialized state with global state
+                if st.session_state.active_tab != 0:  # Not in chat view
+                    print("🔄 Ensuring controller uses global persistence for non-chat operations")
                     st.session_state.task_controller.persistence_model = st.session_state.task_controller.global_persistence
             
         # Debug task status
@@ -268,18 +283,44 @@ async def render_task_hierarchy_view():
             task_status = st.session_state.task_controller.view_state.task_status
             if not task_status.get("loaded", False):
                 # Try to find a task manager and task to set as active
-                task_managers = st.session_state.task_controller.get_task_managers()
-                if task_managers:
-                    tasks = st.session_state.task_controller.get_tasks(task_managers[0].id)
-                    if tasks:
-                        print(f"🔄 Setting active task from available tasks")
-                        st.session_state.task_controller.view_state.set_active_task(
-                            task_id=tasks[0].id,
-                            task_name=tasks[0].name,
-                            manager_id=task_managers[0].id,
-                            manager_name=task_managers[0].name
+                # For chat view (tab 0), prefer specialized state task if available
+                if st.session_state.get('active_tab', 0) == 0 and hasattr(st.session_state.task_controller, 'local_persistence') and st.session_state.task_controller.local_persistence:
+                    print(f"🔄 Setting active task from specialized state for chat view")
+                    # Get tasks from specialized state
+                    local_task_managers = st.session_state.task_controller.local_persistence.tasksmanagers.list()
+                    if local_task_managers:
+                        local_task_manager = next(
+                            (m for m in local_task_managers if "Task Management" in m.name),
+                            local_task_managers[0]
                         )
-                        print(f"🔄 Updated task status: {st.session_state.task_controller.view_state.task_status}")
+                        local_tasks = st.session_state.task_controller.local_persistence.tasks.list()
+                        local_task = next(
+                            (t for t in local_tasks if t.tasksmanager_id == local_task_manager.id),
+                            None
+                        )
+                        if local_task:
+                            print(f"🔄 Found specialized task: {local_task.name} for chat functionality")
+                            st.session_state.task_controller.view_state.set_active_task(
+                                task_id=local_task.id,
+                                task_name=local_task.name,
+                                manager_id=local_task_manager.id,
+                                manager_name=local_task_manager.name
+                            )
+                            print(f"🔄 Updated task status with specialized task: {st.session_state.task_controller.view_state.task_status}")
+                else:
+                    # For non-chat views, always use global state tasks
+                    task_managers = st.session_state.task_controller.get_task_managers()
+                    if task_managers:
+                        tasks = st.session_state.task_controller.get_tasks(task_managers[0].id)
+                        if tasks:
+                            print(f"🔄 Setting active task from global state")
+                            st.session_state.task_controller.view_state.set_active_task(
+                                task_id=tasks[0].id,
+                                task_name=tasks[0].name,
+                                manager_id=task_managers[0].id,
+                                manager_name=task_managers[0].name
+                            )
+                            print(f"🔄 Updated task status with global task: {st.session_state.task_controller.view_state.task_status}")
         
         # Render header
         render_header("Task Hierarchy")
@@ -300,14 +341,44 @@ async def render_task_hierarchy_view():
         col1, col2, col3, col4 = st.columns([0.4, 0.2, 0.2, 0.2])
         with col1:
             if st.button("💬", help="Switch to chat view", key="main_tab_chat"):
+                # When switching to chat view, ensure we're using the specialized state task if available
+                if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "local_persistence") and st.session_state.task_controller.local_persistence:
+                    local_task_managers = st.session_state.task_controller.local_persistence.tasksmanagers.list()
+                    local_tasks = st.session_state.task_controller.local_persistence.tasks.list()
+                    if local_task_managers and local_tasks:
+                        local_task_manager = next(
+                            (m for m in local_task_managers if "Task Management" in m.name),
+                            local_task_managers[0]
+                        )
+                        local_task = next(
+                            (t for t in local_tasks if t.tasksmanager_id == local_task_manager.id),
+                            None
+                        )
+                        if local_task:
+                            print(f"🔄 Setting specialized task as active for chat view")
+                            st.session_state.task_controller.view_state.set_active_task(
+                                task_id=local_task.id,
+                                task_name=local_task.name,
+                                manager_id=local_task_manager.id,
+                                manager_name=local_task_manager.name
+                            )
+                
                 st.session_state.active_tab = 0
                 st.rerun()
         with col3:
             if st.button("📊", help="Switch to observability view", key="main_tab_obs"):
+                # When switching to non-chat view, ensure we're using global persistence
+                if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "global_persistence"):
+                    st.session_state.task_controller.persistence_model = st.session_state.task_controller.global_persistence
+                
                 st.session_state.active_tab = 1
                 st.rerun()
         with col4:
             if st.button("⚙️", help="Switch to task management view", key="main_tab_manage"):
+                # When switching to non-chat view, ensure we're using global persistence
+                if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "global_persistence"):
+                    st.session_state.task_controller.persistence_model = st.session_state.task_controller.global_persistence
+                
                 st.session_state.active_tab = 2
                 st.rerun()
         
