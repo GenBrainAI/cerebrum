@@ -796,7 +796,7 @@ class VectorStore:
             collection = self._ensure_collection(index_name)
             print(f"🔍 DEBUG: Collection obtained: {collection.name}")
             
-            # Update progress
+            # Update progress - Phase 1: Reading file (25% of total progress)
             if progress_callback:
                 progress_callback("Reading file...", 0, 100)
             
@@ -827,8 +827,10 @@ class VectorStore:
                             print(f"🔍 DEBUG: Extracted {len(page_text)} characters from page {i+1}")
                             text += page_text + "\n"
                             if progress_callback:
+                                # Calculate progress within the reading phase (25% of total)
+                                phase_progress = int((i+1) / total_pages * 25)
                                 progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
-                                               i+1, total_pages)
+                                               phase_progress, 100)
                         
                         print(f"🔍 DEBUG: Total text extracted: {len(text)} characters")
                         file_path_or_obj.seek(0)
@@ -837,6 +839,8 @@ class VectorStore:
                         content = file_path_or_obj.read()
                         text = content.decode('utf-8') if isinstance(content, bytes) else str(content)
                         print(f"🔍 DEBUG: Extracted {len(text)} characters from file")
+                        if progress_callback:
+                            progress_callback("File read complete", 25, 100)
                 else:  # File path
                     file_path = Path(file_path_or_obj)
                     print(f"🔍 DEBUG: Processing file path: {file_path}")
@@ -860,14 +864,18 @@ class VectorStore:
                                 print(f"🔍 DEBUG: Extracted {len(page_text)} characters from page {i+1}")
                                 text += page_text + "\n"
                                 if progress_callback:
+                                    # Calculate progress within the reading phase (25% of total)
+                                    phase_progress = int((i+1) / total_pages * 25)
                                     progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
-                                                   i+1, total_pages)
+                                                   phase_progress, 100)
                             print(f"🔍 DEBUG: Total text extracted: {len(text)} characters")
                     else:
                         print(f"🔍 DEBUG: Processing non-PDF file path: {file_path}")
                         with open(file_path, 'r', encoding='utf-8') as f:
                             text = f.read()
                             print(f"🔍 DEBUG: Extracted {len(text)} characters from file")
+                            if progress_callback:
+                                progress_callback("File read complete", 25, 100)
             
             except Exception as e:
                 print(f"❌ DEBUG: Error reading file: {str(e)}")
@@ -876,10 +884,17 @@ class VectorStore:
                 logging.error(f"Error reading file: {str(e)}")
                 raise
             
+            # Phase 2: Chunking (5% of total progress)
+            if progress_callback:
+                progress_callback("Chunking text...", 25, 100)
+                
             # Generate chunks
             print(f"🔍 DEBUG: Generating chunks with size={self.config.chunk_size}, overlap={self.config.chunk_overlap}")
             chunks = self._chunk_text(text, self.config.chunk_size, self.config.chunk_overlap)
             print(f"🔍 DEBUG: Generated {len(chunks)} chunks")
+            
+            if progress_callback:
+                progress_callback(f"Generated {len(chunks)} chunks", 30, 100)
             
             if not chunks:
                 print(f"❌ DEBUG: No valid chunks generated from file")
@@ -908,6 +923,10 @@ class VectorStore:
             }
             print(f"🔍 DEBUG: Root metadata created")
             
+            # Phase 3: Generating embeddings (35% of total progress)
+            if progress_callback:
+                progress_callback(f"Generating embeddings for {total_chunks} chunks...", 30, 100)
+                
             # Generate embeddings for chunks
             print(f"🔍 DEBUG: Generating embeddings for {len(chunks)} chunks")
             embeddings = []
@@ -916,9 +935,19 @@ class VectorStore:
                 embedding = self._safe_embed([chunk])[0]
                 embeddings.append(embedding)
                 print(f"🔍 DEBUG: Embedding generated for chunk {i+1}")
+                
+                if progress_callback:
+                    # Calculate progress within the embedding phase (35% of total, from 30% to 65%)
+                    phase_progress = 30 + int((i+1) / len(chunks) * 35)
+                    progress_callback(f"Generating embedding for chunk {i+1}/{len(chunks)}", 
+                                   phase_progress, 100)
             
             print(f"🔍 DEBUG: All embeddings generated")
             
+            # Phase 4: Storing chunks (35% of total progress)
+            if progress_callback:
+                progress_callback(f"Storing chunks in vector database...", 65, 100)
+                
             # Add root chunk
             print(f"🔍 DEBUG: Adding root chunk to collection")
             collection.add(
@@ -929,6 +958,9 @@ class VectorStore:
             )
             chunk_ids.append(root_id)
             print(f"🔍 DEBUG: Root chunk added with ID: {root_id}")
+            
+            if progress_callback:
+                progress_callback(f"Root chunk stored, adding {total_chunks} individual chunks...", 67, 100)
             
             # Add individual chunks with their metadata
             print(f"🔍 DEBUG: Adding {total_chunks} individual chunks")
@@ -955,8 +987,14 @@ class VectorStore:
                 print(f"🔍 DEBUG: Chunk {i+1} added with ID: {chunk_id}")
                 
                 if progress_callback:
-                    progress_callback(f"Processing chunk {i+1}/{total_chunks}", i+1, total_chunks)
+                    # Calculate progress within the storage phase (33% of total, from 67% to 100%)
+                    phase_progress = 67 + int((i+1) / total_chunks * 33)
+                    progress_callback(f"Storing chunk {i+1}/{total_chunks}", phase_progress, 100)
             
+            # Final progress update
+            if progress_callback:
+                progress_callback(f"Completed processing {total_chunks} chunks", 100, 100)
+                
             print(f"✅ DEBUG: File processing completed successfully. Added {len(chunk_ids)} chunks to index.")
             return chunk_ids
             
@@ -983,11 +1021,33 @@ class VectorStore:
                      if f.is_file() and f.suffix.lower() in ['.txt', '.pdf', '.docx', '.py', '.md', '.json']]
             
             total_files = len(files)
+            print(f"🔍 DEBUG: Found {total_files} files to process in directory {directory_path}")
+            
+            if progress_callback:
+                progress_callback(f"Found {total_files} files to process", 0, 100)
+            
             for i, file_path in enumerate(files):
                 try:
+                    file_number = i + 1
+                    print(f"🔍 DEBUG: Processing file {file_number}/{total_files}: {file_path.name}")
+                    
                     if progress_callback:
-                        progress_callback(f"Processing file {i+1}/{total_files}: {file_path.name}",
-                                       i, total_files)
+                        # Calculate the overall progress range for this file
+                        # Each file gets an equal portion of the progress bar
+                        file_progress_start = int((i / total_files) * 100)
+                        file_progress_end = int(((i + 1) / total_files) * 100)
+                        file_progress_range = file_progress_end - file_progress_start
+                        
+                        progress_callback(f"Processing file {file_number}/{total_files}: {file_path.name}",
+                                       file_progress_start, 100)
+                    
+                    # Create a wrapper for the progress callback to scale it to this file's range
+                    def file_progress_callback(message, current, total):
+                        if progress_callback:
+                            # Scale the progress to this file's portion of the overall progress
+                            scaled_progress = file_progress_start + int((current / total) * file_progress_range)
+                            progress_callback(f"File {file_number}/{total_files} - {message}", 
+                                           scaled_progress, 100)
                     
                     await self.add_file_to_index(
                         index_name=index_name,
@@ -996,17 +1056,29 @@ class VectorStore:
                             **(metadata or {}),
                             "original_path": str(file_path)
                         },
-                        progress_callback=lambda msg, cur, tot: progress_callback(
-                            f"File {i+1}/{total_files} - {msg}", cur, tot
-                        ) if progress_callback else None
+                        progress_callback=file_progress_callback
                     )
                     processed += 1
+                    
+                    print(f"✅ DEBUG: Completed processing file {file_number}/{total_files}")
+                    
                 except Exception as e:
+                    print(f"❌ DEBUG: Error processing file {file_path}: {str(e)}")
+                    import traceback
+                    print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
                     logging.error(f"Error processing file {file_path}: {str(e)}")
             
+            # Final progress update
+            if progress_callback:
+                progress_callback(f"Completed processing {processed}/{total_files} files", 100, 100)
+                
+            print(f"✅ DEBUG: Directory processing completed. Processed {processed}/{total_files} files.")
             return processed
             
         except Exception as e:
+            print(f"❌ DEBUG: Error processing directory: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             logging.error(f"Error processing directory: {str(e)}")
             raise
 
