@@ -48,12 +48,21 @@ class BaseView:
     def load_session(self):
         """Load the view session."""
         session_file = Path(st.session_state.state_dir) / "sessions" / self.get_session_filename()
+        print(f"📂 Looking for session file: {session_file}")
+        
         if session_file.exists():
+            print(f"📂 Session file found, loading data")
             with open(session_file) as f:
                 session_data = json.load(f)
                 
+            # Log session data for debugging
+            print(f"📂 Loaded session data: {session_data}")
+                
             # Restore view-specific session state
             self.restore_session_state(session_data)
+            print(f"📂 Session state restored")
+        else:
+            print(f"📂 No session file found at {session_file}")
                 
     def restore_session_state(self, session_data: Dict[str, Any]):
         """Restore session state from loaded data. Override in view classes."""

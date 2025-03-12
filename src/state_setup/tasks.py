@@ -10,6 +10,7 @@ from src.server.models.message import Message
 from server.models.persistence_models import StorageLocation, StorageType
 from server.controllers.persistence_controller import save_to_storage
 from typing import Optional
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 
 project_root = str(Path(__file__).parents[1])
 sys.path.append(project_root)

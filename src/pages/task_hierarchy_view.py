@@ -25,10 +25,13 @@ class TaskHierarchyView(BaseView):
         
         # Save chat history
         if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            task_status = st.session_state.task_controller.view_state.task_status
+            print(f"📝 Saving task status to session: {task_status}")
+            
             data["chat_history"] = st.session_state.task_controller.view_state.chat_history
             data["selected_node"] = st.session_state.task_controller.view_state.selected_node
             data["expanded_nodes"] = st.session_state.task_controller.view_state.expanded_nodes
-            data["task_status"] = st.session_state.task_controller.view_state.task_status
+            data["task_status"] = task_status
             
             # Store task management specific state
             data["selected_task_manager"] = st.session_state.task_controller.view_state.selected_task_manager
@@ -53,7 +56,31 @@ class TaskHierarchyView(BaseView):
             st.session_state.task_controller.view_state.expanded_nodes = session_data["expanded_nodes"]
             
         if "task_status" in session_data and hasattr(st.session_state, "task_controller"):
-            st.session_state.task_controller.view_state.task_status = session_data["task_status"]
+            # Ensure all required fields are present in task_status
+            task_status = session_data["task_status"]
+            print(f"📝 Restoring task status from session: {task_status}")
+            
+            if task_status and isinstance(task_status, dict):
+                # Make sure all required fields are present
+                if "loaded" in task_status:
+                    # If loaded is True, ensure all required fields are present
+                    if task_status.get("loaded", False):
+                        print(f"📝 Task status has loaded=True, checking required fields")
+                        required_fields = ["task_id", "task_name", "tasksmanager_id", "tasksmanager_name"]
+                        missing_fields = [field for field in required_fields if field not in task_status]
+                        
+                        if missing_fields:
+                            print(f"📝 Missing required fields in task_status: {missing_fields}")
+                            # If any required field is missing, set loaded to False
+                            task_status["loaded"] = False
+                            task_status["tasksmanager_name"] = task_status.get("tasksmanager_name", "")
+                            task_status["task_name"] = task_status.get("task_name", "")
+                        else:
+                            print(f"📝 All required fields present in task_status")
+                    
+                    # Update the view state with the validated task_status
+                    st.session_state.task_controller.view_state.task_status = task_status
+                    print(f"📝 Updated view_state.task_status: {st.session_state.task_controller.view_state.task_status}")
             
         # Restore task management specific state
         if "selected_task_manager" in session_data and hasattr(st.session_state, "task_controller"):
@@ -84,6 +111,29 @@ class TaskHierarchyView(BaseView):
             
             # Reset active tab
             st.session_state.active_tab = 0
+
+    def save_session(self):
+        """Save the current view session."""
+        # First, ensure task_status is properly set
+        if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            task_status = st.session_state.task_controller.view_state.task_status
+            if not task_status.get("loaded", False):
+                # Try to find a task manager and task to set as active
+                task_managers = st.session_state.task_controller.get_task_managers()
+                if task_managers:
+                    tasks = st.session_state.task_controller.get_tasks(task_managers[0].id)
+                    if tasks:
+                        print(f"📝 Setting active task before saving session")
+                        st.session_state.task_controller.view_state.set_active_task(
+                            task_id=tasks[0].id,
+                            task_name=tasks[0].name,
+                            manager_id=task_managers[0].id,
+                            manager_name=task_managers[0].name
+                        )
+                        print(f"📝 Updated task status before saving: {st.session_state.task_controller.view_state.task_status}")
+        
+        # Call parent save_session method
+        super().save_session()
 
 def render_chat_view():
     """Render the chat interface"""
@@ -185,6 +235,7 @@ async def render_task_hierarchy_view():
         
         # Initialize task controller if not in session state
         if 'task_controller' not in st.session_state:
+            print("🔄 Creating new task controller")
             st.session_state.task_controller = TaskHierarchyController(st.session_state.persistence_model)
             await st.session_state.task_controller.initialize()
             
@@ -199,7 +250,36 @@ async def render_task_hierarchy_view():
                     st.warning(f"Failed to create test tasks: {str(e)}")
             
             # Load saved session state
+            print("🔄 Loading saved session state")
             view.load_session()
+        else:
+            print("🔄 Using existing task controller")
+            # Ensure controller is using global persistence
+            if hasattr(st.session_state.task_controller, 'global_persistence') and hasattr(st.session_state.task_controller, 'persistence_model'):
+                if st.session_state.task_controller.persistence_model is not st.session_state.task_controller.global_persistence:
+                    print("🔄 Switching controller to global persistence in main view")
+                    st.session_state.task_controller.persistence_model = st.session_state.task_controller.global_persistence
+            
+        # Debug task status
+        if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            print(f"🔄 Current task status: {st.session_state.task_controller.view_state.task_status}")
+            
+            # Fix: Ensure task_status is properly set if it's not already
+            task_status = st.session_state.task_controller.view_state.task_status
+            if not task_status.get("loaded", False):
+                # Try to find a task manager and task to set as active
+                task_managers = st.session_state.task_controller.get_task_managers()
+                if task_managers:
+                    tasks = st.session_state.task_controller.get_tasks(task_managers[0].id)
+                    if tasks:
+                        print(f"🔄 Setting active task from available tasks")
+                        st.session_state.task_controller.view_state.set_active_task(
+                            task_id=tasks[0].id,
+                            task_name=tasks[0].name,
+                            manager_id=task_managers[0].id,
+                            manager_name=task_managers[0].name
+                        )
+                        print(f"🔄 Updated task status: {st.session_state.task_controller.view_state.task_status}")
         
         # Render header
         render_header("Task Hierarchy")
@@ -213,6 +293,7 @@ async def render_task_hierarchy_view():
                     st.rerun()
         
         # Render sidebar
+        print("🔄 Rendering sidebar")
         await render_task_hierarchy_sidebar()
         
         # Add navigation tabs with icons, aligned like in tools catalog view

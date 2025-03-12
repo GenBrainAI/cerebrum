@@ -1,3 +1,22 @@
+"""
+Task Hierarchy Controller for managing task hierarchy view.
+
+This controller manages the task hierarchy view with the following principles:
+1. Global Persistence: All task tree and task management operations use the global persistence model.
+   This ensures that the task tree and task management views show only the global state.
+
+2. Specialized State: The specialized state (loaded from task_management_state.json) is used only
+   for chat functionality. This allows the specialized state to help the user manipulate tasks
+   via chat, with the effects applying to the global state.
+
+3. No Synchronization: Unlike other controllers, we do NOT synchronize the specialized state to
+   the global state. This prevents duplication of tasks in the task tree and task management views.
+
+4. Persistence Model Usage:
+   - self.global_persistence: Always used for task tree, task management, and saving state
+   - self.local_persistence: Used only for chat functionality, if available
+   - self.persistence_model: Should always be set to self.global_persistence for consistency
+"""
 from typing import Dict, Any, Optional, List
 import streamlit as st
 import logging
@@ -62,6 +81,11 @@ class TaskHierarchyController:
         try:
             self.logger.info("Building task hierarchy tree...")
             
+            # Always ensure we're using the global persistence model for task tree
+            if self.persistence_model is not self.global_persistence:
+                print("🔄 Switching to global persistence model for task tree")
+                self.persistence_model = self.global_persistence
+            
             # Create root node
             root = TreeNode(
                 id=UUID('00000000-0000-0000-0000-000000000000'),
@@ -70,9 +94,9 @@ class TaskHierarchyController:
                 children=[]
             )
             
-            # Get all task managers
-            task_managers = self.get_task_managers()
-            self.logger.info(f"Found {len(task_managers)} task managers")
+            # Get all task managers from global persistence
+            task_managers = self.global_persistence.tasksmanagers.list()
+            self.logger.info(f"Found {len(task_managers)} task managers in global persistence")
             
             # Create task manager nodes
             for tm in task_managers:
@@ -84,9 +108,9 @@ class TaskHierarchyController:
                     children=[]
                 )
                 
-                # Get tasks for this task manager
-                tasks = self.get_tasks(tm.id)
-                self.logger.info(f"Found {len(tasks)} tasks for manager {tm.name}")
+                # Get tasks for this task manager from global persistence
+                tasks = [t for t in self.global_persistence.tasks.list() if t.tasksmanager_id == tm.id]
+                self.logger.info(f"Found {len(tasks)} tasks for manager {tm.name} in global persistence")
                 
                 # Create task nodes
                 for task in tasks:
@@ -104,7 +128,7 @@ class TaskHierarchyController:
                 root.children.append(tm_node)
             
             # Log the tree structure for debugging
-            self.logger.info(f"Task tree generated with {len(root.children)} task managers")
+            self.logger.info(f"Task tree generated with {len(root.children)} task managers from global persistence")
             
             return root
         except Exception as e:
@@ -116,17 +140,19 @@ class TaskHierarchyController:
     # Task Management methods
     
     def get_task_managers(self) -> List[TasksManager]:
-        """Get all task managers from persistence."""
+        """Get all task managers from global persistence."""
         try:
-            return self.persistence_model.tasksmanagers.list()
+            # Always use global persistence for task management
+            return self.global_persistence.tasksmanagers.list()
         except Exception as e:
             self.logger.error(f"Error getting task managers: {str(e)}")
             return []
             
     def get_tasks(self, tasksmanager_id: Optional[str] = None) -> List[Task]:
-        """Get tasks for a specific task manager or all tasks."""
+        """Get tasks for a specific task manager or all tasks from global persistence."""
         try:
-            all_tasks = self.persistence_model.tasks.list()
+            # Always use global persistence for task management
+            all_tasks = self.global_persistence.tasks.list()
             if tasksmanager_id:
                 return [task for task in all_tasks if task.tasksmanager_id == tasksmanager_id]
             return all_tasks
@@ -137,7 +163,7 @@ class TaskHierarchyController:
     def create_task_manager(self, name: str, model: Optional[str] = None, 
                           description: Optional[str] = None, 
                           system_message: Optional[str] = None) -> Optional[TasksManager]:
-        """Create a new task manager."""
+        """Create a new task manager in global persistence."""
         try:
             messages = []
             if system_message:
@@ -150,8 +176,9 @@ class TaskHierarchyController:
                 messages=messages
             )
             
-            # Save to persistence
-            created_tm = self.persistence_model.tasksmanagers.create(task_manager)
+            # Always save to global persistence
+            created_tm = self.global_persistence.tasksmanagers.create(task_manager)
+            print(f"🔄 Created task manager {created_tm.name} in global persistence")
             
             # Auto-save state after change
             self.trigger_save_state()
@@ -164,12 +191,12 @@ class TaskHierarchyController:
     def update_task_manager(self, task_manager_id: str, name: Optional[str] = None, 
                           model: Optional[str] = None, description: Optional[str] = None, 
                           system_message: Optional[str] = None) -> Optional[TasksManager]:
-        """Update an existing task manager."""
+        """Update an existing task manager in global persistence."""
         try:
-            # Get existing task manager
-            task_manager = self.persistence_model.tasksmanagers.read(task_manager_id)
+            # Get existing task manager from global persistence
+            task_manager = self.global_persistence.tasksmanagers.read(task_manager_id)
             if not task_manager:
-                self.logger.error(f"Task manager not found: {task_manager_id}")
+                self.logger.error(f"Task manager not found in global persistence: {task_manager_id}")
                 return None
                 
             # Update fields if provided
@@ -189,8 +216,9 @@ class TaskHierarchyController:
                 else:
                     task_manager.messages.append(Message(role="system", content=system_message))
                     
-            # Update in persistence
-            updated_tm = self.persistence_model.tasksmanagers.update(task_manager_id, task_manager)
+            # Update in global persistence
+            updated_tm = self.global_persistence.tasksmanagers.update(task_manager_id, task_manager)
+            print(f"🔄 Updated task manager {updated_tm.name} in global persistence")
             
             # Auto-save state after change
             self.trigger_save_state()
@@ -201,17 +229,19 @@ class TaskHierarchyController:
             return None
             
     def delete_task_manager(self, task_manager_id: str) -> bool:
-        """Delete a task manager and all its associated tasks."""
+        """Delete a task manager and all its associated tasks from global persistence."""
         try:
-            # Get all tasks for this manager
-            tasks = self.get_tasks(task_manager_id)
+            # Get all tasks for this manager from global persistence
+            tasks = [t for t in self.global_persistence.tasks.list() if t.tasksmanager_id == task_manager_id]
             
-            # Delete all tasks
+            # Delete all tasks from global persistence
             for task in tasks:
-                self.persistence_model.tasks.delete(task.id)
+                self.global_persistence.tasks.delete(task.id)
+                print(f"🔄 Deleted task {task.name} from global persistence")
                 
-            # Delete task manager
-            result = self.persistence_model.tasksmanagers.delete(task_manager_id)
+            # Delete task manager from global persistence
+            result = self.global_persistence.tasksmanagers.delete(task_manager_id)
+            print(f"🔄 Deleted task manager from global persistence")
             
             # Auto-save state after change
             self.trigger_save_state()
@@ -224,7 +254,7 @@ class TaskHierarchyController:
     def create_task(self, name: str, tasksmanager_id: str, model: Optional[str] = None,
                   description: Optional[str] = None, system_message: Optional[str] = None,
                   inherit_manager_context: bool = False) -> Optional[Task]:
-        """Create a new task associated with a task manager."""
+        """Create a new task associated with a task manager in global persistence."""
         try:
             messages = []
             if system_message:
@@ -239,8 +269,9 @@ class TaskHierarchyController:
                 inherit_manager_context=inherit_manager_context
             )
             
-            # Save to persistence
-            created_task = self.persistence_model.tasks.create(task)
+            # Save to global persistence
+            created_task = self.global_persistence.tasks.create(task)
+            print(f"🔄 Created task {created_task.name} in global persistence")
             
             # Auto-save state after change
             self.trigger_save_state()
@@ -254,14 +285,14 @@ class TaskHierarchyController:
                   tasksmanager_id: Optional[str] = None, model: Optional[str] = None,
                   description: Optional[str] = None, system_message: Optional[str] = None,
                   inherit_manager_context: Optional[bool] = None) -> Optional[Task]:
-        """Update an existing task."""
+        """Update an existing task in global persistence."""
         try:
             self.logger.info(f"Updating task {task_id} with name={name}, tasksmanager_id={tasksmanager_id}, model={model}")
             
-            # Get existing task
-            task = self.persistence_model.tasks.read(task_id)
+            # Get existing task from global persistence
+            task = self.global_persistence.tasks.read(task_id)
             if not task:
-                self.logger.error(f"Task not found: {task_id}")
+                self.logger.error(f"Task not found in global persistence: {task_id}")
                 return None
                 
             # Log the task before updates
@@ -290,9 +321,10 @@ class TaskHierarchyController:
                     self.logger.info(f"Creating new system message for task {task_id}")
                     task.messages.append(Message(role="system", content=system_message))
                     
-            # Update in persistence
-            self.logger.info(f"Saving updated task to persistence model")
-            updated_task = self.persistence_model.tasks.update(task_id, task)
+            # Update in global persistence
+            self.logger.info(f"Saving updated task to global persistence")
+            updated_task = self.global_persistence.tasks.update(task_id, task)
+            print(f"🔄 Updated task {updated_task.name} in global persistence")
             
             # Log the updated task
             self.logger.info(f"Task updated: {updated_task.name}, manager_id: {updated_task.tasksmanager_id}")
@@ -307,9 +339,11 @@ class TaskHierarchyController:
             return None
             
     def delete_task(self, task_id: str) -> bool:
-        """Delete a task."""
+        """Delete a task from global persistence."""
         try:
-            result = self.persistence_model.tasks.delete(task_id)
+            # Delete from global persistence
+            result = self.global_persistence.tasks.delete(task_id)
+            print(f"🔄 Deleted task from global persistence")
             
             # Auto-save state after change
             self.trigger_save_state()
@@ -332,101 +366,120 @@ class TaskHierarchyController:
         try:
             print("\n🚀 Starting task controller initialization...")
             
+            # First, ensure we're using the global persistence model for task tree and management
+            self.persistence_model = self.global_persistence
+            print("🔄 Using global persistence model for task tree and management")
+            
+            # Initialize task runner with global persistence
+            self.task_runner = TaskRunner(self.global_persistence)
+            await self.task_runner.initialize()
+            print("🔄 Task runner initialized with global persistence")
+            
+            # Check for specialized state file (for chat functionality only)
             state_file = StateLoader.get_state_file("task_management_state.json")
-            print(f"📁 Checking state file path: {state_file}")
+            print(f"📁 Checking specialized state file path: {state_file}")
             
-            if not state_file or not state_file.exists():
-                print(f"🔴 Specialized state file not found at {state_file}")
-                # Ensure we're operating on the global persistence model
-                self.persistence_model = self.global_persistence
-                self.logger.info("No state file found - using global persistence model")
-                return
-
-            print(f"📖 Loading state from: {state_file}")
-            
-            # Read state file content as string
-            with open(state_file, 'r', encoding='utf-8') as f:
-                json_str = f.read()
-            
-            # Create local persistence model and load state from string
-            self.local_persistence = InMemoryPersistenceModel()
-            self.local_persistence.from_json(json_str=json_str)
-            
-            if self.local_persistence:
-                print("✅ Local persistence model created")
+            if state_file and state_file.exists():
+                print(f"📖 Loading specialized state from: {state_file}")
                 
-                # Initialize task runner with local persistence
-                self.task_runner = TaskRunner(self.local_persistence)
-                await self.task_runner.initialize()
-                print("✅ Task runner initialized with local persistence")
+                # Read state file content as string
+                with open(state_file, 'r', encoding='utf-8') as f:
+                    json_str = f.read()
                 
-                # Get task context from local persistence
-                task_managers = self.local_persistence.tasksmanagers.list()
-                tasks = self.local_persistence.tasks.list()
+                # Create local persistence model and load state from string
+                self.local_persistence = InMemoryPersistenceModel()
+                self.local_persistence.from_json(json_str=json_str)
                 
-                print(f"Found {len(task_managers)} task managers and {len(tasks)} tasks")
+                # Get task context from local persistence (for chat functionality only)
+                local_task_managers = self.local_persistence.tasksmanagers.list()
+                local_tasks = self.local_persistence.tasks.list()
                 
-                # Synchronize local persistence with global persistence
-                self.logger.info("Synchronizing loaded local persistence with global persistence model")
+                print(f"📊 Found {len(local_task_managers)} task managers and {len(local_tasks)} tasks in specialized state")
+                print(f"📊 These will be used for chat functionality only, not for task tree or management")
                 
-                # Sync task managers
-                for tm in task_managers:
-                    # Check if task manager exists in global model
-                    global_tm = self.global_persistence.tasksmanagers.read(tm.id)
-                    if global_tm:
-                        # Update existing task manager
-                        self.global_persistence.tasksmanagers.update(tm.id, tm)
-                        self.logger.info(f"Synchronized task manager {tm.id} ({tm.name}) to global persistence")
-                    else:
-                        # Create new task manager
-                        self.global_persistence.tasksmanagers.create(tm)
-                        self.logger.info(f"Created task manager {tm.id} ({tm.name}) in global persistence")
-                
-                # Sync tasks
-                for task in tasks:
-                    # Check if task exists in global model
-                    global_task = self.global_persistence.tasks.read(task.id)
-                    if global_task:
-                        # Update existing task
-                        self.global_persistence.tasks.update(task.id, task)
-                        self.logger.info(f"Synchronized task {task.id} ({task.name}) to global persistence")
-                    else:
-                        # Create new task
-                        self.global_persistence.tasks.create(task)
-                        self.logger.info(f"Created task {task.id} ({task.name}) in global persistence")
-                
-                # Update controller to use global persistence
-                self.persistence_model = self.global_persistence
-                self.logger.info("Updated controller to use global persistence model")
-                
-                if task_managers and tasks:
-                    # Find the task management manager and task
-                    task_manager = next(
-                        (m for m in task_managers if "Task Management" in m.name),
-                        task_managers[0]
+                # Find a task management task in the specialized state to set as active for chat
+                if local_task_managers and local_tasks:
+                    local_task_manager = next(
+                        (m for m in local_task_managers if "Task Management" in m.name),
+                        local_task_managers[0]
                     )
-                    main_task = next(
-                        (t for t in tasks if t.tasksmanager_id == task_manager.id),
+                    local_main_task = next(
+                        (t for t in local_tasks if t.tasksmanager_id == local_task_manager.id),
                         None
                     )
                     
-                    if main_task:
-                        # Update view state with task context
-                        self.view_state.set_active_task(
-                            task_id=main_task.id,
-                            task_name=main_task.name,
-                            manager_id=task_manager.id,
-                            manager_name=task_manager.name
-                        )
-                        
-                        print(f"🟢 Loaded state for {task_manager.name}-{main_task.name}")
+                    if local_main_task:
+                        print(f"📊 Found specialized task: {local_main_task.name} for chat functionality")
+                        # We'll use this for chat, but not set it as active yet
                     else:
-                        print("🔴 No task management task found")
+                        print("🔴 No task management task found in specialized state")
                 else:
-                    print("🔴 No task context found in state file")
+                    print("🔴 No task context found in specialized state file")
             else:
-                print("🔴 Failed to create local persistence model")
+                print(f"🔴 Specialized state file not found at {state_file}")
+                self.local_persistence = None
+            
+            # Now, get task managers and tasks from global persistence for task tree and management
+            global_task_managers = self.global_persistence.tasksmanagers.list()
+            global_tasks = self.global_persistence.tasks.list()
+            
+            print(f"📊 Found {len(global_task_managers)} task managers and {len(global_tasks)} tasks in global persistence")
+            print(f"📊 Task status before update: {self.view_state.task_status}")
+            
+            # Set active task from global persistence
+            if global_task_managers and global_tasks:
+                # Find the task management manager and task
+                task_manager = next(
+                    (m for m in global_task_managers if "Task Management" in m.name),
+                    global_task_managers[0]
+                )
+                main_task = next(
+                    (t for t in global_tasks if t.tasksmanager_id == task_manager.id),
+                    None
+                )
                 
+                print(f"📊 Found global task manager: {task_manager.name} (ID: {task_manager.id})")
+                if main_task:
+                    print(f"📊 Found global main task: {main_task.name} (ID: {main_task.id})")
+                    
+                    # Update view state with task context
+                    self.view_state.set_active_task(
+                        task_id=main_task.id,
+                        task_name=main_task.name,
+                        manager_id=task_manager.id,
+                        manager_name=task_manager.name
+                    )
+                    
+                    # Ensure all required fields are present in task_status
+                    self.view_state.task_status = {
+                        "loaded": True,
+                        "task_id": main_task.id,
+                        "task_name": main_task.name,
+                        "tasksmanager_id": task_manager.id,
+                        "tasksmanager_name": task_manager.name
+                    }
+                    
+                    # Log task status for debugging
+                    print(f"📊 Task status after update: {self.view_state.task_status}")
+                    self.logger.info(f"Task status set to: {self.view_state.task_status}")
+                    
+                    print(f"🟢 Loaded state for {task_manager.name}-{main_task.name}")
+                else:
+                    print("🔴 No task management task found in global persistence")
+                    self.view_state.task_status = {
+                        "loaded": False,
+                        "tasksmanager_name": "",
+                        "task_name": ""
+                    }
+                    print(f"📊 Task status set to: {self.view_state.task_status}")
+            else:
+                print("🔴 No task context found in global persistence")
+                self.view_state.task_status = {
+                    "loaded": False,
+                    "tasksmanager_name": "",
+                    "task_name": ""
+                }
+                print(f"📊 Task status set to: {self.view_state.task_status}")
         except Exception as e:
             print(f"Error initializing task controller: {str(e)}")
             raise
@@ -446,11 +499,6 @@ class TaskHierarchyController:
             # Save chat history to session state immediately after adding user message
             if 'task_controller' in st.session_state:
                 st.session_state.task_controller.view_state.chat_history = self.view_state.chat_history
-            
-            # Ensure we're using the global persistence model for any state modifications
-            if self.global_persistence and id(self.persistence_model) != id(self.global_persistence):
-                self.logger.info("Updating controller to use global persistence model in handle_chat")
-                self.persistence_model = self.global_persistence
             
             # Process the message if we have an active task
             if self.view_state.task_status and self.view_state.task_status.get("loaded"):
@@ -476,37 +524,63 @@ class TaskHierarchyController:
                                 updated_at=getattr(msg, 'updated_at', None)
                             ))
                     
-                    # Run task with message context
-                    print("\n🔄 Using existing persistence model from session state")
-                    print("Context provider initialized and synced with persistence model")
+                    # Determine which persistence model to use for chat
+                    # If we have specialized state, use it for chat functionality
+                    chat_persistence = self.local_persistence if self.local_persistence else self.global_persistence
+                    print(f"\n🔄 Using {'specialized' if self.local_persistence else 'global'} persistence model for chat functionality")
                     
-                    # Use the task runner with local persistence
+                    # Initialize task runner if needed
                     if not self.task_runner:
-                        print("🔄 Initializing task runner with local persistence")
-                        # If we have no local persistence yet, create it and sync from global
-                        if not self.local_persistence:
-                            self.local_persistence = InMemoryPersistenceModel()
-                            # Sync critical data from global persistence
-                            for task in self.persistence_model.tasks.list():
-                                self.local_persistence.tasks.create(task)
-                            for tm in self.persistence_model.tasksmanagers.list():
-                                self.local_persistence.tasksmanagers.create(tm)
-                            self.logger.info("Created and populated local persistence from global model")
-                        
-                        self.task_runner = TaskRunner(self.local_persistence)
+                        # Always initialize with global persistence for task execution
+                        print("🔄 Initializing task runner with global persistence")
+                        self.task_runner = TaskRunner(self.global_persistence)
                         await self.task_runner.initialize()
-                        
-                    # Make sure the task runner has the latest task data
-                    global_task = self.persistence_model.tasks.read(task_id)
-                    if global_task and self.local_persistence:
-                        self.local_persistence.tasks.update(task_id, global_task)
-                        self.logger.info(f"Updated task {task_id} in local persistence before running")
                     
-                    response = await self.task_runner.run_task(
-                        tasksmanager_id=manager_id,
-                        task_id=task_id,
-                        running_extra_params={'messages': current_messages}
-                    )
+                    # For chat, we'll use the specialized state if available
+                    if self.local_persistence:
+                        # Find the corresponding task in the specialized state
+                        local_task_managers = self.local_persistence.tasksmanagers.list()
+                        local_tasks = self.local_persistence.tasks.list()
+                        
+                        # Try to find the same task in the specialized state
+                        local_task = next((t for t in local_tasks if t.id == task_id), None)
+                        if not local_task:
+                            # If not found, try to find a task with the same name
+                            global_task = self.global_persistence.tasks.read(task_id)
+                            if global_task:
+                                local_task = next((t for t in local_tasks if t.name == global_task.name), None)
+                        
+                        if local_task:
+                            print(f"🔄 Found corresponding task in specialized state: {local_task.name}")
+                            # Use the specialized task for chat
+                            task_id = local_task.id
+                            manager_id = local_task.tasksmanager_id
+                            
+                            # Create a temporary task runner with the specialized state
+                            temp_runner = TaskRunner(self.local_persistence)
+                            await temp_runner.initialize()
+                            
+                            # Run the task with the specialized state
+                            response = await temp_runner.run_task(
+                                tasksmanager_id=manager_id,
+                                task_id=task_id,
+                                running_extra_params={'messages': current_messages}
+                            )
+                        else:
+                            print(f"🔄 No corresponding task found in specialized state, using global state")
+                            # Fall back to global state
+                            response = await self.task_runner.run_task(
+                                tasksmanager_id=manager_id,
+                                task_id=task_id,
+                                running_extra_params={'messages': current_messages}
+                            )
+                    else:
+                        # Use global state
+                        response = await self.task_runner.run_task(
+                            tasksmanager_id=manager_id,
+                            task_id=task_id,
+                            running_extra_params={'messages': current_messages}
+                        )
                     
                     # Process response
                     if isinstance(response, dict) and 'response' in response:
@@ -529,27 +603,20 @@ class TaskHierarchyController:
                     
                     # Save chat history to global persistence
                     if task_id:
-                        task = self.persistence_model.tasks.read(task_id)
-                        if task:
-                            if not hasattr(task, 'chat_sessions'):
-                                task.chat_sessions = {}
+                        # Always save to global persistence
+                        global_task = self.global_persistence.tasks.read(task_id)
+                        if global_task:
+                            if not hasattr(global_task, 'chat_sessions'):
+                                global_task.chat_sessions = {}
                             session_id = str(uuid4())
-                            task.chat_sessions[session_id] = self.view_state.chat_history
-                            self.persistence_model.tasks.update(task_id, task)
-                            
-                            # Also update in local persistence if it exists
-                            if self.local_persistence:
-                                local_task = self.local_persistence.tasks.read(task_id)
-                                if local_task:
-                                    if not hasattr(local_task, 'chat_sessions'):
-                                        local_task.chat_sessions = {}
-                                    local_task.chat_sessions[session_id] = self.view_state.chat_history
-                                    self.local_persistence.tasks.update(task_id, local_task)
+                            global_task.chat_sessions[session_id] = self.view_state.chat_history
+                            self.global_persistence.tasks.update(task_id, global_task)
+                            print(f"🔄 Saved chat history to global task: {global_task.name}")
                                 
                             # Save state after chat updates
                             self.trigger_save_state()
                         else:
-                            self.logger.warning(f"Task {task_id} not found in persistence model when saving chat history")
+                            self.logger.warning(f"Task {task_id} not found in global persistence when saving chat history")
                 else:
                     # Add simple response if no active task
                     response_message = {
@@ -596,48 +663,10 @@ class TaskHierarchyController:
             st.session_state.save_status = "pending"
             self.logger.info("Setting save status to pending")
             
-            # First, ensure that we're using the current global persistence model
-            # This step is critical to make sure we're not overwriting changes made elsewhere
-            if self.global_persistence:
-                self.logger.info(f"Global persistence ID: {id(self.global_persistence)}, Controller persistence ID: {id(self.persistence_model)}")
-                
-                # Always synchronize with global persistence regardless of ID comparison
-                # to ensure all changes are captured
-                self.logger.info("Synchronizing with global persistence model before saving")
-                
-                # Synchronize tasks - copy from controller persistence to global
-                controller_tasks = self.persistence_model.tasks.list()
-                for task in controller_tasks:
-                    task_id = str(task.id)
-                    # Check if task exists in global model
-                    global_task = self.global_persistence.tasks.read(task_id)
-                    if global_task:
-                        # Update existing task
-                        self.logger.info(f"Updating task {task_id} ({task.name}) in global persistence")
-                        self.global_persistence.tasks.update(task_id, task)
-                    else:
-                        # Create new task
-                        self.logger.info(f"Creating task {task_id} ({task.name}) in global persistence")
-                        self.global_persistence.tasks.create(task)
-                
-                # Synchronize task managers - copy from controller persistence to global
-                controller_tms = self.persistence_model.tasksmanagers.list()
-                for tm in controller_tms:
-                    tm_id = str(tm.id)
-                    # Check if task manager exists in global model
-                    global_tm = self.global_persistence.tasksmanagers.read(tm_id)
-                    if global_tm:
-                        # Update existing task manager
-                        self.logger.info(f"Updating task manager {tm_id} ({tm.name}) in global persistence")
-                        self.global_persistence.tasksmanagers.update(tm_id, tm)
-                    else:
-                        # Create new task manager
-                        self.logger.info(f"Creating task manager {tm_id} ({tm.name}) in global persistence")
-                        self.global_persistence.tasksmanagers.create(tm)
-                
-                # Now update our reference to use the global persistence
+            # Always ensure we're using the global persistence model
+            if self.persistence_model is not self.global_persistence:
+                print("🔄 Switching to global persistence model for saving state")
                 self.persistence_model = self.global_persistence
-                self.logger.info("Updated controller to use global persistence model")
             
             state_dir = get_state_dir()
             location = StorageLocation(
@@ -647,7 +676,7 @@ class TaskHierarchyController:
             )
             
             # Save state with context - using the global persistence model
-            result = save_to_storage(self.persistence_model, location)
+            result = save_to_storage(self.global_persistence, location)
             self.logger.info(f"State saved successfully: {result}")
             
             # Set save status to saved and update last save time
@@ -666,6 +695,11 @@ class TaskHierarchyController:
         """Helper method to trigger state saving with proper async handling."""
         try:
             self.logger.info("Triggering state save...")
+            
+            # Always ensure we're using the global persistence model
+            if self.persistence_model is not self.global_persistence:
+                print("🔄 Switching to global persistence model for saving state")
+                self.persistence_model = self.global_persistence
             
             # Auto-save state after change - use a sync method to ensure immediate execution
             loop = asyncio.get_event_loop()
