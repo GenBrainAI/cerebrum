@@ -81,8 +81,8 @@ def save_current_state(state_name: str) -> str:
             print(f"✅ Confirmed state file saved at {state_file_path}")
             st.session_state.state_success_message = f"State saved successfully as {state_filename}"
         
-        # Save metadata about last used state
-        save_last_used_state(f"{state_name}")
+        # Save metadata about last used state - use state_name without .json extension
+        save_last_used_state(state_name)
         
         return result
     except Exception as e:
@@ -100,7 +100,14 @@ def load_state(state_path: Optional[str] = None):
         if not state_path and not st.session_state.get('default_state_loaded'):
             metadata = get_last_used_state()
             if metadata.get("last_used_state"):
-                state_path = str(get_state_dir() / metadata["last_used_state"])
+                # Ensure the state name has .json extension
+                state_name = metadata["last_used_state"]
+                if not state_name.endswith('.json'):
+                    state_file_name = f"{state_name}.json"
+                else:
+                    state_file_name = state_name
+                
+                state_path = str(get_state_dir() / state_file_name)
                 print(f"  Loading last used state from metadata: {state_path}")
                 
                 # Check if the file exists
@@ -222,7 +229,13 @@ def load_state(state_path: Optional[str] = None):
                 
                 # Save this as the last used state
                 state_name = os.path.basename(state_path)
-                save_last_used_state(state_name)
+                # Remove .json extension for consistency in metadata
+                if state_name.endswith('.json'):
+                    state_name_for_metadata = state_name[:-5]
+                else:
+                    state_name_for_metadata = state_name
+                    
+                save_last_used_state(state_name_for_metadata)
                 st.session_state.selected_state_file = state_name
                 
                 # Also reset selection tracking to sync with newly loaded state
@@ -1258,7 +1271,14 @@ def get_last_used_state() -> dict:
                 
                 # Check if the last_used_state exists
                 if "last_used_state" in metadata and metadata["last_used_state"]:
-                    state_path = state_dir / metadata["last_used_state"]
+                    # Ensure the state name has .json extension for file checking
+                    state_name = metadata["last_used_state"]
+                    if not state_name.endswith('.json'):
+                        state_file_name = f"{state_name}.json"
+                    else:
+                        state_file_name = state_name
+                    
+                    state_path = state_dir / state_file_name
                     if not state_path.exists():
                         print(f"⚠️ Last used state file not found: {state_path}")
                         # Reset the metadata to avoid trying to load this file again
@@ -1305,7 +1325,7 @@ def save_session_state():
     
     # Convert to JSON-serializable format
     serialized_data = json.dumps(session_data, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
-    
+
     # Save to browser storage using Streamlit's experimental_set_query_params
     st.experimental_set_query_params(
         session_data=serialized_data
@@ -1483,7 +1503,13 @@ def initialize_state():
         last_used_state = metadata.get("last_used_state")
         
         if last_used_state:
-            state_path = get_state_dir() / last_used_state
+            # Ensure the state name has .json extension
+            if not last_used_state.endswith('.json'):
+                state_file_name = f"{last_used_state}.json"
+            else:
+                state_file_name = last_used_state
+                
+            state_path = get_state_dir() / state_file_name
             print(f"📥 Last used state from metadata: {last_used_state}")
             
             # Check if the file exists before trying to load it
@@ -1506,7 +1532,7 @@ def initialize_state():
                     # Set state flags
                     st.session_state.state_loaded = True
                     st.session_state.default_state_loaded = True
-                    st.session_state.selected_state_file = last_used_state
+                    st.session_state.selected_state_file = state_file_name
                     
                     # Restore last used TM and Task
                     last_tm_id = metadata.get("last_tm_id")
@@ -1721,7 +1747,7 @@ def create_new_state(state_name: str, save_current_first: bool = False) -> bool:
             del st.session_state.current_state_files
         
         # Update metadata to use new state
-        save_last_used_state(state_filename)
+        save_last_used_state(state_name)
         
         # Set success message
         st.session_state.state_success_message = f"New state created as {state_filename}"
