@@ -48,11 +48,45 @@ class VectorStore:
             )
         )
         
-        # Initialize embedding function
-        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            model_name=self.config.embedding_model
-        )
+        # Initialize embedding function with retry logic and timeout handling
+        try:
+            print(f"🔍 DEBUG: Initializing OpenAI embedding function with model {self.config.embedding_model}")
+            import backoff
+            import openai
+            from openai import OpenAIError
+            
+            # Define a retry-enabled embedding function
+            @backoff.on_exception(
+                backoff.expo,
+                (OpenAIError, TimeoutError),
+                max_tries=5,
+                max_time=30
+            )
+            def embedding_function_with_retry(texts):
+                try:
+                    print(f"🔍 DEBUG: Calling OpenAI API for {len(texts)} texts")
+                    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=30.0)
+                    response = client.embeddings.create(
+                        input=texts,
+                        model=self.config.embedding_model
+                    )
+                    print(f"🔍 DEBUG: OpenAI API call successful")
+                    return [embedding.embedding for embedding in response.data]
+                except Exception as e:
+                    print(f"❌ DEBUG: Error in OpenAI API call: {str(e)}")
+                    raise
+            
+            # Create the embedding function
+            self.embedding_function = embedding_function_with_retry
+            print(f"✅ DEBUG: OpenAI embedding function initialized successfully")
+            
+        except ImportError:
+            print(f"⚠️ DEBUG: Could not import backoff or openai, falling back to standard embedding function")
+            # Fall back to standard embedding function
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                model_name=self.config.embedding_model
+            )
         
         # Initialize indices dictionary
         self.indices = {}
@@ -101,12 +135,33 @@ class VectorStore:
         """Safely generate embeddings for a list of texts."""
         try:
             # Use the embedding function directly
+            print(f"🔍 DEBUG: Generating embeddings for {len(texts)} text(s)")
+            print(f"🔍 DEBUG: First text preview: {texts[0][:100]}..." if texts and len(texts[0]) > 100 else f"🔍 DEBUG: First text: {texts[0]}" if texts else "🔍 DEBUG: No texts to embed")
+            print(f"🔍 DEBUG: Using embedding model: {self.config.embedding_model}")
+            
+            start_time = datetime.now()
+            print(f"🔍 DEBUG: Starting embedding generation at {start_time}")
+            
             embeddings = self.embedding_function(texts)
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            print(f"🔍 DEBUG: Embedding generation completed in {duration:.2f} seconds")
+            print(f"🔍 DEBUG: Generated {len(embeddings)} embeddings")
+            
+            if embeddings and len(embeddings) > 0:
+                print(f"🔍 DEBUG: First embedding dimensions: {len(embeddings[0])}")
+                print(f"🔍 DEBUG: First embedding preview: {embeddings[0][:5]}...")
+            
             return embeddings
         except Exception as e:
+            print(f"❌ DEBUG: Error generating embeddings: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             logging.error(f"Error generating embeddings: {str(e)}")
             # Return zero embeddings as fallback
             dimension = 1536  # OpenAI's default embedding dimension
+            print(f"🔍 DEBUG: Returning fallback zero embeddings with dimension {dimension}")
             return [[0.0] * dimension for _ in texts]
 
     async def create_index(self, name: str, description: Optional[str] = None) -> str:
@@ -202,31 +257,55 @@ class VectorStore:
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
         """Split text into overlapping chunks."""
+        print(f"🔍 DEBUG: Chunking text of length {len(text)} with chunk_size={chunk_size}, overlap={overlap}")
+        
         chunks = []
         start = 0
         text_len = len(text)
         
+        print(f"🔍 DEBUG: Starting chunking process")
+        chunk_count = 0
+        
         while start < text_len:
             remaining = text_len - start
+            print(f"🔍 DEBUG: Processing chunk at position {start}, remaining text: {remaining} chars")
             
             if remaining <= chunk_size:
                 # If remaining text is smaller than chunk_size, add it and we're done
                 chunks.append(text[start:])
+                print(f"🔍 DEBUG: Added final chunk {chunk_count+1} with {remaining} chars")
                 break
             
             # Find a good breaking point within the chunk_size
             end = start + chunk_size
+            print(f"🔍 DEBUG: Finding break point near position {end}")
+            
+            # Try to find a space to break at
+            original_end = end
             while end > start and not text[end - 1].isspace():
                 end -= 1
             
             # If we couldn't find a space, just use the full chunk_size
             if end == start:
-                end = start + chunk_size
+                print(f"🔍 DEBUG: No space found for clean break, using original end point {original_end}")
+                end = original_end
+            else:
+                print(f"🔍 DEBUG: Found break point at position {end} (backed up {original_end - end} chars)")
             
-            chunks.append(text[start:end])
+            chunk_text = text[start:end]
+            chunks.append(chunk_text)
+            chunk_count += 1
+            print(f"🔍 DEBUG: Added chunk {chunk_count} with {len(chunk_text)} chars")
+            
+            # Move start position for next chunk, accounting for overlap
             start = end - overlap
+            print(f"🔍 DEBUG: New start position: {start} (with {overlap} chars overlap)")
         
-        return [chunk.strip() for chunk in chunks if chunk.strip()]  # Added strip() to clean chunks
+        # Clean chunks by stripping whitespace
+        cleaned_chunks = [chunk.strip() for chunk in chunks if chunk.strip()]
+        print(f"🔍 DEBUG: Chunking complete. Generated {len(cleaned_chunks)} chunks after cleaning")
+        
+        return cleaned_chunks
 
     async def add_items(self, embeddings: List[List[float]], metadatas: List[Dict[str, Any]], 
                        contents: List[str]) -> Dict[str, Any]:
@@ -708,9 +787,14 @@ class VectorStore:
                                progress_callback: Optional[Callable[[str, int, int], None]] = None) -> List[str]:
         """Add file content to a specific index with chunking."""
         try:
+            print(f"\n🔍 DEBUG: Starting add_file_to_index for {getattr(file_path_or_obj, 'name', file_path_or_obj)}")
+            print(f"🔍 DEBUG: Target index: {index_name}")
+            
             # Ensure index exists
+            print(f"🔍 DEBUG: Creating/ensuring index exists: {index_name}")
             await self.create_index(index_name)
             collection = self._ensure_collection(index_name)
+            print(f"🔍 DEBUG: Collection obtained: {collection.name}")
             
             # Update progress
             if progress_callback:
@@ -723,56 +807,95 @@ class VectorStore:
                 
                 if hasattr(file_path_or_obj, 'read'):  # File-like object
                     filename = getattr(file_path_or_obj, 'name', '')
+                    print(f"🔍 DEBUG: Processing file-like object: {filename}")
+                    
                     if filename.lower().endswith('.pdf'):
-                        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_path_or_obj.read()))
+                        print(f"🔍 DEBUG: Detected PDF file: {filename}")
+                        print(f"🔍 DEBUG: Reading PDF content into memory")
+                        pdf_content = file_path_or_obj.read()
+                        print(f"🔍 DEBUG: PDF content read, size: {len(pdf_content)} bytes")
+                        
+                        print(f"🔍 DEBUG: Creating PyPDF2.PdfReader")
+                        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
+                        print(f"🔍 DEBUG: PDF has {len(pdf_reader.pages)} pages")
+                        
                         text = ""
                         total_pages = len(pdf_reader.pages)
                         for i, page in enumerate(pdf_reader.pages):
-                            text += page.extract_text() + "\n"
+                            print(f"🔍 DEBUG: Extracting text from page {i+1}/{total_pages}")
+                            page_text = page.extract_text()
+                            print(f"🔍 DEBUG: Extracted {len(page_text)} characters from page {i+1}")
+                            text += page_text + "\n"
                             if progress_callback:
                                 progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
                                                i+1, total_pages)
+                        
+                        print(f"🔍 DEBUG: Total text extracted: {len(text)} characters")
                         file_path_or_obj.seek(0)
                     else:
+                        print(f"🔍 DEBUG: Processing non-PDF file: {filename}")
                         content = file_path_or_obj.read()
                         text = content.decode('utf-8') if isinstance(content, bytes) else str(content)
+                        print(f"🔍 DEBUG: Extracted {len(text)} characters from file")
                 else:  # File path
                     file_path = Path(file_path_or_obj)
+                    print(f"🔍 DEBUG: Processing file path: {file_path}")
+                    
                     if not file_path.exists():
+                        print(f"❌ DEBUG: File not found: {file_path}")
                         raise FileNotFoundError(f"File not found: {file_path}")
                     
                     if file_path.suffix.lower() == '.pdf':
+                        print(f"🔍 DEBUG: Detected PDF file path: {file_path}")
                         with open(file_path, 'rb') as f:
+                            print(f"🔍 DEBUG: Creating PyPDF2.PdfReader from file")
                             pdf_reader = PyPDF2.PdfReader(f)
+                            print(f"🔍 DEBUG: PDF has {len(pdf_reader.pages)} pages")
+                            
                             text = ""
                             total_pages = len(pdf_reader.pages)
                             for i, page in enumerate(pdf_reader.pages):
-                                text += page.extract_text() + "\n"
+                                print(f"🔍 DEBUG: Extracting text from page {i+1}/{total_pages}")
+                                page_text = page.extract_text()
+                                print(f"🔍 DEBUG: Extracted {len(page_text)} characters from page {i+1}")
+                                text += page_text + "\n"
                                 if progress_callback:
                                     progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
                                                    i+1, total_pages)
+                            print(f"🔍 DEBUG: Total text extracted: {len(text)} characters")
                     else:
+                        print(f"🔍 DEBUG: Processing non-PDF file path: {file_path}")
                         with open(file_path, 'r', encoding='utf-8') as f:
                             text = f.read()
+                            print(f"🔍 DEBUG: Extracted {len(text)} characters from file")
             
             except Exception as e:
+                print(f"❌ DEBUG: Error reading file: {str(e)}")
+                import traceback
+                print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
                 logging.error(f"Error reading file: {str(e)}")
                 raise
             
             # Generate chunks
+            print(f"🔍 DEBUG: Generating chunks with size={self.config.chunk_size}, overlap={self.config.chunk_overlap}")
             chunks = self._chunk_text(text, self.config.chunk_size, self.config.chunk_overlap)
+            print(f"🔍 DEBUG: Generated {len(chunks)} chunks")
+            
             if not chunks:
+                print(f"❌ DEBUG: No valid chunks generated from file")
                 raise ValueError("No valid chunks generated from file")
             
             # Generate unique IDs for chunks
             chunk_ids = []
             original_text_length = len(text)
             total_chunks = len(chunks)
+            print(f"🔍 DEBUG: Original text length: {original_text_length}, Total chunks: {total_chunks}")
             
             # Create root chunk with full metadata
             import hashlib
             from datetime import datetime
             
+            print(f"🔍 DEBUG: Creating root chunk")
             root_id = hashlib.md5(text.encode()).hexdigest()
             root_metadata = {
                 **(metadata or {}),
@@ -783,14 +906,21 @@ class VectorStore:
                 "chunk_overlap": self.config.chunk_overlap,
                 "created_at": datetime.now().isoformat()
             }
+            print(f"🔍 DEBUG: Root metadata created")
             
             # Generate embeddings for chunks
+            print(f"🔍 DEBUG: Generating embeddings for {len(chunks)} chunks")
             embeddings = []
-            for chunk in chunks:
+            for i, chunk in enumerate(chunks):
+                print(f"🔍 DEBUG: Generating embedding for chunk {i+1}/{len(chunks)} ({len(chunk)} chars)")
                 embedding = self._safe_embed([chunk])[0]
                 embeddings.append(embedding)
+                print(f"🔍 DEBUG: Embedding generated for chunk {i+1}")
+            
+            print(f"🔍 DEBUG: All embeddings generated")
             
             # Add root chunk
+            print(f"🔍 DEBUG: Adding root chunk to collection")
             collection.add(
                 ids=[root_id],
                 documents=[text[:self.config.chunk_size]],  # Store first chunk size of text
@@ -798,9 +928,12 @@ class VectorStore:
                 embeddings=[embeddings[0]]  # Use first chunk embedding
             )
             chunk_ids.append(root_id)
+            print(f"🔍 DEBUG: Root chunk added with ID: {root_id}")
             
             # Add individual chunks with their metadata
+            print(f"🔍 DEBUG: Adding {total_chunks} individual chunks")
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                print(f"🔍 DEBUG: Processing chunk {i+1}/{total_chunks}")
                 chunk_id = hashlib.md5(f"{root_id}_{i}".encode()).hexdigest()
                 chunk_metadata = {
                     **(metadata or {}),
@@ -811,6 +944,7 @@ class VectorStore:
                     "created_at": datetime.now().isoformat()
                 }
                 
+                print(f"🔍 DEBUG: Adding chunk {i+1} to collection")
                 collection.add(
                     ids=[chunk_id],
                     documents=[chunk],
@@ -818,13 +952,18 @@ class VectorStore:
                     embeddings=[embedding]
                 )
                 chunk_ids.append(chunk_id)
+                print(f"🔍 DEBUG: Chunk {i+1} added with ID: {chunk_id}")
                 
                 if progress_callback:
                     progress_callback(f"Processing chunk {i+1}/{total_chunks}", i+1, total_chunks)
             
+            print(f"✅ DEBUG: File processing completed successfully. Added {len(chunk_ids)} chunks to index.")
             return chunk_ids
             
         except Exception as e:
+            print(f"❌ DEBUG: Error adding file to index: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             logging.error(f"Error adding file to index: {str(e)}")
             raise
 
