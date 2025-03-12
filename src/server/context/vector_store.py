@@ -77,13 +77,23 @@ class VectorStore:
     def _load_existing_indices(self):
         """Load existing collections from ChromaDB."""
         try:
-            for collection in self.client.list_collections():
-                if collection.name.startswith('vs_'):
+            # Get all collections
+            all_collections = self.client.list_collections()
+            collection_names = [c.name for c in all_collections]
+            logging.info(f"Found {len(collection_names)} collections in ChromaDB: {collection_names}")
+            
+            # Load all collections, including those without vs_ prefix
+            for collection in all_collections:
+                try:
                     self.indices[collection.name] = self.client.get_collection(
                         name=collection.name,
                         embedding_function=self.embedding_function
                     )
-            logging.info(f"Loaded {len(self.indices)} existing vector indices")
+                    logging.info(f"Loaded collection: {collection.name}")
+                except Exception as e:
+                    logging.error(f"Error loading collection {collection.name}: {str(e)}")
+            
+            logging.info(f"Loaded {len(self.indices)} vector indices")
         except Exception as e:
             logging.error(f"Error loading existing collections: {str(e)}")
 
@@ -133,10 +143,8 @@ class VectorStore:
             collections = self.client.list_collections()
             print(f"DEBUG - _reload_indices found collections: {[c.name for c in collections]}")
             
-            vs_collections = [c for c in collections if c.name.startswith('vs_')]
-            print(f"DEBUG - _reload_indices found vs_ collections: {[c.name for c in vs_collections]}")
-            
-            for collection in vs_collections:
+            # Load all collections, including those without vs_ prefix
+            for collection in collections:
                 try:
                     self.indices[collection.name] = self.client.get_collection(
                         name=collection.name,
@@ -159,22 +167,21 @@ class VectorStore:
             
             # Process each collection
             for col in collections:
-                if col.name.startswith("vs_"):
-                    try:
-                        count = col.count()
-                        indices.append({
-                            "name": col.name,
-                            "description": col.metadata.get("description", ""),
-                            "count": count
-                        })
-                    except Exception as e:
-                        logging.error(f"Error getting collection stats for {col.name}: {str(e)}")
-                        # Still include the collection even if stats fail
-                        indices.append({
-                            "name": col.name,
-                            "description": col.metadata.get("description", ""),
-                            "count": 0
-                        })
+                try:
+                    count = col.count()
+                    indices.append({
+                        "name": col.name,
+                        "description": col.metadata.get("description", ""),
+                        "count": count
+                    })
+                except Exception as e:
+                    logging.error(f"Error getting collection stats for {col.name}: {str(e)}")
+                    # Still include the collection even if stats fail
+                    indices.append({
+                        "name": col.name,
+                        "description": col.metadata.get("description", ""),
+                        "count": 0
+                    })
             
             logging.info(f"Listed {len(indices)} indices: {[idx['name'] for idx in indices]}")
             return indices
