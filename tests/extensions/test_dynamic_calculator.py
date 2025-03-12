@@ -1,8 +1,11 @@
 """Test the dynamic calculator tool loading and functionality."""
 import pytest
+import sys
+from typing import Dict, Any
 from unittest.mock import patch, MagicMock
 from src.server.extensions.dynamic_tools_loader import tools_loader
-from src.server.tools.tools_catalog import tools_catalog, ToolMetadata, ToolType, ParameterInfo, ReturnInfo
+from src.server.tools.tools_catalog import tools_catalog, ToolMetadata, ParameterInfo, ReturnInfo
+from src.server.models.tools_descriptors import ToolType
 
 @pytest.fixture(autouse=True)
 def setup_teardown():

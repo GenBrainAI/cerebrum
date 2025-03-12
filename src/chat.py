@@ -32,20 +32,34 @@ def get_state_dir() -> Path:
     return state_dir
 
 def save_current_state(state_name: str) -> str:
-    """Save the current state."""
+    """Save the current state.
+    
+    Args:
+        state_name: Name of the state to save (without .json extension)
+        
+    Returns:
+        str: Result of save operation
+    """
     try:
         state_dir = get_state_dir()
+        # Ensure state name has .json extension
+        if not state_name.endswith('.json'):
+            state_filename = f"{state_name}.json"
+        else:
+            state_filename = state_name
+            state_name = state_name.replace('.json', '')
+            
         location = StorageLocation(
             type=StorageType.file,
             location=str(state_dir),
             state_name=f"{state_name}"
         )
         
-        # Create context state with only session info (no messages)
+        # Create context state with session info
         context_state = {
-            'current_tasksmanager_id': st.session_state.current_tasksmanager_id,
-            'current_task_id': st.session_state.current_task_id,
-            'current_session_id': st.session_state.current_session_id
+            'current_tasksmanager_id': st.session_state.get('current_tasksmanager_id'),
+            'current_task_id': st.session_state.get('current_task_id'),
+            'current_session_id': st.session_state.get('current_session_id')
         }
         
         print(f"\n🔍 Context state to save:")
@@ -58,28 +72,70 @@ def save_current_state(state_name: str) -> str:
         result = save_to_storage(persistence_model, location)
         print(f"  Save result: {result}")
         
-        # Save metadata about last used state
-        save_last_used_state(f"{state_name}")
+        # Verify file was created
+        state_file_path = state_dir / state_filename
+        if not state_file_path.exists():
+            print(f"⚠️ Warning: Expected state file not found at {state_file_path}")
+            st.session_state.state_error_message = f"Failed to create state file: {state_filename}"
+        else:
+            print(f"✅ Confirmed state file saved at {state_file_path}")
+            st.session_state.state_success_message = f"State saved successfully as {state_filename}"
+        
+        # Save metadata about last used state - use state_name without .json extension
+        save_last_used_state(state_name)
         
         return result
     except Exception as e:
         print(f"❌ Error saving state: {str(e)}")
-        st.error(f"Error saving state: {str(e)}")
+        st.session_state.state_error_message = f"Error saving state: {str(e)}"
         return str(e)
 
 def load_state(state_path: Optional[str] = None):
     """Load Cerebrum state from file."""
     try:
-        if not state_path and not st.session_state.default_state_loaded:
+        print(f"\n📂 Load state called with path: {state_path}")
+        print(f"  Default state loaded flag: {st.session_state.get('default_state_loaded', False)}")
+        
+        # Attempt to load default state if no specific path provided
+        if not state_path and not st.session_state.get('default_state_loaded'):
             metadata = get_last_used_state()
             if metadata.get("last_used_state"):
-                state_path = str(get_state_dir() / metadata["last_used_state"])
+                # Ensure the state name has .json extension
+                state_name = metadata["last_used_state"]
+                if not state_name.endswith('.json'):
+                    state_file_name = f"{state_name}.json"
+                else:
+                    state_file_name = state_name
+                
+                state_path = str(get_state_dir() / state_file_name)
+                print(f"  Loading last used state from metadata: {state_path}")
+                
+                # Check if the file exists
+                if not Path(state_path).exists():
+                    print(f"⚠️ Last used state file not found: {state_path}")
+                    st.session_state.state_error_message = f"Last used state file not found: {metadata['last_used_state']}"
+                    # Reset the metadata to avoid trying to load this file again
+                    save_last_used_state("")
+                    return "Last used state file not found"
             else:
-                state_path = "state/default_state.json"
+                default_state = "state/default_state.json"
+                if Path(default_state).exists():
+                    state_path = default_state
+                    print(f"  Using default state: {default_state}")
+                else:
+                    print("  No default state available")
+                    st.session_state.state_error_message = "No default state available"
+                    return "No default state available"
             st.session_state.default_state_loaded = True
         
         if state_path:
             print(f"\n📥 Loading state from: {state_path}")
+            
+            # Check if the state file exists
+            if not Path(state_path).exists():
+                print(f"⚠️ State file not found: {state_path}")
+                st.session_state.state_error_message = f"State file not found: {Path(state_path).name}"
+                return f"State file not found: {Path(state_path).name}"
             
             location = StorageLocation(
                 type=StorageType.file,
@@ -90,32 +146,119 @@ def load_state(state_path: Optional[str] = None):
             # Store location in session state
             st.session_state.state_location = location
             
-            # Load the state
-            json_str = load_from_storage(location)
-            state_data = json.loads(json_str)
-            
-            print(f"\n🔍 Loaded state data:")
-            print(f"  Has context_state: {'context_state' in state_data}")
-            if 'context_state' in state_data:
-                context_state = state_data['context_state']
-                print(f"  Context state content: {context_state}")
+            try:
+                # Reset the persistence model to start clean
+                persistence_model = PersistenceModelFactory.persistence_model("inmemory")
                 
-                # Restore session state from context
-                if 'messages' in context_state:
-                    st.session_state.messages = [Message(**msg) if isinstance(msg, dict) else msg 
-                                               for msg in context_state['messages']]
-                st.session_state.current_tasksmanager_id = context_state.get('current_tasksmanager_id')
-                st.session_state.current_task_id = context_state.get('current_task_id')
-                st.session_state.current_session_id = context_state.get('current_session_id')
-            
-            # Save this as the last used state
-            save_last_used_state(os.path.basename(state_path))
-            
-            return f"Successfully loaded state from {state_path}"
+                # Set as the current persistence model
+                st.session_state.persistence_model = persistence_model
+                
+                # Load the state
+                json_str = load_from_storage(location)
+                state_data = json.loads(json_str)
+                
+                print(f"\n🔍 Loaded state data keys: {list(state_data.keys())}")
+                
+                # Process each collection in the loaded data
+                for collection_name in ['toolsets', 'tools', 'tasksmanagers', 'tasks', 
+                                        'messages', 'crewai_config', 'curried_proxies', 'task_flows']:
+                    if collection_name in state_data:
+                        if state_data[collection_name]:  # Only if there's data
+                            try:
+                                raw_data = json.loads(state_data[collection_name])
+                                if collection_name == 'tasksmanagers':
+                                    for tm_id, tm_data in raw_data.items():
+                                        persistence_model.tasksmanagers.create(TasksManager(**tm_data))
+                                elif collection_name == 'tasks':
+                                    for task_id, task_data in raw_data.items():
+                                        persistence_model.tasks.create(Task(**task_data))
+                                else:
+                                    # For other collections, use update
+                                    persistence_model.update(collection_name, raw_data)
+                                print(f"  Loaded {collection_name}: {len(raw_data) if isinstance(raw_data, dict) else 'non-dict data'}")
+                            except Exception as e:
+                                print(f"❌ Error loading {collection_name}: {str(e)}")
+                        else:
+                            print(f"  Empty {collection_name} in state data")
+                
+                # Process context state if available
+                if 'context_state' in state_data:
+                    context_state = state_data['context_state']
+                    print(f"  Context state content: {context_state}")
+                    
+                    # Restore session state from context
+                    if 'messages' in context_state:
+                        st.session_state.messages = [Message(**msg) if isinstance(msg, dict) else msg 
+                                                   for msg in context_state['messages']]
+                    # Use get() to handle missing or None values safely
+                    st.session_state.current_tasksmanager_id = context_state.get('current_tasksmanager_id')
+                    st.session_state.current_task_id = context_state.get('current_task_id')
+                    st.session_state.current_session_id = context_state.get('current_session_id')
+                else:
+                    # If no context state, try to find a default session
+                    print("  No context state found, looking for default session")
+                    
+                    # Find the first task manager
+                    tasksmanagers = persistence_model.tasksmanagers.list()
+                    if tasksmanagers:
+                        default_tm = tasksmanagers[0]
+                        st.session_state.current_tasksmanager_id = default_tm.id
+                        print(f"  Using first task manager: {default_tm.name} (ID: {default_tm.id})")
+                        
+                        # Find the first task for this task manager
+                        tasks = get_tasks_for_tasksmanager(default_tm.id)
+                        if tasks:
+                            default_task = tasks[0]
+                            st.session_state.current_task_id = default_task.id
+                            print(f"  Using first task: {default_task.name} (ID: {default_task.id})")
+                            
+                            # Find or create a session for this task
+                            if hasattr(default_task, 'chat_sessions') and default_task.chat_sessions:
+                                # Use the first session
+                                session_id = list(default_task.chat_sessions.keys())[0]
+                                st.session_state.current_session_id = session_id
+                                print(f"  Using existing session: {session_id}")
+                            else:
+                                # Create a new session
+                                session_id = create_new_session(default_task.id)
+                                st.session_state.current_session_id = session_id
+                                print(f"  Created new session: {session_id}")
+                            
+                            # Initialize empty messages
+                            st.session_state.messages = []
+                
+                # Save this as the last used state
+                state_name = os.path.basename(state_path)
+                # Remove .json extension for consistency in metadata
+                if state_name.endswith('.json'):
+                    state_name_for_metadata = state_name[:-5]
+                else:
+                    state_name_for_metadata = state_name
+                    
+                save_last_used_state(state_name_for_metadata)
+                st.session_state.selected_state_file = state_name
+                
+                # Also reset selection tracking to sync with newly loaded state
+                st.session_state.previous_tm_selection = None
+                st.session_state.previous_task_selection = None
+                
+                # Force refresh of state files list on next render
+                if 'current_state_files' in st.session_state:
+                    del st.session_state.current_state_files
+                
+                success_message = f"Successfully loaded state from {os.path.basename(state_path)}"
+                st.session_state.state_success_message = success_message
+                return success_message
+            except Exception as e:
+                print(f"❌ Error loading state data: {e}")
+                st.session_state.state_error_message = f"Error loading state data: {str(e)}"
+                return f"Error loading state data: {str(e)}"
         return "No state file specified"
     except Exception as e:
         if state_path == "state/default_state.json":
             return "No default state loaded"
+        print(f"❌ Error loading state: {str(e)}")
+        st.session_state.state_error_message = f"Error loading state: {str(e)}"
         return f"Error loading state: {str(e)}"
 
 def render_view_specific_chat():
@@ -140,14 +283,41 @@ def render_state_management():
             # Try to get the last used state from metadata
             metadata = get_last_used_state()
             st.session_state.selected_state_file = metadata.get("last_used_state", "")
+            print(f"  Set selected_state_file to: {st.session_state.selected_state_file}")
+            
         if 'state_loaded' not in st.session_state:
             st.session_state.state_loaded = False
+            
         if 'state_location' not in st.session_state:
             st.session_state.state_location = None
+            
+        # Display current state information
+        if st.session_state.selected_state_file:
+            # Check if the file actually exists
+            state_path = get_state_dir() / st.session_state.selected_state_file
+            if state_path.exists():
+                st.info(f"Current state: {st.session_state.selected_state_file}")
+            else:
+                st.warning(f"Selected state file not found: {st.session_state.selected_state_file}")
+                # Reset the selected state file since it doesn't exist
+                st.session_state.selected_state_file = ""
         
         # State loading section
         st.write("Load State")
-        state_files = list((get_state_dir()).glob("*.json"))
+        
+        # Get state files - use cached version if available
+        try:
+            if 'current_state_files' not in st.session_state or st.session_state.current_state_files is None:
+                state_files = list((get_state_dir()).glob("*.json"))
+                st.session_state.current_state_files = state_files
+                print(f"  Loaded {len(state_files)} state files")
+            else:
+                state_files = st.session_state.current_state_files
+                print(f"  Using cached state files: {len(state_files) if state_files else 0}")
+        except Exception as e:
+            print(f"❌ Error loading state files: {str(e)}")
+            state_files = []
+            st.session_state.current_state_files = []
         
         # Dropdown selection
         if state_files:
@@ -158,21 +328,33 @@ def render_state_management():
                 print("\n🔄 State selection changed")
                 selected = st.session_state.state_selector
                 if selected != st.session_state.selected_state_file:
+                    print(f"  Selection changed from {st.session_state.selected_state_file} to {selected}")
                     st.session_state.selected_state_file = selected
                     st.session_state.state_loaded = False
+                    
                     if selected:  # Auto-load when a state is selected
                         try:
                             state_to_load = str(get_state_dir() / selected)
+                            # Check if the file exists before trying to load it
+                            if not Path(state_to_load).exists():
+                                print(f"⚠️ Selected state file not found: {state_to_load}")
+                                st.session_state.state_error_message = f"Selected state file not found: {selected}"
+                                return
+                                
+                            print(f"  Auto-loading state: {state_to_load}")
                             result = load_state(state_to_load)
                             st.session_state.state_loaded = True
+                            print(f"  Auto-load result: {result}")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error loading state: {str(e)}")
+                            print(f"❌ Error auto-loading state: {str(e)}")
+                            st.session_state.state_error_message = f"Error loading state: {str(e)}"
             
             # Use the last used state as the default index if available
             default_index = 0
             if st.session_state.selected_state_file in file_names:
                 default_index = file_names.index(st.session_state.selected_state_file)
+                print(f"  Using default index {default_index} for {st.session_state.selected_state_file}")
             
             selected_state = st.selectbox(
                 "Select saved state",
@@ -181,54 +363,79 @@ def render_state_management():
                 key="state_selector",
                 on_change=on_state_select
             )
+        else:
+            st.warning("No state files found. Create a new state to get started.")
+            selected_state = None
         
         # Manual path input
-        manual_state_path = st.text_input("Or enter state file path")
+        manual_state_path = st.text_input("Or enter state file path", key="manual_state_path")
         
         # Action buttons
         if selected_state or manual_state_path:
             state_to_load = str(get_state_dir() / selected_state) if selected_state else manual_state_path
-            if st.button("Load State", use_container_width=True):
+            
+            # Check if the file exists before showing the load button
+            file_exists = Path(state_to_load).exists()
+            
+            if st.button("Load State", key="load_state_btn", use_container_width=True, disabled=not file_exists):
                 try:
-                    result = load_state(state_to_load)
-                    st.session_state.state_loaded = True
-                    st.success(result)
+                    with st.spinner("Loading state..."):
+                        result = load_state(state_to_load)
+                        st.session_state.state_loaded = True
+                        st.session_state.state_success_message = result
+                        st.rerun()
                 except Exception as e:
-                    st.error(f"Error loading state: {str(e)}")
+                    st.session_state.state_error_message = f"Error loading state: {str(e)}"
+            
+            if not file_exists and (selected_state or manual_state_path):
+                st.warning(f"State file not found: {Path(state_to_load).name}")
             
             if selected_state and st.session_state.state_loaded:
-                if st.button("Save State", use_container_width=True):
+                if st.button("Save State", key="save_state_btn", use_container_width=True):
                     try:
-                        # Save current state including chat messages
-                        if st.session_state.get('messages') and st.session_state.get('current_task_id'):
-                            save_chat_messages(
-                                st.session_state.current_task_id, 
-                                st.session_state.messages
-                            )
-                        result = save_current_state(selected_state)
-                        st.success("State saved successfully")
+                        with st.spinner("Saving state..."):
+                            # Save current state including chat messages
+                            if st.session_state.get('messages') and st.session_state.get('current_task_id'):
+                                save_chat_messages(
+                                    st.session_state.current_task_id, 
+                                    st.session_state.messages
+                                )
+                            result = save_current_state(selected_state)
+                            st.session_state.state_success_message = "State saved successfully"
+                            
+                            # Force refresh of state files list
+                            st.session_state.current_state_files = list((get_state_dir()).glob("*.json"))
+                            
+                            st.rerun()
                     except Exception as e:
-                        st.error(f"Error saving state: {str(e)}")
+                        st.session_state.state_error_message = f"Error saving state: {str(e)}"
         
         st.write("---")
         
         # New state creation
-        if persistence_model.tasksmanagers.list():
-            st.write("Create New State")
-            new_state_name = st.text_input("New State Name")
-            if st.button("Create State"):
-                if new_state_name:
-                    try:
-                        result = save_current_state(new_state_name)
-                        new_state_filename = f"{new_state_name}.json"
-                        # Use rerun to update the UI with new state
-                        st.success(f"New state created as {new_state_filename}")
-                        st.session_state.state_selector = new_state_filename
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error creating state: {str(e)}")
-                else:
-                    st.error("Please enter a name for the new state")
+        st.write("Create New State")
+        new_state_name = st.text_input("New State Name", key="new_state_name_input")
+        save_current = st.checkbox("Save current state first", value=True, key="save_current_checkbox")
+        
+        if st.button("Create State", key="create_state_btn"):
+            if new_state_name:
+                try:
+                    with st.spinner("Creating new state..."):
+                        # Create new state with default session
+                        success = create_new_state(new_state_name, save_current)
+                        if success:
+                            st.session_state.state_success_message = f"New state '{new_state_name}' created successfully!"
+                            
+                            # Force refresh of state files list
+                            st.session_state.current_state_files = list((get_state_dir()).glob("*.json"))
+                            
+                            # Force rerun to update the UI with new state
+                            time.sleep(1)  # Give a moment for the user to see the success message
+                            st.rerun()
+                except Exception as e:
+                    st.session_state.state_error_message = f"Error creating state: {str(e)}"
+            else:
+                st.session_state.state_error_message = "Please enter a name for the new state"
 
 
 # In the render_navigation function, add:
@@ -382,6 +589,22 @@ def initialize_session_state():
         st.session_state.previous_tm_selection = None
     if 'previous_task_selection' not in st.session_state:
         st.session_state.previous_task_selection = None
+    
+    # State management variables
+    if 'selected_state_file' not in st.session_state:
+        st.session_state.selected_state_file = ""
+    if 'state_loaded' not in st.session_state:
+        st.session_state.state_loaded = False
+    if 'state_initialized' not in st.session_state:
+        st.session_state.state_initialized = False
+    if 'state_error_message' not in st.session_state:
+        st.session_state.state_error_message = None
+    if 'state_success_message' not in st.session_state:
+        st.session_state.state_success_message = None
+    if 'pending_state_load' not in st.session_state:
+        st.session_state.pending_state_load = None
+    if 'current_state_files' not in st.session_state:
+        st.session_state.current_state_files = None
     
     # Mark as initialized
     st.session_state.session_initialized = True
@@ -994,15 +1217,42 @@ def save_last_used_state(state_name: str):
     try:
         state_dir = get_state_dir()
         metadata_path = state_dir / "metadata.json"
+        
+        # Get current metadata if it exists
+        current_metadata = {}
+        if metadata_path.exists():
+            try:
+                with open(metadata_path) as f:
+                    current_metadata = json.load(f)
+            except Exception as e:
+                print(f"⚠️ Error loading existing metadata: {str(e)}")
+                # Continue with empty metadata
+        
+        # Update metadata
         metadata = {
             "last_used_state": state_name,
             "last_tm_id": st.session_state.get("current_tasksmanager_id"),
-            "last_task_id": st.session_state.get("current_task_id")
+            "last_task_id": st.session_state.get("current_task_id"),
+            "last_updated": datetime.now().isoformat()
         }
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f)
+        
+        # Merge with existing metadata to preserve other fields
+        if isinstance(current_metadata, dict):
+            for key, value in current_metadata.items():
+                if key not in metadata:
+                    metadata[key] = value
+        
+        # Save metadata
+        try:
+            with open(metadata_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+            print(f"✅ Saved metadata: {metadata}")
+        except Exception as e:
+            print(f"❌ Error writing metadata file: {str(e)}")
+            st.session_state.state_error_message = f"Error saving metadata: {str(e)}"
     except Exception as e:
-        st.error(f"Error saving metadata: {str(e)}")
+        print(f"❌ Error in save_last_used_state: {str(e)}")
+        st.session_state.state_error_message = f"Error saving metadata: {str(e)}"
 
 def get_last_used_state() -> dict:
     """Get the name of the last used state from metadata file."""
@@ -1010,11 +1260,57 @@ def get_last_used_state() -> dict:
         state_dir = get_state_dir()
         metadata_path = state_dir / "metadata.json"
         if metadata_path.exists():
-            with open(metadata_path) as f:
-                return json.load(f)
+            try:
+                with open(metadata_path) as f:
+                    metadata = json.load(f)
+                
+                # Validate the metadata
+                if not isinstance(metadata, dict):
+                    print(f"⚠️ Invalid metadata format: {metadata}")
+                    return {}
+                
+                # Check if the last_used_state exists
+                if "last_used_state" in metadata and metadata["last_used_state"]:
+                    # Ensure the state name has .json extension for file checking
+                    state_name = metadata["last_used_state"]
+                    if not state_name.endswith('.json'):
+                        state_file_name = f"{state_name}.json"
+                    else:
+                        state_file_name = state_name
+                    
+                    state_path = state_dir / state_file_name
+                    if not state_path.exists():
+                        print(f"⚠️ Last used state file not found: {state_path}")
+                        # Reset the metadata to avoid trying to load this file again
+                        save_last_used_state("")
+                        return {}
+                
+                return metadata
+            except json.JSONDecodeError:
+                print(f"⚠️ Error decoding metadata file: {metadata_path}")
+                # Backup the corrupted file and create a new one
+                backup_path = metadata_path.with_suffix(".json.bak")
+                try:
+                    import shutil
+                    shutil.copy(metadata_path, backup_path)
+                    print(f"✅ Backed up corrupted metadata to: {backup_path}")
+                except Exception as e:
+                    print(f"❌ Error backing up metadata: {str(e)}")
+                
+                # Create a new empty metadata file
+                save_last_used_state("")
+                return {}
+            except Exception as e:
+                print(f"❌ Error loading metadata: {str(e)}")
+                return {}
+        else:
+            print(f"ℹ️ No metadata file found at: {metadata_path}")
+            # Create a new empty metadata file
+            save_last_used_state("")
+            return {}
     except Exception as e:
-        st.error(f"Error loading metadata: {str(e)}")
-    return {}
+        print(f"❌ Error in get_last_used_state: {str(e)}")
+        return {}
 
 def save_session_state():
     """Save current session state to browser storage."""
@@ -1029,7 +1325,7 @@ def save_session_state():
     
     # Convert to JSON-serializable format
     serialized_data = json.dumps(session_data, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
-    
+
     # Save to browser storage using Streamlit's experimental_set_query_params
     st.experimental_set_query_params(
         session_data=serialized_data
@@ -1202,62 +1498,90 @@ def initialize_state():
         return
         
     try:
+        # Get the last used state from metadata
         metadata = get_last_used_state()
         last_used_state = metadata.get("last_used_state")
         
         if last_used_state:
-            state_path = str(get_state_dir() / last_used_state)
-            print(f"📥 Loading last used state: {state_path}")
+            # Ensure the state name has .json extension
+            if not last_used_state.endswith('.json'):
+                state_file_name = f"{last_used_state}.json"
+            else:
+                state_file_name = last_used_state
+                
+            state_path = get_state_dir() / state_file_name
+            print(f"📥 Last used state from metadata: {last_used_state}")
             
-            try:
-                result = load_state(state_path)
-                print(f"📥 Load state result: {result}")
-                
-                # Set state flags
-                st.session_state.state_loaded = True
-                st.session_state.default_state_loaded = True
-                
-                # Restore last used TM and Task
-                last_tm_id = metadata.get("last_tm_id")
-                last_task_id = metadata.get("last_task_id")
-                
-                print(f"📋 Last used TM ID: {last_tm_id}")
-                print(f"📋 Last used Task ID: {last_task_id}")
-                
-                # Only set these if they're not already set
-                if not st.session_state.get('current_tasksmanager_id'):
-                    st.session_state.current_tasksmanager_id = last_tm_id
-                    
-                if not st.session_state.get('current_task_id'):
-                    st.session_state.current_task_id = last_task_id
-                    
-                # Find the TM name for the current TM ID to set previous_tm_selection
-                if last_tm_id:
-                    persistence_model = st.session_state.persistence_model
-                    tasksmanagers = persistence_model.tasksmanagers.list()
-                    for tm in tasksmanagers:
-                        if tm.id == last_tm_id:
-                            st.session_state.previous_tm_selection = tm.name
-                            print(f"📋 Setting previous_tm_selection to: {tm.name}")
-                            
-                            # Also set previous_task_selection to prevent rerun loops
-                            if last_task_id:
-                                tasks = get_tasks_for_tasksmanager(last_tm_id)
-                                for task in tasks:
-                                    if task.id == last_task_id:
-                                        st.session_state.previous_task_selection = task.name
-                                        print(f"📋 Setting previous_task_selection to: {task.name}")
-                                        break
-                            break
-                
-                print("✅ State loaded successfully")
-            except Exception as e:
-                print(f"❌ Error loading specific state: {str(e)}")
+            # Check if the file exists before trying to load it
+            if not state_path.exists():
+                print(f"⚠️ Last used state file not found: {state_path}")
+                st.session_state.state_error_message = f"Last used state file not found: {last_used_state}"
                 st.session_state.state_loaded = False
                 st.session_state.default_state_loaded = False
-                # Reset selection tracking to prevent rerun loops
-                st.session_state.previous_tm_selection = None
-                st.session_state.previous_task_selection = None
+                st.session_state.selected_state_file = ""
+                
+                # Reset the metadata to avoid trying to load this file again
+                save_last_used_state("")
+            else:
+                try:
+                    # Load the state
+                    print(f"📥 Loading state from: {state_path}")
+                    result = load_state(str(state_path))
+                    print(f"📥 Load state result: {result}")
+                    
+                    # Set state flags
+                    st.session_state.state_loaded = True
+                    st.session_state.default_state_loaded = True
+                    st.session_state.selected_state_file = state_file_name
+                    
+                    # Restore last used TM and Task
+                    last_tm_id = metadata.get("last_tm_id")
+                    last_task_id = metadata.get("last_task_id")
+                    
+                    print(f"📋 Last used TM ID: {last_tm_id}")
+                    print(f"📋 Last used Task ID: {last_task_id}")
+                    
+                    # Only set these if they're not already set
+                    if not st.session_state.get('current_tasksmanager_id'):
+                        st.session_state.current_tasksmanager_id = last_tm_id
+                        
+                    if not st.session_state.get('current_task_id'):
+                        st.session_state.current_task_id = last_task_id
+                        
+                    # Find the TM name for the current TM ID to set previous_tm_selection
+                    if last_tm_id:
+                        persistence_model = st.session_state.persistence_model
+                        tasksmanagers = persistence_model.tasksmanagers.list()
+                        for tm in tasksmanagers:
+                            if tm.id == last_tm_id:
+                                st.session_state.previous_tm_selection = tm.name
+                                print(f"📋 Setting previous_tm_selection to: {tm.name}")
+                                
+                                # Also set previous_task_selection to prevent rerun loops
+                                if last_task_id:
+                                    tasks = get_tasks_for_tasksmanager(last_tm_id)
+                                    for task in tasks:
+                                        if task.id == last_task_id:
+                                            st.session_state.previous_task_selection = task.name
+                                            print(f"📋 Setting previous_task_selection to: {task.name}")
+                                            break
+                                break
+                    
+                    # Load messages for the current task and session
+                    if last_task_id and st.session_state.get('current_session_id'):
+                        st.session_state.messages = load_chat_messages(last_task_id)
+                        print(f"📋 Loaded {len(st.session_state.messages) if st.session_state.messages else 0} messages")
+                    
+                    print("✅ State loaded successfully")
+                except Exception as e:
+                    print(f"❌ Error loading specific state: {str(e)}")
+                    st.session_state.state_error_message = f"Error loading state: {str(e)}"
+                    st.session_state.state_loaded = False
+                    st.session_state.default_state_loaded = False
+                    st.session_state.selected_state_file = ""
+                    # Reset selection tracking to prevent rerun loops
+                    st.session_state.previous_tm_selection = None
+                    st.session_state.previous_task_selection = None
         else:
             print("ℹ️ No last used state found")
             st.session_state.state_loaded = False
@@ -1268,6 +1592,7 @@ def initialize_state():
             st.session_state.previous_task_selection = None
     except Exception as e:
         print(f"❌ Error loading state: {str(e)}")
+        st.session_state.state_error_message = f"Error loading state: {str(e)}"
         # Reset state flags on error
         st.session_state.state_loaded = False
         st.session_state.default_state_loaded = False
@@ -1280,6 +1605,159 @@ def initialize_state():
     st.session_state.state_initialized = True
     # Reset rerun counter
     st.session_state.rerun_count = 0
+
+def save_empty_state(state_name: str) -> str:
+    """Save a completely empty state with no data.
+    
+    This function creates a state file with empty collections, 
+    without copying any data from existing states.
+    
+    Args:
+        state_name: Name of the state to save (without .json extension)
+        
+    Returns:
+        str: Result of save operation
+    """
+    try:
+        state_dir = get_state_dir()
+        # Ensure state name has .json extension
+        if not state_name.endswith('.json'):
+            state_filename = f"{state_name}.json"
+        else:
+            state_filename = state_name
+            state_name = state_name.replace('.json', '')
+            
+        location = StorageLocation(
+            type=StorageType.file,
+            location=str(state_dir),
+            state_name=f"{state_name}"
+        )
+        
+        # Create a new, completely empty persistence model
+        print("  Creating new empty persistence model")
+        empty_model = PersistenceModelFactory.persistence_model("inmemory")
+        
+        # Create a default session with a welcome task manager and task
+        print("  Creating default task manager")
+        default_tm = TasksManager(
+            name="Welcome to Cerebrum",
+            model="gpt-4o-mini",
+            description="Default session for new state"
+        )
+        default_tm = empty_model.tasksmanagers.create(default_tm)
+        
+        # Create a default task with a welcome message
+        print("  Creating default task")
+        default_task = Task(
+            name="Getting Started",
+            description="Learn how to use Cerebrum",
+            tasksmanager_id=default_tm.id,
+            messages=[Message(
+                role="system",
+                content="You are a helpful assistant that guides users in using the Cerebrum framework. Provide clear, concise explanations and be responsive to user questions about functionality."
+            )]
+        )
+        default_task = empty_model.tasks.create(default_task)
+        
+        # Create a default session for the task
+        print("  Creating default session")
+        session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        default_task.chat_sessions = {session_id: []}
+        empty_model.tasks.update(default_task.id, default_task)
+        
+        # Set context state to point to the default session
+        context_state = {
+            'current_tasksmanager_id': default_tm.id,
+            'current_task_id': default_task.id,
+            'current_session_id': session_id
+        }
+        
+        print(f"\n📝 Creating empty state with default session: {state_filename}")
+        print(f"  Default TM: {default_tm.name} (ID: {default_tm.id})")
+        print(f"  Default Task: {default_task.name} (ID: {default_task.id})")
+        print(f"  Default Session: {session_id}")
+        
+        # Save empty state
+        result = save_to_storage(empty_model, location)
+        print(f"  Save result: {result}")
+        
+        # Verify file was created
+        state_file_path = state_dir / state_filename
+        if not state_file_path.exists():
+            print(f"⚠️ Warning: Expected state file not found at {state_file_path}")
+            st.session_state.state_error_message = f"Failed to create state file: {state_filename}"
+            return f"Failed to create state file: {state_filename}"
+        else:
+            print(f"✅ Confirmed empty state file saved at {state_file_path}")
+            st.session_state.state_success_message = f"Empty state created successfully as {state_filename}"
+        
+        return result
+    except Exception as e:
+        print(f"❌ Error creating empty state: {str(e)}")
+        st.session_state.state_error_message = f"Error creating empty state: {str(e)}"
+        return str(e)
+
+def create_new_state(state_name: str, save_current_first: bool = False) -> bool:
+    """Create a new state with a default session.
+    
+    Args:
+        state_name: Name for the new state
+        save_current_first: Whether to save the current state first
+        
+    Returns:
+        bool: Success or failure
+    """
+    try:
+        print(f"\n🆕 Creating new state with default session: {state_name}")
+        
+        # Save current state if requested
+        if save_current_first and st.session_state.get('selected_state_file'):
+            # Save any chat messages first
+            if st.session_state.get('messages') and st.session_state.get('current_task_id'):
+                save_chat_messages(
+                    st.session_state.current_task_id, 
+                    st.session_state.messages
+                )
+            # Save current state
+            print(f"  Saving current state first: {st.session_state.selected_state_file}")
+            save_current_state(st.session_state.selected_state_file)
+        
+        # Format state name
+        if not state_name.endswith('.json'):
+            state_filename = f"{state_name}.json"
+        else:
+            state_filename = state_name
+            state_name = state_name.replace('.json', '')
+            
+        # Create state file with default session
+        print(f"  Creating state with default session as: {state_filename}")
+        result = save_empty_state(state_name)
+        
+        # Now load the newly created state to get the default session
+        state_path = str(get_state_dir() / state_filename)
+        print(f"  Loading newly created state: {state_path}")
+        load_result = load_state(state_path)
+        print(f"  Load result: {load_result}")
+        
+        # Update state selection 
+        st.session_state.selected_state_file = state_filename
+        
+        # Clear state files cache to force reload
+        if 'current_state_files' in st.session_state:
+            del st.session_state.current_state_files
+        
+        # Update metadata to use new state
+        save_last_used_state(state_name)
+        
+        # Set success message
+        st.session_state.state_success_message = f"New state created as {state_filename}"
+        
+        print(f"✅ Successfully created new state: {state_filename}")
+        return True
+    except Exception as e:
+        print(f"❌ Error creating new state: {str(e)}")
+        st.session_state.state_error_message = f"Error creating state: {str(e)}"
+        return False
 
 def main():
     """Main application entry point."""
@@ -1308,12 +1786,35 @@ def main():
     # Initialize state (single point of state loading)
     initialize_state()
     
+    # Check if there's a pending state to load
+    if 'pending_state_load' in st.session_state and st.session_state.pending_state_load:
+        print(f"\n📥 Loading pending state: {st.session_state.pending_state_load}")
+        try:
+            load_state(st.session_state.pending_state_load)
+            # Clear the pending load to prevent loops
+            st.session_state.pending_state_load = None
+        except Exception as e:
+            print(f"❌ Error loading pending state: {str(e)}")
+            st.session_state.state_error_message = f"Error loading pending state: {str(e)}"
+            st.session_state.pending_state_load = None
+    
     # Generate session ID
     session_id = generate_session_id()
     print(f"\n🔑 Generated session ID: {session_id}")
     
     # Load anonymous session if it exists
     load_local_session()
+    
+    # Display any state messages
+    if 'state_error_message' in st.session_state and st.session_state.state_error_message:
+        st.error(st.session_state.state_error_message)
+        # Clear the message after displaying it
+        st.session_state.state_error_message = None
+    
+    if 'state_success_message' in st.session_state and st.session_state.state_success_message:
+        st.success(st.session_state.state_success_message)
+        # Clear the message after displaying it
+        st.session_state.state_success_message = None
     
     # Render UI
     with st.sidebar:
@@ -1342,6 +1843,7 @@ def main():
         asyncio.run(render_main_content())
     except Exception as e:
         st.error(f"Error in application: {str(e)}")
+        print(f"❌ Error in application: {str(e)}")
 
 if __name__ == "__main__":
     main()

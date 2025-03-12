@@ -1,16 +1,18 @@
+from typing import List, Dict, Any, Optional, Set, Tuple
 import streamlit as st
+import plotly.graph_objects as go
 import pandas as pd
-from typing import Dict, List, Optional, Any
-from uuid import UUID
-from ...persistence.persistence_model import PersistenceModelBase
-from ...models.task import Task
-from ...models.toolset import Toolset, Tool
-from ...controllers.curried_proxy import CurriedProxy
-from ...tools.tools_catalog import tools_catalog
 import networkx as nx
 import io
 import base64
-import plotly.graph_objects as go
+from uuid import UUID
+from ...models.task import Task
+from ...models.toolset import Toolset, Tool
+from ...persistence.persistence_model import PersistenceModelBase
+from ...controllers.curried_proxy import CurriedProxy
+from ...controllers.tools_utils import filter_container_tools
+from ...tools.tools_catalog import tools_catalog
+from server.views.controllers.tools_view_controller import ToolsCatalogController
 
 class TaskToolRelationshipComponent:
     """Component to visualize the relationship between tasks, curried proxies, and tools."""
@@ -38,7 +40,10 @@ class TaskToolRelationshipComponent:
         st.info(f"Visualizing tasks from the {'global' if is_global else 'local'} persistence model.")
         
         # Get all available tools from the catalog
-        available_tools = tools_catalog.list_tools()
+        all_tools = tools_catalog.list_tools()
+        
+        # Filter out container tools (tools without a dot in their name)
+        available_tools = filter_container_tools(all_tools)
         
         # Create tabs for different sections
         main_tab1, main_tab2, main_tab3 = st.tabs(["Table View", "Graph View", "Manage Relationships"])
@@ -191,7 +196,7 @@ class TaskToolRelationshipComponent:
             # Multi-select tools from catalog
             selected_tools = st.multiselect(
                 "Select tools from catalog to add to the new CurriedProxy:",
-                options=available_tools
+                options=filter_container_tools(available_tools)
             )
             
             # Create button
@@ -276,7 +281,7 @@ class TaskToolRelationshipComponent:
         # Multi-select tools to add to toolset
         selected_toolset_tools = st.multiselect(
             "Select tools to add to the toolset:",
-            options=available_tools,
+            options=filter_container_tools(available_tools),
             key="toolset_tools"
         )
         
@@ -345,7 +350,7 @@ class TaskToolRelationshipComponent:
                     current_tools = [tool.name for tool in proxy_info.tools]
                 
                 # Filter available tools to show only those not already in the proxy
-                available_new_tools = [tool for tool in available_tools if tool not in current_tools]
+                available_new_tools = [tool for tool in filter_container_tools(available_tools) if tool not in current_tools]
                 
                 # Multi-select tools to add
                 tools_to_add = st.multiselect(
@@ -375,7 +380,7 @@ class TaskToolRelationshipComponent:
                     # Multi-select tools to remove
                     tools_to_remove = st.multiselect(
                         "Select tools to remove:",
-                        options=current_tools,
+                        options=filter_container_tools(current_tools),
                         key="tools_to_remove"
                     )
                     

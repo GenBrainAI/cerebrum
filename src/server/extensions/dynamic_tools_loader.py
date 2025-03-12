@@ -11,7 +11,8 @@ from uuid import uuid4
 import os
 import types
 
-from ..tools.tools_catalog import ToolsCatalog, tools_catalog, ToolType
+from ..models.tools_descriptors import ToolType
+from ..tools.tools_catalog import ToolsCatalog, tools_catalog
 from ..models.tools_descriptors import ParameterInfo, ToolMetadata, ReturnInfo
 
 # Create singleton instance of ToolsCatalog and initialize it

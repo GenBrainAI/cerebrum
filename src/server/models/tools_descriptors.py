@@ -2,7 +2,8 @@ from enum import Enum
 from typing import Any, List, Optional, Dict, Union
 from pydantic import BaseModel, Field
 
-class ToolType(Enum):
+class ToolType(str, Enum):
+    """Type of tool in the catalog."""
     PYTHON_FUNCTION = "python_function"
     CLASS_METHOD = "class_method"
     CREWAI_TOOL = "crewai_tool"

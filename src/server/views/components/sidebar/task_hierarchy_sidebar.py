@@ -13,6 +13,16 @@ class TaskHierarchySidebar:
         self.controller = controller
         self.logger = logging.getLogger(__name__)
         
+        # Log controller initialization
+        if controller:
+            print(f"🔧 TaskHierarchySidebar initialized with controller")
+            if hasattr(controller, 'view_state'):
+                print(f"🔧 Controller has view_state with task_status: {controller.view_state.task_status}")
+            else:
+                print(f"🔧 Controller does not have view_state")
+        else:
+            print(f"🔧 TaskHierarchySidebar initialized without controller")
+        
         # Initialize save status if not set
         if 'save_status' not in st.session_state:
             st.session_state.save_status = None
@@ -34,18 +44,52 @@ class TaskHierarchySidebar:
             
             # Get state status from controller
             if self.controller and self.controller.view_state:
+                # Ensure controller is using global persistence
+                if hasattr(self.controller, 'global_persistence') and hasattr(self.controller, 'persistence_model'):
+                    if self.controller.persistence_model is not self.controller.global_persistence:
+                        print("🔧 Switching controller to global persistence in sidebar")
+                        self.controller.persistence_model = self.controller.global_persistence
+                
                 status = self.controller.view_state.task_status
+                
+                # Fix: Ensure task_status is properly set if it's not already
+                if not status.get("loaded", False):
+                    # Try to find a task manager and task to set as active
+                    task_managers = self.controller.get_task_managers()
+                    if task_managers:
+                        tasks = self.controller.get_tasks(task_managers[0].id)
+                        if tasks:
+                            print(f"🔧 Setting active task from available tasks in sidebar")
+                            self.controller.view_state.set_active_task(
+                                task_id=tasks[0].id,
+                                task_name=tasks[0].name,
+                                manager_id=task_managers[0].id,
+                                manager_name=task_managers[0].name
+                            )
+                            # Update status with the new values
+                            status = self.controller.view_state.task_status
+                            print(f"🔧 Updated task status in sidebar: {status}")
+                
+                # Log task status for debugging
+                print(f"🔍 Task status in sidebar: {status}")
+                self.logger.info(f"Task status in sidebar: {status}")
                 
                 # Show state status with save indicator
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    if status["loaded"]:
-                        st.markdown(f"🟢 **Active Task:** {status['tasksmanager_name']}-{status['task_name']}")
+                    print(f"🔍 Checking loaded status: {status.get('loaded', False)}")
+                    if status.get("loaded", False):
+                        tasksmanager_name = status.get("tasksmanager_name", "Unknown")
+                        task_name = status.get("task_name", "Unknown")
+                        print(f"🔍 Displaying active task: {tasksmanager_name}-{task_name}")
+                        st.markdown(f"🟢 **Active Task:** {tasksmanager_name}-{task_name}")
                         st.markdown("**State:** Task Management loaded")
                     else:
+                        print("🔍 No task context found, displaying error message")
                         st.markdown("🔴 State loaded but no task context found")
                 with col2:
                     # Log save status for debugging
+                    print(f"🔍 Save status: {st.session_state.save_status}")
                     self.logger.info(f"Rendering save status: {st.session_state.save_status}")
                     
                     if st.session_state.save_status == "pending":
@@ -60,6 +104,7 @@ class TaskHierarchySidebar:
                             st.session_state.save_status = None
                             self.logger.info(f"Cleared save status after {time_diff}s")
             else:
+                print("🔍 No controller or view state available")
                 st.markdown("🔴 No task state loaded")
             
             st.markdown("---")
@@ -129,6 +174,13 @@ async def render_task_hierarchy_sidebar():
     controller = None
     if 'task_controller' in st.session_state:
         controller = st.session_state.task_controller
+        print(f"🔧 Got controller from session state")
+        if hasattr(controller, 'view_state'):
+            print(f"🔧 Controller has view_state with task_status: {controller.view_state.task_status}")
+        else:
+            print(f"🔧 Controller does not have view_state")
+    else:
+        print(f"🔧 No controller in session state")
         
     # Create and render sidebar
     sidebar = TaskHierarchySidebar(controller)

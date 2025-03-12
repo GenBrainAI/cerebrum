@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Type, Union, get_type_hints, Callable
+from typing import Any, Dict, List, Optional, Type, Union, Callable
 import inspect
 import docstring_parser
 from os import getenv
@@ -39,14 +39,8 @@ load_dotenv()
 # Initialize logger
 logger = logging.getLogger(__name__)
 
-class ToolType(str, Enum):
-    """Type of tool in the catalog."""
-    PYTHON_FUNCTION = "python_function"
-    CLASS_METHOD = "class_method"
-    CREWAI_TOOL = "crewai_tool"
-    LANGCHAIN_TOOL = "langchain_tool"
-    OPENAPI_TOOL = "openapi_tool"
-    AI_TOOL = "ai_tool"
+# Note: ToolType is now imported from src.server.models.tools_descriptors
+# and no longer defined here to avoid duplication
 
 class ToolsCatalog:
     """Singleton catalog for all available tools."""
@@ -179,12 +173,18 @@ class ToolsCatalog:
             async_tool=inspect.iscoroutinefunction(instance) or (hasattr(instance, '__call__') and inspect.iscoroutinefunction(instance.__call__))
         )
 
-    def register_instance(self, instance: Any, name: str) -> List[str]:
-        """Register an instance and all its methods.
+    def register_instance(self, instance: Any, name: str, exclude_base_methods: bool = True, register_instance_itself: bool = False) -> List[str]:
+        """Register an instance and its methods as tools in the catalog.
+        
+        This method registers an object instance and its methods as tools in the catalog.
+        By default, it only registers methods defined in the instance's own class (not inherited methods)
+        and does not register the instance itself as a tool.
         
         Args:
             instance: The object instance to register
-            name: Base name for the instance
+            name: Base name for the instance and its methods
+            exclude_base_methods: Whether to exclude methods inherited from base classes (default: True)
+            register_instance_itself: Whether to register the instance itself as a tool (default: False)
             
         Returns:
             List of registered tool names
@@ -192,15 +192,31 @@ class ToolsCatalog:
         print(f"Registering instance {name}")
         registered_names = []
         
-        # Register the base instance
-        metadata = self._create_instance_metadata(instance, name)
-        self._tools[name] = metadata
-        self._tool_instances[name] = instance
-        registered_names.append(name)
+        # Get the class of the instance
+        instance_class = instance.__class__
         
-        # Register all public methods
+        # Get only methods defined in the instance's own class
+        own_method_names = set()
+        if exclude_base_methods:
+            # Find methods defined in this class, not in base classes
+            for cls in instance_class.__mro__:
+                if cls == instance_class:
+                    # Include methods from this class
+                    own_method_names.update(cls.__dict__.keys())
+                elif cls != object:  # Don't process the base 'object' class
+                    # Exclude methods from base classes
+                    own_method_names.difference_update(cls.__dict__.keys())
+        
+        # Register the base instance if requested
+        if register_instance_itself:
+            metadata = self._create_instance_metadata(instance, name)
+            self._tools[name] = metadata
+            self._tool_instances[name] = instance
+            registered_names.append(name)
+        
+        # Register all public methods (filtering base methods if requested)
         for method_name, method in inspect.getmembers(instance, predicate=inspect.ismethod):
-            if not method_name.startswith('_'):
+            if not method_name.startswith('_') and (not exclude_base_methods or method_name in own_method_names):
                 full_name = f"{name}.{method_name}"
                 method_metadata = self._create_method_metadata(method, method_name)
                 method_metadata.class_name = name
@@ -313,14 +329,47 @@ class ToolsCatalog:
         self._tool_instances[tool_name] = func
         return tool_name
 
-    def register_class(self, cls: Type, name: Optional[str] = None) -> List[str]:
-        """Register a Python class as a tool, including its methods."""
+    def register_class(self, cls: Type, name: Optional[str] = None, exclude_base_methods: bool = True, register_class_itself: bool = False) -> List[str]:
+        """Register a Python class as a tool, including its methods.
+        
+        This method registers a class and its methods as tools in the catalog.
+        By default, it only registers methods defined in the class itself (not inherited methods)
+        and does not register the class itself as a tool.
+        
+        Args:
+            cls: The class to register
+            name: Base name for the class and its methods (defaults to class name)
+            exclude_base_methods: Whether to exclude methods inherited from base classes (default: True)
+            register_class_itself: Whether to register the class itself as a tool (default: False)
+            
+        Returns:
+            List of registered tool names
+        """
         class_name = name or cls.__name__
         registered_names = []
-
+        
+        # Register the class itself if requested
+        if register_class_itself:
+            metadata = self._create_class_metadata(cls, class_name)
+            self._tools[class_name] = metadata
+            self._classes[class_name] = cls
+            registered_names.append(class_name)
+        
+        # Get only methods defined in the class itself
+        own_method_names = set()
+        if exclude_base_methods:
+            # Find methods defined in this class, not in base classes
+            for base_cls in cls.__mro__:
+                if base_cls == cls:
+                    # Include methods from this class
+                    own_method_names.update(base_cls.__dict__.keys())
+                elif base_cls != object:  # Don't process the base 'object' class
+                    # Exclude methods from base classes
+                    own_method_names.difference_update(base_cls.__dict__.keys())
+        
         # Register class methods
         for method_name, method in inspect.getmembers(cls, predicate=inspect.isfunction):
-            if not method_name.startswith('_'):  # Skip private methods
+            if not method_name.startswith('_') and (not exclude_base_methods or method_name in own_method_names):
                 full_name = f"{class_name}.{method_name}"
                 metadata = self._extract_docstring_info(method, full_name, ToolType.CLASS_METHOD)
                 metadata.class_name = class_name
@@ -329,7 +378,7 @@ class ToolsCatalog:
                 
                 self._tools[full_name] = metadata
                 registered_names.append(full_name)
-
+        
         return registered_names
 
     def get_tool_instance(self, name: str) -> Any:
@@ -458,15 +507,26 @@ class ToolsCatalog:
                 print("\n📦 Registering internal tools...")
                 try:
                     internal_file_tools = InternalFileTools()
-                    names = self.register_instance(internal_file_tools, "internal_file_tools")
+                    names = self.register_instance(internal_file_tools, "internal_file_tools", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered InternalFileTools with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
                     print(f"❌ Failed to register InternalFileTools: {str(e)}")
                 
+                # Register weather tools
+                print("\n☁️ Registering weather tools...")
+                try:
+                    from src.server.tools.weather_tool import register_weather_tool
+                    names = register_weather_tool(self)
+                    print(f"✅ Registered WeatherTool with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register WeatherTool: {str(e)}")
+                    logger.error(f"Failed to register WeatherTool: {str(e)}")
+                
                 try:
                     internal_credentials_tools = InternalCredentialsTools()
-                    names = self.register_instance(internal_credentials_tools, "internal_credentials_tools")
+                    names = self.register_instance(internal_credentials_tools, "internal_credentials_tools", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered InternalCredentialsTools with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
@@ -474,7 +534,7 @@ class ToolsCatalog:
                 
                 try:
                     internal_testing_tools = InternalTestingTools()
-                    names = self.register_instance(internal_testing_tools, "internal_testing_tools")
+                    names = self.register_instance(internal_testing_tools, "internal_testing_tools", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered InternalTestingTools with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
@@ -482,11 +542,24 @@ class ToolsCatalog:
                 
                 try:
                     internal_proxy_tools = InternalProxyTools()
-                    names = self.register_instance(internal_proxy_tools, "internal_proxy_tools")
+                    names = self.register_instance(internal_proxy_tools, "internal_proxy_tools", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered InternalProxyTools with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
                     print(f"❌ Failed to register InternalProxyTools: {str(e)}")
+                
+                # Try to register InternalPersistenceTools with lazy import to avoid circular imports
+                print("\n📦 Registering persistence tools...")
+                try:
+                    # Import here to avoid circular import
+                    from src.server.tools.internal_persistence_tools import InternalPersistenceTools
+                    internal_persistence_tools = InternalPersistenceTools()
+                    names = self.register_instance(internal_persistence_tools, "internal_persistence_tools", exclude_base_methods=True, register_instance_itself=True)
+                    print(f"✅ Registered InternalPersistenceTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register InternalPersistenceTools: {str(e)}")
+                    logger.error(f"Failed to register InternalPersistenceTools: {str(e)}")
                 
                 # Register CrewAI tools
                 print("\n📦 Registering CrewAI tools...")
@@ -515,34 +588,36 @@ class ToolsCatalog:
                     print(f"❌ Failed to register FileReadTool: {str(e)}")
                 
                 try:
-                    web_scraper_tool = WebScraperTool()
-                    names = self.register_instance(web_scraper_tool, "WebScraperTool")
+                    # Register WebScraperTool
+                    web_scraper = WebScraperTool()
+                    names = self.register_instance(web_scraper, "WebScraperTool", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered WebScraperTool with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
                     print(f"❌ Failed to register WebScraperTool: {str(e)}")
                 
-                # Register custom tools
-                print("\n📦 Registering custom tools...")
                 try:
+                    # Register FileTool
                     file_tool = FileTool()
-                    names = self.register_instance(file_tool, "FileTool")
+                    names = self.register_instance(file_tool, "FileTool", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered FileTool with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
                     print(f"❌ Failed to register FileTool: {str(e)}")
                 
                 try:
+                    # Register MicroservicesTool
                     microservices_tool = MicroservicesTool()
-                    names = self.register_instance(microservices_tool, "MicroservicesTool")
+                    names = self.register_instance(microservices_tool, "MicroservicesTool", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered MicroservicesTool with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
                     print(f"❌ Failed to register MicroservicesTool: {str(e)}")
                 
                 try:
+                    # Register SMSTool
                     sms_tool = SMSTool()
-                    names = self.register_instance(sms_tool, "SMSTool")
+                    names = self.register_instance(sms_tool, "SMSTool", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered SMSTool with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
@@ -552,23 +627,24 @@ class ToolsCatalog:
                 print("\n📦 Checking GitHub credentials...")
                 github_token = getenv("GITHUB_TOKEN")
                 repo_name = getenv("GITHUB_REPO")
+                
                 if github_token and repo_name:
                     try:
                         print(f"  Found credentials for repo: {repo_name}")
                         github_tool = GitHubTool(github_token, repo_name)
-                        names = self.register_instance(github_tool, "GitHubTool")
+                        names = self.register_instance(github_tool, "GitHubTool", exclude_base_methods=True, register_instance_itself=True)
                         print(f"✅ Registered GitHubTool with {len(names)} methods")
                         registered_tools.extend(names)
                     except Exception as e:
                         print(f"❌ Failed to register GitHubTool: {str(e)}")
                 else:
-                    print("⚠️ GitHub credentials not found, skipping GitHubTool")
+                    print("❓ No GitHub credentials found, skipping tool registration")
                 
                 # Register URL tools
                 print("\n📦 Registering URL tools...")
                 try:
                     url_tools = URLTools()
-                    names = self.register_instance(url_tools, "URLTools")
+                    names = self.register_instance(url_tools, "URLTools", exclude_base_methods=True, register_instance_itself=True)
                     print(f"✅ Registered URLTools with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
@@ -592,7 +668,8 @@ class ToolsCatalog:
         except Exception as e:
             logger.error(f"Failed to initialize default tools: {str(e)}")
             traceback.print_exc()
-            raise
+            # Initialize with empty list on failure
+            self.DEFAULT_TOOLS = []
 
     def _type_to_string(self, type_hint: Any) -> str:
         """Convert a type hint to a string representation."""
