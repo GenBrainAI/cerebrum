@@ -12,11 +12,13 @@ from langchain.tools import BaseTool as LangChainTool
 from crewai_tools.tools.rag.rag_tool import RagTool
 from pydantic import BaseModel, Field, create_model, ConfigDict
 
-from ..tools.tools_catalog import ToolsCatalog, ParameterInfo, tools_catalog
+# Move these imports to be lazy imports inside methods
+# from ..tools.tools_catalog import ToolsCatalog, ParameterInfo, tools_catalog
 from ..models.curried_proxy_info import CurriedProxyInfo, ToolInfo
 from ..models.toolset import Tool
 from ..models.tools_descriptors import ToolMetadata, ToolContext, ToolType
 from ..models.function import ResolvedSchema, ParameterSchema
+from ..models.tools_descriptors import ParameterInfo  # Keep this import since it's used in multiple methods
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +27,19 @@ class CurriedProxy(BaseModel):
 
     id: UUID = Field(default_factory=uuid4)
     tool_names: List[str] = Field(default_factory=list)
-    catalog: ToolsCatalog = Field(default_factory=lambda: tools_catalog)
+    catalog: Optional[Any] = None  # Changed from ToolsCatalog to Any to avoid import
     name_counter: Dict[str, int] = {}
     name: Optional[str] = Field(default="Unnamed Proxy")
     
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    def __init__(self, **data):
+        """Initialize the CurriedProxy with optional catalog."""
+        # Use lazy import for ToolsCatalog and tools_catalog
+        if 'catalog' not in data or data['catalog'] is None:
+            from ..tools.tools_catalog import tools_catalog
+            data['catalog'] = tools_catalog
+        super().__init__(**data)
 
     @staticmethod
     def remove_from_task(persistence_model, task_id: str, logger=None) -> bool:
@@ -656,12 +665,18 @@ class CurriedProxy(BaseModel):
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CurriedProxy':
-        """Create proxy from serialized dictionary."""
+        """Create a CurriedProxy from a dictionary."""
         proxy = cls(
             id=UUID(data["id"]),
-            tool_names=data["tool_names"]
+            tool_names=data["tool_names"],
+            name=data.get("name", "Unnamed Proxy")
         )
-        proxy.catalog = ToolsCatalog.from_dict(data["catalog"])
+        
+        # Use lazy import for ToolsCatalog
+        if "catalog" in data:
+            from ..tools.tools_catalog import ToolsCatalog
+            proxy.catalog = ToolsCatalog.from_dict(data["catalog"])
+        
         return proxy
     
     async def _call_openapi_tool(self, tool: Tool, arguments: Dict[str, Any]) -> Dict[str, Any]:
