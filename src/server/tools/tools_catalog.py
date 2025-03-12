@@ -28,6 +28,7 @@ from src.server.tools.internal_file_tools import InternalFileTools
 from src.server.tools.internal_credentials_tools import InternalCredentialsTools
 from src.server.tools.internal_testing_tools import InternalTestingTools
 from src.server.tools.internal_proxy_tools import InternalProxyTools
+from src.server.tools.py_exec import PyExec
 
 # Models
 from src.server.models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
@@ -41,6 +42,34 @@ logger = logging.getLogger(__name__)
 
 # Note: ToolType is now imported from src.server.models.tools_descriptors
 # and no longer defined here to avoid duplication
+
+def register_py_exec(catalog: ToolsCatalog = None) -> List[str]:
+    """Register the Python execution tool with the tools catalog.
+    
+    Args:
+        catalog: Optional tools catalog instance. If not provided, the global instance will be used.
+        
+    Returns:
+        List of registered tool names
+    """
+    # Get catalog instance if not provided
+    if catalog is None:
+        from src.server.tools.tools_catalog import tools_catalog
+        catalog = tools_catalog
+    
+    # Create tool instance
+    py_exec = PyExec()
+    
+    # Register tool and its methods
+    registered_names = catalog.register_instance(
+        py_exec, 
+        "PyExec", 
+        exclude_base_methods=True, 
+        register_instance_itself=True
+    )
+    
+    print(f"✅ Registered PyExec with {len(registered_names)} methods")
+    return registered_names
 
 class ToolsCatalog:
     """Singleton catalog for all available tools."""
@@ -523,6 +552,15 @@ class ToolsCatalog:
                 except Exception as e:
                     print(f"❌ Failed to register WeatherTool: {str(e)}")
                     logger.error(f"Failed to register WeatherTool: {str(e)}")
+                
+                # Register Python execution tool
+                print("\n🐍 Registering Python execution tool...")
+                try:
+                    names = register_py_exec(self)
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register PyExec: {str(e)}")
+                    logger.error(f"Failed to register PyExec: {str(e)}")
                 
                 try:
                     internal_credentials_tools = InternalCredentialsTools()
