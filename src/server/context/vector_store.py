@@ -48,11 +48,53 @@ class VectorStore:
             )
         )
         
-        # Initialize embedding function
-        self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=os.getenv("OPENAI_API_KEY"),
-            model_name=self.config.embedding_model
-        )
+        # Initialize embedding function with retry logic and timeout handling
+        try:
+            print(f"🔍 DEBUG: Initializing OpenAI embedding function with model {self.config.embedding_model}")
+            import backoff
+            import openai
+            from openai import OpenAIError
+            
+            # Define a retry-enabled embedding function
+            @backoff.on_exception(
+                backoff.expo,
+                (OpenAIError, TimeoutError),
+                max_tries=5,
+                max_time=30
+            )
+            def embedding_function_with_retry(texts):
+                try:
+                    print(f"🔍 DEBUG: Calling OpenAI API for {len(texts)} texts")
+                    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout=30.0)
+                    response = client.embeddings.create(
+                        input=texts,
+                        model=self.config.embedding_model
+                    )
+                    print(f"🔍 DEBUG: OpenAI API call successful")
+                    return [embedding.embedding for embedding in response.data]
+                except Exception as e:
+                    print(f"❌ DEBUG: Error in OpenAI API call: {str(e)}")
+                    raise
+            
+            # Create a class-based embedding function that matches ChromaDB's expected interface
+            class OpenAIEmbeddingFunctionWrapper:
+                def __init__(self, func):
+                    self.func = func
+                
+                def __call__(self, input):
+                    return self.func(input)
+            
+            # Create the embedding function
+            self.embedding_function = OpenAIEmbeddingFunctionWrapper(embedding_function_with_retry)
+            print(f"✅ DEBUG: OpenAI embedding function initialized successfully")
+            
+        except ImportError:
+            print(f"⚠️ DEBUG: Could not import backoff or openai, falling back to standard embedding function")
+            # Fall back to standard embedding function
+            self.embedding_function = embedding_functions.OpenAIEmbeddingFunction(
+                api_key=os.getenv("OPENAI_API_KEY"),
+                model_name=self.config.embedding_model
+            )
         
         # Initialize indices dictionary
         self.indices = {}
@@ -77,13 +119,23 @@ class VectorStore:
     def _load_existing_indices(self):
         """Load existing collections from ChromaDB."""
         try:
-            for collection in self.client.list_collections():
-                if collection.name.startswith('vs_'):
+            # Get all collections
+            all_collections = self.client.list_collections()
+            collection_names = [c.name for c in all_collections]
+            logging.info(f"Found {len(collection_names)} collections in ChromaDB: {collection_names}")
+            
+            # Load all collections, including those without vs_ prefix
+            for collection in all_collections:
+                try:
                     self.indices[collection.name] = self.client.get_collection(
                         name=collection.name,
                         embedding_function=self.embedding_function
                     )
-            logging.info(f"Loaded {len(self.indices)} existing vector indices")
+                    logging.info(f"Loaded collection: {collection.name}")
+                except Exception as e:
+                    logging.error(f"Error loading collection {collection.name}: {str(e)}")
+            
+            logging.info(f"Loaded {len(self.indices)} vector indices")
         except Exception as e:
             logging.error(f"Error loading existing collections: {str(e)}")
 
@@ -91,12 +143,34 @@ class VectorStore:
         """Safely generate embeddings for a list of texts."""
         try:
             # Use the embedding function directly
+            print(f"🔍 DEBUG: Generating embeddings for {len(texts)} text(s)")
+            print(f"🔍 DEBUG: First text preview: {texts[0][:100]}..." if texts and len(texts[0]) > 100 else f"🔍 DEBUG: First text: {texts[0]}" if texts else "🔍 DEBUG: No texts to embed")
+            print(f"🔍 DEBUG: Using embedding model: {self.config.embedding_model}")
+            
+            start_time = datetime.now()
+            print(f"🔍 DEBUG: Starting embedding generation at {start_time}")
+            
+            # Call the embedding function with the expected interface
             embeddings = self.embedding_function(texts)
+            
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            print(f"🔍 DEBUG: Embedding generation completed in {duration:.2f} seconds")
+            print(f"🔍 DEBUG: Generated {len(embeddings)} embeddings")
+            
+            if embeddings and len(embeddings) > 0:
+                print(f"🔍 DEBUG: First embedding dimensions: {len(embeddings[0])}")
+                print(f"🔍 DEBUG: First embedding preview: {embeddings[0][:5]}...")
+            
             return embeddings
         except Exception as e:
+            print(f"❌ DEBUG: Error generating embeddings: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             logging.error(f"Error generating embeddings: {str(e)}")
             # Return zero embeddings as fallback
             dimension = 1536  # OpenAI's default embedding dimension
+            print(f"🔍 DEBUG: Returning fallback zero embeddings with dimension {dimension}")
             return [[0.0] * dimension for _ in texts]
 
     async def create_index(self, name: str, description: Optional[str] = None) -> str:
@@ -109,13 +183,28 @@ class VectorStore:
                     name=index_name,
                     embedding_function=self.embedding_function
                 )
-            except:
+            except Exception as e:
+                print(f"⚠️ DEBUG: Error getting collection {index_name}: {str(e)}")
+                
                 # Create new collection if it doesn't exist
-                collection = self.client.create_collection(
-                    name=index_name,
-                    embedding_function=self.embedding_function,
-                    metadata={"description": description}
-                )
+                metadata = {}
+                if description:
+                    metadata["description"] = description
+                else:
+                    metadata["description"] = f"Index for {name} content"
+                
+                try:
+                    collection = self.client.create_collection(
+                        name=index_name,
+                        embedding_function=self.embedding_function,
+                        metadata=metadata
+                    )
+                except Exception as create_e:
+                    print(f"❌ DEBUG: Error creating collection {index_name}: {str(create_e)}")
+                    if "Expected metadata value to be a str, int, float or bool" in str(create_e):
+                        print(f"⚠️ DEBUG: Metadata issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                        print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
             
             # Store in indices dictionary
             self.indices[index_name] = collection
@@ -133,10 +222,8 @@ class VectorStore:
             collections = self.client.list_collections()
             print(f"DEBUG - _reload_indices found collections: {[c.name for c in collections]}")
             
-            vs_collections = [c for c in collections if c.name.startswith('vs_')]
-            print(f"DEBUG - _reload_indices found vs_ collections: {[c.name for c in vs_collections]}")
-            
-            for collection in vs_collections:
+            # Load all collections, including those without vs_ prefix
+            for collection in collections:
                 try:
                     self.indices[collection.name] = self.client.get_collection(
                         name=collection.name,
@@ -159,22 +246,21 @@ class VectorStore:
             
             # Process each collection
             for col in collections:
-                if col.name.startswith("vs_"):
-                    try:
-                        count = col.count()
-                        indices.append({
-                            "name": col.name,
-                            "description": col.metadata.get("description", ""),
-                            "count": count
-                        })
-                    except Exception as e:
-                        logging.error(f"Error getting collection stats for {col.name}: {str(e)}")
-                        # Still include the collection even if stats fail
-                        indices.append({
-                            "name": col.name,
-                            "description": col.metadata.get("description", ""),
-                            "count": 0
-                        })
+                try:
+                    count = col.count()
+                    indices.append({
+                        "name": col.name,
+                        "description": col.metadata.get("description", ""),
+                        "count": count
+                    })
+                except Exception as e:
+                    logging.error(f"Error getting collection stats for {col.name}: {str(e)}")
+                    # Still include the collection even if stats fail
+                    indices.append({
+                        "name": col.name,
+                        "description": col.metadata.get("description", ""),
+                        "count": 0
+                    })
             
             logging.info(f"Listed {len(indices)} indices: {[idx['name'] for idx in indices]}")
             return indices
@@ -195,31 +281,55 @@ class VectorStore:
 
     def _chunk_text(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[str]:
         """Split text into overlapping chunks."""
+        print(f"🔍 DEBUG: Chunking text of length {len(text)} with chunk_size={chunk_size}, overlap={overlap}")
+        
         chunks = []
         start = 0
         text_len = len(text)
         
+        print(f"🔍 DEBUG: Starting chunking process")
+        chunk_count = 0
+        
         while start < text_len:
             remaining = text_len - start
+            print(f"🔍 DEBUG: Processing chunk at position {start}, remaining text: {remaining} chars")
             
             if remaining <= chunk_size:
                 # If remaining text is smaller than chunk_size, add it and we're done
                 chunks.append(text[start:])
+                print(f"🔍 DEBUG: Added final chunk {chunk_count+1} with {remaining} chars")
                 break
             
             # Find a good breaking point within the chunk_size
             end = start + chunk_size
+            print(f"🔍 DEBUG: Finding break point near position {end}")
+            
+            # Try to find a space to break at
+            original_end = end
             while end > start and not text[end - 1].isspace():
                 end -= 1
             
             # If we couldn't find a space, just use the full chunk_size
             if end == start:
-                end = start + chunk_size
+                print(f"🔍 DEBUG: No space found for clean break, using original end point {original_end}")
+                end = original_end
+            else:
+                print(f"🔍 DEBUG: Found break point at position {end} (backed up {original_end - end} chars)")
             
-            chunks.append(text[start:end])
+            chunk_text = text[start:end]
+            chunks.append(chunk_text)
+            chunk_count += 1
+            print(f"🔍 DEBUG: Added chunk {chunk_count} with {len(chunk_text)} chars")
+            
+            # Move start position for next chunk, accounting for overlap
             start = end - overlap
+            print(f"🔍 DEBUG: New start position: {start} (with {overlap} chars overlap)")
         
-        return [chunk.strip() for chunk in chunks if chunk.strip()]  # Added strip() to clean chunks
+        # Clean chunks by stripping whitespace
+        cleaned_chunks = [chunk.strip() for chunk in chunks if chunk.strip()]
+        print(f"🔍 DEBUG: Chunking complete. Generated {len(cleaned_chunks)} chunks after cleaning")
+        
+        return cleaned_chunks
 
     async def add_items(self, embeddings: List[List[float]], metadatas: List[Dict[str, Any]], 
                        contents: List[str]) -> Dict[str, Any]:
@@ -351,8 +461,10 @@ class VectorStore:
                     return collection
                 except Exception as e:
                     print(f"⚠️ DEBUG: Collection {collection_name} exists but has errors: {str(e)}")
-                    print(f"🔄 DEBUG: Attempting to repair collection {collection_name}")
-                    return self._repair_collection(collection_name)
+                    if "Expected EmbeddingFunction.__call__ to have the following signature" in str(e):
+                        print(f"⚠️ DEBUG: Embedding function interface issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                        print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
                 
             # Try to get existing collection
             try:
@@ -372,18 +484,31 @@ class VectorStore:
                 
             except Exception as e:
                 print(f"⚠️ DEBUG: Collection {collection_name} not found: {str(e)}")
+                if "Expected EmbeddingFunction.__call__ to have the following signature" in str(e):
+                    print(f"⚠️ DEBUG: Embedding function interface issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                    print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
                 
                 # Create new collection
                 print(f"🔄 DEBUG: Creating new collection: {collection_name}")
-                collection = self.client.create_collection(
-                    name=collection_name,
-                    embedding_function=self.embedding_function
-                )
-                
-                # Add to indices
-                self.indices[collection_name] = collection
-                print(f"✅ DEBUG: Created new collection: {collection_name}")
-                return collection
+                try:
+                    metadata = {"description": f"Index for {collection_name} content"}
+                    collection = self.client.create_collection(
+                        name=collection_name,
+                        embedding_function=self.embedding_function,
+                        metadata=metadata
+                    )
+                    
+                    # Add to indices
+                    self.indices[collection_name] = collection
+                    print(f"✅ DEBUG: Created new collection: {collection_name}")
+                    return collection
+                except Exception as create_e:
+                    print(f"❌ DEBUG: Error creating collection {collection_name}: {str(create_e)}")
+                    if "Expected metadata value to be a str, int, float or bool" in str(create_e):
+                        print(f"⚠️ DEBUG: Metadata issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
+                        print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
+                    raise
                 
         except Exception as e:
             print(f"❌ DEBUG: Error ensuring collection {collection_name}: {str(e)}")
@@ -471,12 +596,24 @@ class VectorStore:
             
             # As a last resort, create a new empty collection
             print(f"🔄 DEBUG: Creating new empty collection {collection_name} as fallback")
-            new_collection = self.client.create_collection(
-                name=collection_name,
-                embedding_function=self.embedding_function
-            )
-            self.indices[collection_name] = new_collection
-            return new_collection
+            try:
+                # Try to delete the collection first if it exists
+                try:
+                    self.client.delete_collection(name=collection_name)
+                except:
+                    pass
+                
+                # Create a new collection
+                new_collection = self.client.create_collection(
+                    name=collection_name,
+                    embedding_function=self.embedding_function
+                )
+                self.indices[collection_name] = new_collection
+                return new_collection
+            except Exception as inner_e:
+                print(f"❌ DEBUG: Failed to create fallback collection: {str(inner_e)}")
+                # If we can't create a new collection, return None and let the caller handle it
+                return None
 
     async def search_in_index(self, index_name: str, embedding: List[float], 
                          filters: Optional[Dict[str, Any]] = None, 
@@ -701,11 +838,16 @@ class VectorStore:
                                progress_callback: Optional[Callable[[str, int, int], None]] = None) -> List[str]:
         """Add file content to a specific index with chunking."""
         try:
+            print(f"\n🔍 DEBUG: Starting add_file_to_index for {getattr(file_path_or_obj, 'name', file_path_or_obj)}")
+            print(f"🔍 DEBUG: Target index: {index_name}")
+            
             # Ensure index exists
+            print(f"🔍 DEBUG: Creating/ensuring index exists: {index_name}")
             await self.create_index(index_name)
             collection = self._ensure_collection(index_name)
+            print(f"🔍 DEBUG: Collection obtained: {collection.name}")
             
-            # Update progress
+            # Update progress - Phase 1: Reading file (25% of total progress)
             if progress_callback:
                 progress_callback("Reading file...", 0, 100)
             
@@ -716,56 +858,110 @@ class VectorStore:
                 
                 if hasattr(file_path_or_obj, 'read'):  # File-like object
                     filename = getattr(file_path_or_obj, 'name', '')
+                    print(f"🔍 DEBUG: Processing file-like object: {filename}")
+                    
                     if filename.lower().endswith('.pdf'):
-                        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_path_or_obj.read()))
+                        print(f"🔍 DEBUG: Detected PDF file: {filename}")
+                        print(f"🔍 DEBUG: Reading PDF content into memory")
+                        pdf_content = file_path_or_obj.read()
+                        print(f"🔍 DEBUG: PDF content read, size: {len(pdf_content)} bytes")
+                        
+                        print(f"🔍 DEBUG: Creating PyPDF2.PdfReader")
+                        pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_content))
+                        print(f"🔍 DEBUG: PDF has {len(pdf_reader.pages)} pages")
+                        
                         text = ""
                         total_pages = len(pdf_reader.pages)
                         for i, page in enumerate(pdf_reader.pages):
-                            text += page.extract_text() + "\n"
+                            print(f"🔍 DEBUG: Extracting text from page {i+1}/{total_pages}")
+                            page_text = page.extract_text()
+                            print(f"🔍 DEBUG: Extracted {len(page_text)} characters from page {i+1}")
+                            text += page_text + "\n"
                             if progress_callback:
+                                # Calculate progress within the reading phase (25% of total)
+                                phase_progress = int((i+1) / total_pages * 25)
                                 progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
-                                               i+1, total_pages)
+                                               phase_progress, 100)
+                        
+                        print(f"🔍 DEBUG: Total text extracted: {len(text)} characters")
                         file_path_or_obj.seek(0)
                     else:
+                        print(f"🔍 DEBUG: Processing non-PDF file: {filename}")
                         content = file_path_or_obj.read()
                         text = content.decode('utf-8') if isinstance(content, bytes) else str(content)
+                        print(f"🔍 DEBUG: Extracted {len(text)} characters from file")
+                        if progress_callback:
+                            progress_callback("File read complete", 25, 100)
                 else:  # File path
                     file_path = Path(file_path_or_obj)
+                    print(f"🔍 DEBUG: Processing file path: {file_path}")
+                    
                     if not file_path.exists():
+                        print(f"❌ DEBUG: File not found: {file_path}")
                         raise FileNotFoundError(f"File not found: {file_path}")
                     
                     if file_path.suffix.lower() == '.pdf':
+                        print(f"🔍 DEBUG: Detected PDF file path: {file_path}")
                         with open(file_path, 'rb') as f:
+                            print(f"🔍 DEBUG: Creating PyPDF2.PdfReader from file")
                             pdf_reader = PyPDF2.PdfReader(f)
+                            print(f"🔍 DEBUG: PDF has {len(pdf_reader.pages)} pages")
+                            
                             text = ""
                             total_pages = len(pdf_reader.pages)
                             for i, page in enumerate(pdf_reader.pages):
-                                text += page.extract_text() + "\n"
+                                print(f"🔍 DEBUG: Extracting text from page {i+1}/{total_pages}")
+                                page_text = page.extract_text()
+                                print(f"🔍 DEBUG: Extracted {len(page_text)} characters from page {i+1}")
+                                text += page_text + "\n"
                                 if progress_callback:
+                                    # Calculate progress within the reading phase (25% of total)
+                                    phase_progress = int((i+1) / total_pages * 25)
                                     progress_callback(f"Reading PDF page {i+1}/{total_pages}", 
-                                                   i+1, total_pages)
+                                                   phase_progress, 100)
+                            print(f"🔍 DEBUG: Total text extracted: {len(text)} characters")
                     else:
+                        print(f"🔍 DEBUG: Processing non-PDF file path: {file_path}")
                         with open(file_path, 'r', encoding='utf-8') as f:
                             text = f.read()
+                            print(f"🔍 DEBUG: Extracted {len(text)} characters from file")
+                            if progress_callback:
+                                progress_callback("File read complete", 25, 100)
             
             except Exception as e:
+                print(f"❌ DEBUG: Error reading file: {str(e)}")
+                import traceback
+                print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
                 logging.error(f"Error reading file: {str(e)}")
                 raise
             
+            # Phase 2: Chunking (5% of total progress)
+            if progress_callback:
+                progress_callback("Chunking text...", 25, 100)
+                
             # Generate chunks
+            print(f"🔍 DEBUG: Generating chunks with size={self.config.chunk_size}, overlap={self.config.chunk_overlap}")
             chunks = self._chunk_text(text, self.config.chunk_size, self.config.chunk_overlap)
+            print(f"🔍 DEBUG: Generated {len(chunks)} chunks")
+            
+            if progress_callback:
+                progress_callback(f"Generated {len(chunks)} chunks", 30, 100)
+            
             if not chunks:
+                print(f"❌ DEBUG: No valid chunks generated from file")
                 raise ValueError("No valid chunks generated from file")
             
             # Generate unique IDs for chunks
             chunk_ids = []
             original_text_length = len(text)
             total_chunks = len(chunks)
+            print(f"🔍 DEBUG: Original text length: {original_text_length}, Total chunks: {total_chunks}")
             
             # Create root chunk with full metadata
             import hashlib
             from datetime import datetime
             
+            print(f"🔍 DEBUG: Creating root chunk")
             root_id = hashlib.md5(text.encode()).hexdigest()
             root_metadata = {
                 **(metadata or {}),
@@ -776,14 +972,35 @@ class VectorStore:
                 "chunk_overlap": self.config.chunk_overlap,
                 "created_at": datetime.now().isoformat()
             }
+            print(f"🔍 DEBUG: Root metadata created")
             
+            # Phase 3: Generating embeddings (35% of total progress)
+            if progress_callback:
+                progress_callback(f"Generating embeddings for {total_chunks} chunks...", 30, 100)
+                
             # Generate embeddings for chunks
+            print(f"🔍 DEBUG: Generating embeddings for {len(chunks)} chunks")
             embeddings = []
-            for chunk in chunks:
+            for i, chunk in enumerate(chunks):
+                print(f"🔍 DEBUG: Generating embedding for chunk {i+1}/{len(chunks)} ({len(chunk)} chars)")
                 embedding = self._safe_embed([chunk])[0]
                 embeddings.append(embedding)
+                print(f"🔍 DEBUG: Embedding generated for chunk {i+1}")
+                
+                if progress_callback:
+                    # Calculate progress within the embedding phase (35% of total, from 30% to 65%)
+                    phase_progress = 30 + int((i+1) / len(chunks) * 35)
+                    progress_callback(f"Generating embedding for chunk {i+1}/{len(chunks)}", 
+                                   phase_progress, 100)
             
+            print(f"🔍 DEBUG: All embeddings generated")
+            
+            # Phase 4: Storing chunks (35% of total progress)
+            if progress_callback:
+                progress_callback(f"Storing chunks in vector database...", 65, 100)
+                
             # Add root chunk
+            print(f"🔍 DEBUG: Adding root chunk to collection")
             collection.add(
                 ids=[root_id],
                 documents=[text[:self.config.chunk_size]],  # Store first chunk size of text
@@ -791,9 +1008,15 @@ class VectorStore:
                 embeddings=[embeddings[0]]  # Use first chunk embedding
             )
             chunk_ids.append(root_id)
+            print(f"🔍 DEBUG: Root chunk added with ID: {root_id}")
+            
+            if progress_callback:
+                progress_callback(f"Root chunk stored, adding {total_chunks} individual chunks...", 67, 100)
             
             # Add individual chunks with their metadata
+            print(f"🔍 DEBUG: Adding {total_chunks} individual chunks")
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                print(f"🔍 DEBUG: Processing chunk {i+1}/{total_chunks}")
                 chunk_id = hashlib.md5(f"{root_id}_{i}".encode()).hexdigest()
                 chunk_metadata = {
                     **(metadata or {}),
@@ -804,6 +1027,7 @@ class VectorStore:
                     "created_at": datetime.now().isoformat()
                 }
                 
+                print(f"🔍 DEBUG: Adding chunk {i+1} to collection")
                 collection.add(
                     ids=[chunk_id],
                     documents=[chunk],
@@ -811,13 +1035,24 @@ class VectorStore:
                     embeddings=[embedding]
                 )
                 chunk_ids.append(chunk_id)
+                print(f"🔍 DEBUG: Chunk {i+1} added with ID: {chunk_id}")
                 
                 if progress_callback:
-                    progress_callback(f"Processing chunk {i+1}/{total_chunks}", i+1, total_chunks)
+                    # Calculate progress within the storage phase (33% of total, from 67% to 100%)
+                    phase_progress = 67 + int((i+1) / total_chunks * 33)
+                    progress_callback(f"Storing chunk {i+1}/{total_chunks}", phase_progress, 100)
             
+            # Final progress update
+            if progress_callback:
+                progress_callback(f"Completed processing {total_chunks} chunks", 100, 100)
+                
+            print(f"✅ DEBUG: File processing completed successfully. Added {len(chunk_ids)} chunks to index.")
             return chunk_ids
             
         except Exception as e:
+            print(f"❌ DEBUG: Error adding file to index: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             logging.error(f"Error adding file to index: {str(e)}")
             raise
 
@@ -835,13 +1070,34 @@ class VectorStore:
             # Get list of files to process
             files = [f for f in path.rglob("*") 
                      if f.is_file() and f.suffix.lower() in ['.txt', '.pdf', '.docx', '.py', '.md', '.json']]
-            
             total_files = len(files)
+            print(f"🔍 DEBUG: Found {total_files} files to process in directory {directory_path}")
+            
+            if progress_callback:
+                progress_callback(f"Found {total_files} files to process", 0, 100)
+            
             for i, file_path in enumerate(files):
                 try:
+                    file_number = i + 1
+                    print(f"🔍 DEBUG: Processing file {file_number}/{total_files}: {file_path.name}")
+                    
                     if progress_callback:
-                        progress_callback(f"Processing file {i+1}/{total_files}: {file_path.name}",
-                                       i, total_files)
+                        # Calculate the overall progress range for this file
+                        # Each file gets an equal portion of the progress bar
+                        file_progress_start = int((i / total_files) * 100)
+                        file_progress_end = int(((i + 1) / total_files) * 100)
+                        file_progress_range = file_progress_end - file_progress_start
+                        
+                        progress_callback(f"Processing file {file_number}/{total_files}: {file_path.name}",
+                                       file_progress_start, 100)
+                    
+                    # Create a wrapper for the progress callback to scale it to this file's range
+                    def file_progress_callback(message, current, total):
+                        if progress_callback:
+                            # Scale the progress to this file's portion of the overall progress
+                            scaled_progress = file_progress_start + int((current / total) * file_progress_range)
+                            progress_callback(f"File {file_number}/{total_files} - {message}", 
+                                           scaled_progress, 100)
                     
                     await self.add_file_to_index(
                         index_name=index_name,
@@ -850,17 +1106,29 @@ class VectorStore:
                             **(metadata or {}),
                             "original_path": str(file_path)
                         },
-                        progress_callback=lambda msg, cur, tot: progress_callback(
-                            f"File {i+1}/{total_files} - {msg}", cur, tot
-                        ) if progress_callback else None
+                        progress_callback=file_progress_callback
                     )
                     processed += 1
+                    
+                    print(f"✅ DEBUG: Completed processing file {file_number}/{total_files}")
+                    
                 except Exception as e:
+                    print(f"❌ DEBUG: Error processing file {file_path}: {str(e)}")
+                    import traceback
+                    print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
                     logging.error(f"Error processing file {file_path}: {str(e)}")
             
+            # Final progress update
+            if progress_callback:
+                progress_callback(f"Completed processing {processed}/{total_files} files", 100, 100)
+                
+            print(f"✅ DEBUG: Directory processing completed. Processed {processed}/{total_files} files.")
             return processed
             
         except Exception as e:
+            print(f"❌ DEBUG: Error processing directory: {str(e)}")
+            import traceback
+            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             logging.error(f"Error processing directory: {str(e)}")
             raise
 
