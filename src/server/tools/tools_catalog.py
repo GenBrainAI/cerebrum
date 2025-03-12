@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Type, Union, get_type_hints, Callable
+from typing import Any, Dict, List, Optional, Type, Union, Callable
 import inspect
 import docstring_parser
 from os import getenv
@@ -39,14 +39,8 @@ load_dotenv()
 # Initialize logger
 logger = logging.getLogger(__name__)
 
-class ToolType(str, Enum):
-    """Type of tool in the catalog."""
-    PYTHON_FUNCTION = "python_function"
-    CLASS_METHOD = "class_method"
-    CREWAI_TOOL = "crewai_tool"
-    LANGCHAIN_TOOL = "langchain_tool"
-    OPENAPI_TOOL = "openapi_tool"
-    AI_TOOL = "ai_tool"
+# Note: ToolType is now imported from src.server.models.tools_descriptors
+# and no longer defined here to avoid duplication
 
 class ToolsCatalog:
     """Singleton catalog for all available tools."""
@@ -519,6 +513,17 @@ class ToolsCatalog:
                 except Exception as e:
                     print(f"❌ Failed to register InternalFileTools: {str(e)}")
                 
+                # Register weather tools
+                print("\n☁️ Registering weather tools...")
+                try:
+                    from src.server.tools.weather_tool import register_weather_tool
+                    names = register_weather_tool(self)
+                    print(f"✅ Registered WeatherTool with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register WeatherTool: {str(e)}")
+                    logger.error(f"Failed to register WeatherTool: {str(e)}")
+                
                 try:
                     internal_credentials_tools = InternalCredentialsTools()
                     names = self.register_instance(internal_credentials_tools, "internal_credentials_tools", exclude_base_methods=True, register_instance_itself=True)
@@ -542,6 +547,19 @@ class ToolsCatalog:
                     registered_tools.extend(names)
                 except Exception as e:
                     print(f"❌ Failed to register InternalProxyTools: {str(e)}")
+                
+                # Try to register InternalPersistenceTools with lazy import to avoid circular imports
+                print("\n📦 Registering persistence tools...")
+                try:
+                    # Import here to avoid circular import
+                    from src.server.tools.internal_persistence_tools import InternalPersistenceTools
+                    internal_persistence_tools = InternalPersistenceTools()
+                    names = self.register_instance(internal_persistence_tools, "internal_persistence_tools", exclude_base_methods=True, register_instance_itself=True)
+                    print(f"✅ Registered InternalPersistenceTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register InternalPersistenceTools: {str(e)}")
+                    logger.error(f"Failed to register InternalPersistenceTools: {str(e)}")
                 
                 # Register CrewAI tools
                 print("\n📦 Registering CrewAI tools...")
@@ -650,7 +668,8 @@ class ToolsCatalog:
         except Exception as e:
             logger.error(f"Failed to initialize default tools: {str(e)}")
             traceback.print_exc()
-            raise
+            # Initialize with empty list on failure
+            self.DEFAULT_TOOLS = []
 
     def _type_to_string(self, type_hint: Any) -> str:
         """Convert a type hint to a string representation."""

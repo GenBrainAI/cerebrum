@@ -45,13 +45,11 @@ class TaskHierarchyController:
         
         # Initialize available models for task management
         self.view_state.available_models = [
-            "gpt-4",
-            "gpt-4-turbo",
+            "gpt-4o-mini",
+            "gpt-4.5-preview",
             "gpt-3.5-turbo",
-            "claude-3-opus",
-            "claude-3-sonnet",
-            "claude-3-haiku",
-            "ollama/llama3"
+            "claude-3-7-sonnet-20250219",
+            "claude-3-5-sonnet-20241022",
         ]
 
     def handle_node_click(self, node_id: UUID):

@@ -19,9 +19,13 @@ class ViewState(BaseModel):
     selected_task_manager: Optional[str] = None
     selected_task: Optional[str] = None
     available_models: List[str] = [
+        "gpt-4o-mini",
+        "gpt-4.5-preview",
+        "gpt-3.5-turbo",
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-sonnet-20241022",
         "gpt-4",
         "gpt-4-turbo",
-        "gpt-3.5-turbo",
         "claude-3-opus",
         "claude-3-sonnet",
         "claude-3-haiku",

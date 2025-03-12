@@ -38,6 +38,9 @@ persistence_model = PersistenceModelFactory.persistence_model("inmemory")
 class ToolsOperator:
     def __init__(self, api_provider: str = "openai"):
         self.set_api_provider(api_provider)
+        # Dictionary to map between original function names and OpenAI-compatible names
+        self.function_name_map = {}
+        self.reverse_function_name_map = {}
 
     def set_api_provider(self, api_provider: str):
         self.api_provider = api_provider.lower()
@@ -81,7 +84,25 @@ class ToolsOperator:
             raise HTTPException(status_code=500, detail=detail)
 
     async def _openai_completion(self, model, messages, curried_proxy: CurriedProxy):
+        # Get tools from curried proxy
         tools = curried_proxy.export_to_openai()
+        
+        # Clear previous mappings
+        self.function_name_map = {}
+        self.reverse_function_name_map = {}
+        
+        # Create OpenAI-compatible function names
+        if tools:
+            for tool in tools:
+                original_name = tool['function']['name']
+                if '.' in original_name:
+                    # Replace periods with hyphens for OpenAI compatibility
+                    openai_name = original_name.replace('.', '-')
+                    self.function_name_map[original_name] = openai_name
+                    self.reverse_function_name_map[openai_name] = original_name
+                    # Update the name in the tool
+                    tool['function']['name'] = openai_name
+        
         messages = self._messages_to_openai(messages)
 
         while True:
@@ -112,15 +133,26 @@ class ToolsOperator:
                 coroutine_list = []
                 tool_calls = choice.message.tool_calls
                 for tool_call in tool_calls:
-                    function_name = tool_call.function.name
+                    # Get the OpenAI-compatible function name
+                    openai_function_name = tool_call.function.name
+                    # Convert back to original function name if it exists in the mapping
+                    original_function_name = self.reverse_function_name_map.get(openai_function_name, openai_function_name)
                     function_args = json.loads(tool_call.function.arguments)
-                    coroutine = curried_proxy.curried_proxy(function_name)(function_args)
-                    coroutine_list.append(coroutine)
+                    coroutine = curried_proxy.curried_proxy(original_function_name)(function_args)
+                    coroutine_list.append((tool_call, original_function_name, coroutine))
 
                 # Run all coroutines concurrently and wait for all responses
-                responses = await asyncio.gather(*coroutine_list)
+                responses = []
+                for tool_call, original_name, coroutine in coroutine_list:
+                    try:
+                        result = await coroutine
+                        responses.append((tool_call, original_name, result))
+                    except Exception as e:
+                        logging.error(f"Error executing function {original_name}: {str(e)}")
+                        responses.append((tool_call, original_name, {"error": str(e)}))
+                
                 # Process each response and add it to messages
-                for tool_call, function_response in zip(tool_calls, responses):
+                for tool_call, original_name, function_response in responses:
                     if isinstance(function_response, dict) or isinstance(function_response, list):
                         response_str = json.dumps(function_response)
                     else:
@@ -128,7 +160,7 @@ class ToolsOperator:
 
                     messages.append({
                         "role": "tool",
-                        "name": tool_call.function.name,
+                        "name": tool_call.function.name,  # Keep the OpenAI-compatible name in messages
                         "tool_call_id": tool_call.id,
                         "content": response_str
                     })
@@ -185,6 +217,23 @@ class ToolsOperator:
     async def _langchain_completion(self, model: str, messages: List[Dict[str, Any]], curried_proxy: CurriedProxy) -> str:
         try:
             tools = curried_proxy.export_to_openai()  # We'll use OpenAI function format for compatibility
+            
+            # Clear previous mappings
+            self.function_name_map = {}
+            self.reverse_function_name_map = {}
+            
+            # Create OpenAI-compatible function names
+            if tools:
+                for tool in tools:
+                    original_name = tool['function']['name']
+                    if '.' in original_name:
+                        # Replace periods with hyphens for OpenAI compatibility
+                        openai_name = original_name.replace('.', '-')
+                        self.function_name_map[original_name] = openai_name
+                        self.reverse_function_name_map[openai_name] = original_name
+                        # Update the name in the tool
+                        tool['function']['name'] = openai_name
+                        
             langchain_messages = self._convert_messages_to_langchain(messages)
 
             # Create the appropriate LangChain chat model based on the model name
@@ -209,14 +258,16 @@ class ToolsOperator:
                 if "function_call" in full_response:
                     function_call_match = re.search(r'{"name": "(.*?)", "arguments": (.*?)}', full_response)
                     if function_call_match:
-                        function_name = function_call_match.group(1)
+                        openai_function_name = function_call_match.group(1)
+                        # Convert back to original function name if it exists in the mapping
+                        original_function_name = self.reverse_function_name_map.get(openai_function_name, openai_function_name)
                         function_args = json.loads(function_call_match.group(2))
 
-                        # Execute the function
-                        result = await curried_proxy.curried_proxy(function_name)(function_args)
+                        # Execute the function with the original name
+                        result = await curried_proxy.curried_proxy(original_function_name)(function_args)
 
                         # Add the function result to the messages
-                        langchain_messages.append(FunctionMessage(content=json.dumps(result), name=function_name))
+                        langchain_messages.append(FunctionMessage(content=json.dumps(result), name=openai_function_name))
 
                         # Continue the conversation with the function result
                         prompt = ChatPromptTemplate.from_messages(langchain_messages)
@@ -229,7 +280,6 @@ class ToolsOperator:
             logging.error(f"Error in LangChain completion: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-
     def _convert_messages_to_langchain(self, messages: List[Any]) -> List[Any]:
         langchain_messages = []
         for message in messages:
@@ -242,26 +292,27 @@ class ToolsOperator:
             elif message.role == "function":
                 langchain_messages.append(FunctionMessage(content=message.content, name=message.name))
         return langchain_messages
-
-
-
-    def _convert_messages_to_langchain(self, messages: List[Any]) -> List[Any]:
-        langchain_messages = []
-        for message in messages:
-            if message.role == "system":
-                langchain_messages.append(SystemMessage(content=message.content))
-            elif message.role == "user":
-                langchain_messages.append(HumanMessage(content=message.content))
-            elif message.role == "assistant":
-                langchain_messages.append(AIMessage(content=message.content))
-            elif message.role == "function":
-                langchain_messages.append(FunctionMessage(content=message.content, name=message.name))
-        return langchain_messages
-
 
     async def _groq_completion(self, model: str, messages: List[Dict[str, Any]], curried_proxy: CurriedProxy) -> str:
         try:
             tools = curried_proxy.export_to_openai()  # We'll use OpenAI function format for compatibility
+            
+            # Clear previous mappings
+            self.function_name_map = {}
+            self.reverse_function_name_map = {}
+            
+            # Create OpenAI-compatible function names
+            if tools:
+                for tool in tools:
+                    original_name = tool['function']['name']
+                    if '.' in original_name:
+                        # Replace periods with hyphens for OpenAI compatibility
+                        openai_name = original_name.replace('.', '-')
+                        self.function_name_map[original_name] = openai_name
+                        self.reverse_function_name_map[openai_name] = original_name
+                        # Update the name in the tool
+                        tool['function']['name'] = openai_name
+            
             groq_messages = self._messages_to_openai(messages)  # Reuse OpenAI format
 
             # Prepare the function descriptions for Groq
@@ -284,14 +335,16 @@ class ToolsOperator:
 
         if hasattr(message, 'function_call') and message.function_call:
             function_call = message.function_call
-            function_name = function_call.name
+            openai_function_name = function_call.name
+            # Convert back to original function name if it exists in the mapping
+            original_function_name = self.reverse_function_name_map.get(openai_function_name, openai_function_name)
             function_args = json.loads(function_call.arguments)
 
-            # Execute the function
-            result = await curried_proxy.curried_proxy(function_name)(function_args)
+            # Execute the function with the original name
+            result = await curried_proxy.curried_proxy(original_function_name)(function_args)
 
             # Add the function result to the messages
-            new_message = {"role": "function", "name": function_name, "content": json.dumps(result)}
+            new_message = {"role": "function", "name": openai_function_name, "content": json.dumps(result)}
 
             # Continue the conversation with the function result
             return await self.completion(
@@ -307,6 +360,22 @@ class ToolsOperator:
     async def _gemini_completion(self, model: str, messages: List[Dict[str, Any]], curried_proxy: CurriedProxy) -> str:
         try:
             tools = curried_proxy.export_to_openai()  # We'll use OpenAI function format for compatibility
+
+            # Clear previous mappings
+            self.function_name_map = {}
+            self.reverse_function_name_map = {}
+            
+            # Create OpenAI-compatible function names
+            if tools:
+                for tool in tools:
+                    original_name = tool['function']['name']
+                    if '.' in original_name:
+                        # Replace periods with hyphens for OpenAI compatibility
+                        openai_name = original_name.replace('.', '-')
+                        self.function_name_map[original_name] = openai_name
+                        self.reverse_function_name_map[openai_name] = original_name
+                        # Update the name in the tool
+                        tool['function']['name'] = openai_name
 
             # Convert OpenAI tools format to Gemini's FunctionDeclaration
             gemini_tools = [
@@ -342,14 +411,16 @@ class ToolsOperator:
     async def _process_gemini_response(self, response, curried_proxy, gemini_messages):
         if response.candidates[0].content.parts[0].function_call:
             function_call = response.candidates[0].content.parts[0].function_call
-            function_name = function_call.name
+            openai_function_name = function_call.name
+            # Convert back to original function name if it exists in the mapping
+            original_function_name = self.reverse_function_name_map.get(openai_function_name, openai_function_name)
             function_args = json.loads(function_call.args)
 
-            # Execute the function
-            result = await curried_proxy.curried_proxy(function_name)(function_args)
+            # Execute the function with the original name
+            result = await curried_proxy.curried_proxy(original_function_name)(function_args)
 
             # Add the function result to the messages
-            gemini_messages.append({"role": "function", "parts": [{"text": json.dumps(result)}], "name": function_name})
+            gemini_messages.append({"role": "function", "parts": [{"text": json.dumps(result)}], "name": openai_function_name})
 
             # Continue the conversation with the function result
             chat = self.client.start_chat(history=gemini_messages)
