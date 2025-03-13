@@ -40,6 +40,31 @@ def format_response(response: Union[str, Dict[str, Any], Any]) -> str:
         except Exception:
             return "N/S"  # Non-serializable object
 
+def sanitize_data(data):
+    """
+    Recursively sanitize data for CrewAI by converting datetime objects to strings
+    and ensuring all data is of supported types (str, int, float, bool, dict, list).
+    
+    Args:
+        data: The data to sanitize
+        
+    Returns:
+        Sanitized data safe for CrewAI
+    """
+    import datetime
+    
+    if isinstance(data, dict):
+        return {k: sanitize_data(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_data(item) for item in data]
+    elif isinstance(data, (datetime.datetime, datetime.date)):
+        return str(data)
+    elif isinstance(data, (str, int, float, bool, type(None))):
+        return data
+    else:
+        # Convert any other types to strings
+        return str(data)
+
 async def run_crew_task(
     task_id: str, 
     task_input: Optional[Dict[str, Any]] = None,
@@ -128,9 +153,13 @@ async def run_crew_task(
         })
         persistence_model.tasks.update(task_id, task)
         
+        # Ensure task_input is sanitized for CrewAI
+        sanitized_input = sanitize_data(task_input or {})
+        print(f"🧹 Task input sanitized for CrewAI compatibility")
+        
         # Execute the crew with the provided input using run_in_executor
         loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, crew.kickoff, task_input or {})
+        result = await loop.run_in_executor(None, crew.kickoff, sanitized_input)
         
         # Format the result into a string response
         formatted_result = format_response(result)

@@ -7,7 +7,7 @@ import httpx
 import asyncio
 import docstring_parser
 
-from crewai.tools import BaseTool
+from crewai.tools import BaseTool         
 from langchain.tools import BaseTool as LangChainTool
 from crewai_tools.tools.rag.rag_tool import RagTool
 from pydantic import BaseModel, Field, create_model, ConfigDict
@@ -343,13 +343,44 @@ class CurriedProxy(BaseModel):
         """Get tool metadata by name."""
         return self.catalog.get_tool(name)
 
-    def export_to_crewai(self) -> List[BaseTool]:
-        """Export tools to CrewAI format."""
+    def export_to_crewai(self, allowed_tools: Optional[List[str]] = None) -> List[BaseTool]:
+        """Export tools to CrewAI format.
+        
+        Args:
+            allowed_tools: Optional list of tool names to export. If None, exports all tools.
+                           Can also be a list of prefixes to match against tool names.
+        """
         print("\n🔍 DEBUG: Exporting tools to CrewAI")
-        print(f"📋 Tool names in proxy: {', '.join(sorted(self.tool_names))}")
+        
+        # Default allowed tools if none specified - focus on web search and URL tools
+        if allowed_tools is None:
+            allowed_tools = [
+                "web_search", 
+                "url", 
+                "URLTools",
+                "search",
+                "brave_search",
+                "google_search",
+                "delegate"  # Always include delegation tool
+            ]
+            print(f"📋 Using default allowed tools: {', '.join(allowed_tools)}")
+        else:
+            print(f"📋 Using specified allowed tools: {', '.join(allowed_tools)}")
+        
+        # Filter tool names based on allowed tools
+        filtered_tool_names = []
+        for tool_name in self.tool_names:
+            # Check if tool name matches any allowed tool prefix
+            if any(tool_name.startswith(prefix) or tool_name.lower().startswith(prefix.lower()) for prefix in allowed_tools):
+                filtered_tool_names.append(tool_name)
+                print(f"  ✅ Including tool: {tool_name}")
+            else:
+                print(f"  ❌ Excluding tool: {tool_name}")
+        
+        print(f"📋 Filtered tool names: {', '.join(filtered_tool_names)}")
         
         crewai_tools = []
-        for tool_name in self.tool_names:
+        for tool_name in filtered_tool_names:
             print(f"  ⚙️ Processing tool: {tool_name}")
             try:
                 # Get tool metadata
@@ -375,6 +406,19 @@ class CurriedProxy(BaseModel):
             except Exception as e:
                 print(f"    ❌ Error processing tool {tool_name}: {str(e)}")
                 continue
+        
+        # Add delegation tool for hierarchical process
+        try:
+            print("  ⚙️ Adding delegation tool for hierarchical process")
+            delegation_tool = CerebrumCrewAITool(
+                name="Delegate work to coworker",
+                description="Delegate a specific task to one of your coworkers. Provide the task description, context, and coworker name as strings.",
+                proxy=self
+            )
+            crewai_tools.append(delegation_tool)
+            print("    ✅ Added delegation tool")
+        except Exception as e:
+            print(f"    ❌ Error adding delegation tool: {str(e)}")
         
         print(f"📦 Total tools exported: {len(crewai_tools)}")
         return crewai_tools
@@ -818,15 +862,70 @@ class CurriedProxy(BaseModel):
     async def _arun(self, **kwargs: Any) -> Any:
         """Execute the tool asynchronously."""
         try:
+            # Special handling for delegation tool
+            if "delegate" in self.name.lower() or "coworker" in self.name.lower():
+                print(f"\n🔄 Executing delegation tool with parameters: {kwargs}")
+                # Ensure all parameters are strings
+                for key, value in kwargs.items():
+                    if not isinstance(value, str):
+                        print(f"  ⚠️ Converting {key} from {type(value)} to string")
+                        kwargs[key] = str(value)
+                
+                # For delegation, we don't actually execute through the proxy
+                # Instead, we return a formatted response that CrewAI can understand
+                coworker = kwargs.get('coworker', 'Unknown')
+                task = kwargs.get('task', 'Unknown task')
+                context = kwargs.get('context', 'No context provided')
+                
+                response = f"Task delegated to {coworker}:\nTask: {task}\nContext: {context}"
+                print(f"  ✅ Delegation response: {response}")
+                return response
+            
+            # General parameter validation and conversion for all tools
+            print(f"\n🔄 Executing tool {self.name} with parameters: {kwargs}")
+            
+            # Get expected parameter types from schema if available
+            expected_types = {}
+            if self.args_schema:
+                schema_json = self.args_schema.model_json_schema()
+                if 'properties' in schema_json:
+                    for param_name, param_info in schema_json['properties'].items():
+                        param_type = param_info.get('type', 'string')
+                        expected_types[param_name] = param_type
+            
+            # Convert parameters to expected types
+            for key, value in kwargs.items():
+                expected_type = expected_types.get(key, 'string')  # Default to string if type not specified
+                
+                # Handle URL parameters - ensure they're valid URLs
+                if key == 'url' and not isinstance(value, str):
+                    print(f"  ⚠️ Converting URL parameter from {type(value)} to string")
+                    kwargs[key] = str(value)
+                    # Check if it's a valid URL
+                    if not kwargs[key].startswith(('http://', 'https://')):
+                        print(f"  ⚠️ URL parameter doesn't have a protocol, adding https://")
+                        kwargs[key] = f"https://{kwargs[key]}"
+                
+                # Handle other non-string parameters
+                elif not isinstance(value, str) and expected_type == 'string':
+                    print(f"  ⚠️ Converting {key} from {type(value)} to string")
+                    kwargs[key] = str(value)
+            
             # Validate arguments using the schema
             if self.args_schema:
-                validated_args = self.args_schema(**kwargs)
-                kwargs = validated_args.model_dump()
-
+                try:
+                    validated_args = self.args_schema(**kwargs)
+                    kwargs = validated_args.model_dump()
+                except Exception as e:
+                    print(f"  ⚠️ Schema validation failed: {str(e)}")
+                    # Continue with best effort conversion
+            
             # Execute the tool through the proxy
             return await self._proxy.execute(self.name, kwargs)
         except Exception as e:
-            raise ValueError(f"Error executing tool {self.name}: {str(e)}")
+            error_msg = f"Error executing tool {self.name}: {str(e)}"
+            print(f"  ❌ {error_msg}")
+            raise ValueError(error_msg)
 
     def _run(self, **kwargs) -> str:
         """Run the tool synchronously - not supported."""
@@ -855,6 +954,22 @@ class CerebrumCrewAITool(BaseTool):
 
     def __init__(self, name: str, description: str, proxy: Any):
         """Initialize the tool with name, description and proxy."""
+        # Special handling for delegation tool
+        if "delegate" in name.lower() or "coworker" in name.lower():
+            # Create a simple schema for delegation with string parameters
+            schema = create_model(
+                "DelegateWorkToolSchema",
+                task=(str, Field(..., description="The task to delegate")),
+                context=(str, Field(..., description="The context for the task")),
+                coworker=(str, Field(..., description="The role/name of the coworker to delegate to")),
+                __config__=ConfigDict(extra='forbid', arbitrary_types_allowed=True)
+            )
+            # Initialize parent with schema
+            super().__init__(name=name, description=description, args_schema=schema)
+            # Store proxy for later use
+            self._proxy = proxy
+            return
+
         # Get tool metadata to ensure we have all parameters
         metadata = proxy.catalog.get_tool(name)
         if metadata is None and '.' in name:
@@ -938,15 +1053,70 @@ class CerebrumCrewAITool(BaseTool):
     async def _arun(self, **kwargs: Any) -> Any:
         """Execute the tool asynchronously."""
         try:
+            # Special handling for delegation tool
+            if "delegate" in self.name.lower() or "coworker" in self.name.lower():
+                print(f"\n🔄 Executing delegation tool with parameters: {kwargs}")
+                # Ensure all parameters are strings
+                for key, value in kwargs.items():
+                    if not isinstance(value, str):
+                        print(f"  ⚠️ Converting {key} from {type(value)} to string")
+                        kwargs[key] = str(value)
+                
+                # For delegation, we don't actually execute through the proxy
+                # Instead, we return a formatted response that CrewAI can understand
+                coworker = kwargs.get('coworker', 'Unknown')
+                task = kwargs.get('task', 'Unknown task')
+                context = kwargs.get('context', 'No context provided')
+                
+                response = f"Task delegated to {coworker}:\nTask: {task}\nContext: {context}"
+                print(f"  ✅ Delegation response: {response}")
+                return response
+            
+            # General parameter validation and conversion for all tools
+            print(f"\n🔄 Executing tool {self.name} with parameters: {kwargs}")
+            
+            # Get expected parameter types from schema if available
+            expected_types = {}
+            if self.args_schema:
+                schema_json = self.args_schema.model_json_schema()
+                if 'properties' in schema_json:
+                    for param_name, param_info in schema_json['properties'].items():
+                        param_type = param_info.get('type', 'string')
+                        expected_types[param_name] = param_type
+            
+            # Convert parameters to expected types
+            for key, value in kwargs.items():
+                expected_type = expected_types.get(key, 'string')  # Default to string if type not specified
+                
+                # Handle URL parameters - ensure they're valid URLs
+                if key == 'url' and not isinstance(value, str):
+                    print(f"  ⚠️ Converting URL parameter from {type(value)} to string")
+                    kwargs[key] = str(value)
+                    # Check if it's a valid URL
+                    if not kwargs[key].startswith(('http://', 'https://')):
+                        print(f"  ⚠️ URL parameter doesn't have a protocol, adding https://")
+                        kwargs[key] = f"https://{kwargs[key]}"
+                
+                # Handle other non-string parameters
+                elif not isinstance(value, str) and expected_type == 'string':
+                    print(f"  ⚠️ Converting {key} from {type(value)} to string")
+                    kwargs[key] = str(value)
+            
             # Validate arguments using the schema
             if self.args_schema:
-                validated_args = self.args_schema(**kwargs)
-                kwargs = validated_args.model_dump()
-
+                try:
+                    validated_args = self.args_schema(**kwargs)
+                    kwargs = validated_args.model_dump()
+                except Exception as e:
+                    print(f"  ⚠️ Schema validation failed: {str(e)}")
+                    # Continue with best effort conversion
+            
             # Execute the tool through the proxy
             return await self._proxy.execute(self.name, kwargs)
         except Exception as e:
-            raise ValueError(f"Error executing tool {self.name}: {str(e)}")
+            error_msg = f"Error executing tool {self.name}: {str(e)}"
+            print(f"  ❌ {error_msg}")
+            raise ValueError(error_msg)
 
 def create_crewai_tool(name: str, metadata: ToolMetadata, proxy: Any) -> BaseTool:
     """Create a CrewAI tool from tool metadata and proxy.
