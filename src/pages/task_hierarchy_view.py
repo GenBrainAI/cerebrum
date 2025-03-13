@@ -135,7 +135,7 @@ class TaskHierarchyView(BaseView):
         # Call parent save_session method
         super().save_session()
 
-def render_chat_view():
+async def render_chat_view():
     """Render the chat interface"""
     st.subheader("Task Interaction")
     
@@ -186,18 +186,23 @@ def render_chat_view():
     if prompt := st.chat_input("Enter your message"):
         # Add user message to chat history
         st.chat_message("user").write(prompt)
-        controller.view_state.add_message("user", prompt)
         
         # Process user message with the task runner
-        # We'll use asyncio.create_task to run this asynchronously
-        asyncio.create_task(controller.handle_chat(prompt))
-        
-        # Save session state
-        view = TaskHierarchyView()
-        view.save_session()
-        
-        # Force re-render
-        st.rerun()
+        # Properly await the chat handling
+        try:
+            # Directly await the coroutine since we're in an async function
+            await controller.handle_chat(prompt)
+            
+            # Save session state
+            view = TaskHierarchyView()
+            view.save_session()
+            
+            # Force re-render
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error processing message: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
 
 def render_observability_view():
     """Render observability tools"""
@@ -388,7 +393,7 @@ async def render_task_hierarchy_view():
         
         # Chat View (primary view)
         if st.session_state.active_tab == 0:
-            render_chat_view()
+            await render_chat_view()
         
         # Observability View
         elif st.session_state.active_tab == 1:

@@ -1079,6 +1079,40 @@ async def render_main_chat():
     
     # Display chat messages
     if st.session_state.messages is not None:
+        # Add CSS for proper markdown rendering
+        st.markdown("""
+        <style>
+        .chat-message {
+            margin-bottom: 10px;
+        }
+        .chat-message p {
+            margin-bottom: 5px;
+            white-space: pre-wrap;
+        }
+        .chat-message ul, .chat-message ol {
+            margin-left: 20px;
+            margin-bottom: 10px;
+        }
+        .chat-message h1, .chat-message h2, .chat-message h3, .chat-message h4 {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+        .chat-message code {
+            white-space: pre-wrap;
+        }
+        .chat-message pre {
+            white-space: pre-wrap;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .stMarkdown {
+            overflow-wrap: break-word;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         for msg in st.session_state.messages:
             if msg is None:
                 continue
@@ -1092,6 +1126,7 @@ async def render_main_chat():
                     continue
                     
             with st.chat_message(msg.role):
+                # Use write for better markdown rendering
                 st.write(msg.content)
 
     # Chat input
@@ -1155,19 +1190,14 @@ async def render_main_chat():
                     response_text = full_response['response']
                 else:
                     response_text = str(full_response)
-                    
-                # Simulate streaming
-                current_response = ""
-                for chunk in response_text.split():
-                    current_response += chunk + " "
-                    time.sleep(0.02)
-                    message_placeholder.write(current_response + "▌")
-                message_placeholder.write(current_response)
+                
+                # Display the full response with proper formatting
+                message_placeholder.write(response_text)
 
                 # Add assistant response and save state
                 assistant_message = Message(
                     role="assistant",
-                    content=current_response,
+                    content=response_text,
                     file_ids=None,
                     created_at=None,
                     updated_at=None
@@ -1433,6 +1463,10 @@ def clear_session_state():
     st.session_state.current_session_id = None
     st.session_state.current_tasksmanager_id = None
     st.session_state.current_task_id = None
+    
+    # Save the empty session state to persist the changes
+    save_local_session()
+    print("\n🗑️ Cleared main chat session")
 
 def save_chat_messages(task_id: str, messages: List[Message]):
     """Save chat messages to task's current session."""
