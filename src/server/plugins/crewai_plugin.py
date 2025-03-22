@@ -105,12 +105,91 @@ class CrewAIPlugin(AgentFrameworkPlugin):
                         'tools': []
                     }
 
+            # Convert tool dictionaries to actual tool instances
+            tools = []
+            from langchain.tools import BaseTool, Tool
+            from src.server.tools.tools_catalog import ToolsCatalog
+            
+            # Get the tools catalog
+            tools_catalog = ToolsCatalog()
+            
+            # Process each tool in the agent configuration
+            for tool_dict in agent_config.get('tools', []):
+                tool_name = tool_dict.get('name')
+                if not tool_name:
+                    logger.warning(f"Skipping tool without name: {tool_dict}")
+                    continue
+                
+                # Try to get the tool from the catalog
+                try:
+                    # Check if the tool exists in the catalog using get_tool method
+                    tool_metadata = tools_catalog.get_tool(tool_name)
+                    if tool_metadata:
+                        # Try to get the tool instance
+                        tool_instance = tools_catalog.get_tool_instance(tool_name)
+                        if tool_instance:
+                            # Check if it's already a BaseTool
+                            if isinstance(tool_instance, BaseTool):
+                                tools.append(tool_instance)
+                                logger.info(f"Added BaseTool from catalog: {tool_name}")
+                            else:
+                                # Create a Tool wrapper for the instance
+                                def tool_func(*args, **kwargs):
+                                    return tool_instance(*args, **kwargs)
+                                
+                                tool_instance = Tool(
+                                    name=tool_name,
+                                    func=tool_func,
+                                    description=tool_dict.get('description', f"Tool {tool_name}")
+                                )
+                                tools.append(tool_instance)
+                                logger.info(f"Created Tool wrapper for: {tool_name}")
+                        else:
+                            # Create a dummy tool
+                            def dummy_tool_func(*args, **kwargs):
+                                return f"This is a placeholder for {tool_name}. The actual tool functionality is not available."
+                            
+                            tool_instance = Tool(
+                                name=tool_name,
+                                func=dummy_tool_func,
+                                description=tool_dict.get('description', f"Tool {tool_name}")
+                            )
+                            tools.append(tool_instance)
+                            logger.info(f"Created dummy tool (no instance): {tool_name}")
+                    else:
+                        # If not in catalog, create a dummy tool
+                        def dummy_tool_func(*args, **kwargs):
+                            return f"This is a placeholder for {tool_name}. The actual tool functionality is not available."
+                        
+                        tool_instance = Tool(
+                            name=tool_name,
+                            func=dummy_tool_func,
+                            description=tool_dict.get('description', f"Tool {tool_name}")
+                        )
+                        tools.append(tool_instance)
+                        logger.info(f"Created dummy tool (not in catalog): {tool_name}")
+                except Exception as e:
+                    logger.error(f"Error creating tool {tool_name}: {str(e)}")
+                    # Continue with other tools
+            
+            # If no tools were successfully created, add a dummy tool to avoid errors
+            if not tools:
+                def dummy_tool_func(*args, **kwargs):
+                    return "This is a placeholder tool. No actual tools were available."
+                
+                tools.append(Tool(
+                    name="DummyTool",
+                    func=dummy_tool_func,
+                    description="A placeholder tool when no other tools are available"
+                ))
+                logger.info("Added fallback dummy tool")
+
             # Create agent with tools
             agent = Agent(
                 role=agent_config['role'],
                 goal=agent_config['goal'],
                 backstory=agent_config['backstory'],
-                tools=agent_config.get('tools', []),
+                tools=tools,  # Use the instantiated tools
                 verbose=self.config.settings.get('verbose', True),
                 allow_delegation=False,  # Disable delegation for single-agent tasks
                 llm_config={
@@ -132,17 +211,41 @@ class CrewAIPlugin(AgentFrameworkPlugin):
                 raise Exception("Plugin not initialized")
 
             logger.info(f"Received task data in plugin: {task}")
+            logger.info(f"Task type: {type(task)}")
+            
+            # Print all attributes of task if it's an object
+            if hasattr(task, '__dict__'):
+                logger.info(f"Task attributes: {dir(task)}")
+                logger.info(f"Task __dict__: {task.__dict__}")
+            
+            # If task is a dictionary, print all keys
+            if isinstance(task, dict):
+                logger.info(f"Task keys: {task.keys()}")
+                logger.info(f"Task values: {task}")
 
             # Extract task description and tool info
-            description = task['description'] if isinstance(task, dict) else str(task)
-            input_data = task.get('input_data', {}) if isinstance(task, dict) else {}
+            description = ""
+            input_data = {}
+            
+            # Handle different task input formats
+            if isinstance(task, dict):
+                description = task.get('description', '')
+                input_data = task.get('input_data', {})
+                logger.info(f"Task is a dict, description: {description}")
+            elif isinstance(task, str):
+                description = task
+                logger.info(f"Task is a string: {description}")
+            else:
+                # Try to convert to string
+                description = str(task)
+                logger.info(f"Task converted to string: {description}")
             
             logger.info(f"Extracted description: {description}")
-            logger.info(f"Extracted input_data: {input_data}")
             
             # Extract tool request data safely
             tool_name = ""
             tool_description = ""
+            
             if isinstance(input_data, dict):
                 tool_request = input_data.get('tool_request', {})
                 if isinstance(tool_request, dict):
@@ -152,17 +255,37 @@ class CrewAIPlugin(AgentFrameworkPlugin):
             logger.info(f"Extracted tool info - name: {tool_name}, description: {tool_description}")
 
             # Create task with expected output
-            crewai_task = Task(
-                description=description,
-                agent=agent,
-                expected_output=f"A detailed description of the tool {tool_name}",
-                context=[
+            # CrewAI Task expects a dictionary with specific fields
+            task_data = {
+                "description": description,
+                "agent": agent,
+                "expected_output": "A detailed response to the task",
+                "context": [
                     f"Tool name: {tool_name}",
                     f"Tool description: {tool_description}"
-                ]
-            )
-
-            logger.info(f"Created CrewAI task: {crewai_task}")
+                ],
+                "config": {}  # Empty config to avoid errors
+            }
+            
+            logger.info(f"Created task_data for CrewAI Task: {task_data}")
+            
+            # Create the Task object by unpacking the dictionary
+            try:
+                crewai_task = Task(**task_data)
+                logger.info(f"Created CrewAI task: {crewai_task}")
+            except Exception as e:
+                logger.error(f"Error creating CrewAI task: {str(e)}")
+                logger.error(f"Task data: {task_data}")
+                # Try with a simpler task data
+                simple_task_data = {
+                    "description": description,
+                    "agent": agent,
+                    "expected_output": "A detailed response to the task",
+                    "config": {}
+                }
+                logger.info(f"Trying with simpler task data: {simple_task_data}")
+                crewai_task = Task(**simple_task_data)
+                logger.info(f"Created CrewAI task with simpler data: {crewai_task}")
 
             # Create crew with single agent
             crew = Crew(
@@ -171,7 +294,7 @@ class CrewAIPlugin(AgentFrameworkPlugin):
                 verbose=self.config.settings.get('verbose', True),
                 process=Process.sequential
             )
-
+            
             logger.info(f"Created crew with agent: {agent}")
 
             # Execute task and get result
@@ -207,6 +330,7 @@ class CrewAIPlugin(AgentFrameworkPlugin):
 
         except Exception as e:
             logger.error(f"Failed to execute task with error: {str(e)}")
+            logger.exception(e)  # Print full traceback
             return {
                 "status": "failed",
                 "error": str(e),

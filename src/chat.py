@@ -171,15 +171,44 @@ def load_state(state_path: Optional[str] = None):
                                         persistence_model.tasksmanagers.create(TasksManager(**tm_data))
                                 elif collection_name == 'tasks':
                                     for task_id, task_data in raw_data.items():
+                                        # Debug print for task data
+                                        print(f"\n🔍 Task data for {task_id}:")
+                                        print(f"  crewai_config_id: {task_data.get('crewai_config_id')}")
                                         persistence_model.tasks.create(Task(**task_data))
+                                elif collection_name == 'crewai_config':
+                                    # Debug print for crewai_config data
+                                    print(f"\n🔍 CrewAI config data:")
+                                    for config_id, config_data in raw_data.items():
+                                        print(f"  Config ID: {config_id}")
+                                        # Create CrewAIConfig objects properly
+                                        from server.models.agent import CrewAIConfig
+                                        persistence_model.crewai_config.create(CrewAIConfig(**config_data))
                                 else:
-                                    # For other collections, use update
-                                    persistence_model.update(collection_name, raw_data)
+                                    # For other collections, use collection method
+                                    collection = persistence_model.collection(collection_name)
+                                    for item_id, item_data in raw_data.items():
+                                        try:
+                                            collection.create(item_id, item_data)
+                                        except Exception as e:
+                                            print(f"❌ Error creating {collection_name} item {item_id}: {str(e)}")
                                 print(f"  Loaded {collection_name}: {len(raw_data) if isinstance(raw_data, dict) else 'non-dict data'}")
                             except Exception as e:
                                 print(f"❌ Error loading {collection_name}: {str(e)}")
                         else:
                             print(f"  Empty {collection_name} in state data")
+                
+                # Add verification of loaded tasks with crewai_config_id
+                print("\n🔍 Verifying loaded tasks with crewai_config_id:")
+                tasks = persistence_model.tasks.list()
+                for task in tasks:
+                    if hasattr(task, 'crewai_config_id') and task.crewai_config_id:
+                        print(f"  Task {task.id} ({task.name}) has crewai_config_id: {task.crewai_config_id}")
+                        # Verify the config exists
+                        config = persistence_model.crewai_config.read(task.crewai_config_id)
+                        if config:
+                            print(f"    ✅ CrewAI config found: {config.id}")
+                        else:
+                            print(f"    ❌ CrewAI config NOT found for ID: {task.crewai_config_id}")
                 
                 # Process context state if available
                 if 'context_state' in state_data:

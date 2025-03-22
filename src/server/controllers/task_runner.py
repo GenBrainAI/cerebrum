@@ -213,6 +213,11 @@ class TaskRunner:
                 task.status = "running"
                 self.persistence_model.tasks.update(task.id, task)
                 
+                if task.crewai_config_id:
+                    logger.info(f"  ✅ Found task.crewai_config_id: {task.crewai_config_id}")
+                else:
+                    logger.error(f"  ❌ CrewAI config not found task.crewai_config_id is None")
+
                 # Check if this is a CrewAI task
                 if hasattr(task, 'crewai_config_id') and task.crewai_config_id:
                     result = await self._run_crewai_task(task, manager, running_extra_params)
@@ -458,6 +463,31 @@ class TaskRunner:
             logger.exception(e)
             raise TaskExecutionError(f"Failed to run standard task: {str(e)}")
 
+    def _sanitize_for_crewai(self, data):
+        """
+        Recursively sanitize data for CrewAI by converting datetime objects to strings
+        and ensuring all data is of supported types (str, int, float, bool, dict, list).
+        
+        Args:
+            data: The data to sanitize
+            
+        Returns:
+            Sanitized data safe for CrewAI
+        """
+        import datetime
+        
+        if isinstance(data, dict):
+            return {k: self._sanitize_for_crewai(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._sanitize_for_crewai(item) for item in data]
+        elif isinstance(data, (datetime.datetime, datetime.date)):
+            return str(data)
+        elif isinstance(data, (str, int, float, bool, type(None))):
+            return data
+        else:
+            # Convert any other types to strings
+            return str(data)
+
     async def _run_crewai_task(
         self,
         task: Task,
@@ -467,6 +497,13 @@ class TaskRunner:
         """Execute a CrewAI task."""
         try:
             logger.info(f"\n🤖 Running CrewAI task: {task.id}")
+            
+            # Debug prints for task attributes
+            logger.info(f"\n🔍 DEBUG - CrewAI Task Details:")
+            logger.info(f"  Task ID: {task.id}")
+            logger.info(f"  Task Name: {task.name}")
+            logger.info(f"  Task crewai_config_id: {task.crewai_config_id}")
+            logger.info(f"  Task dict: {task.dict() if hasattr(task, 'dict') else task.__dict__}")
             
             # Initialize context
             contexts = []
@@ -494,8 +531,6 @@ class TaskRunner:
                     elif hasattr(msg, 'role') and msg.role == 'user':
                         query = msg.content
                         break
-                logger.info(f"📝 Context query from last user message: {query}")
-            else:
                 logger.info(f"📝 Context query from last user message: {query}")
             
             # Get message history for token calculation
@@ -537,37 +572,38 @@ class TaskRunner:
                     logger.exception(e)
                     contexts = []
             
-            # Get the CrewAI plugin
-            plugin = None
-            if self._plugin_manager:
-                plugin = self._plugin_manager.get_plugin("crewai")
-            
-            if not plugin:
-                raise TaskExecutionError("CrewAI plugin not found")
-            
-            # Get or create curried proxy
-            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
-            
-            # Prepare task data
-            task_data = task.dict() if hasattr(task, 'dict') else task.__dict__
-            
-            # Add running_extra_params to task_data
+            # Prepare task input parameters
+            task_input = {"contexts": contexts}
             if running_extra_params:
-                task_data.update(running_extra_params)
+                task_input.update(running_extra_params)
             
-            # Add contexts to task_data
-            if contexts:
-                task_data["contexts"] = contexts
+            # Sanitize task input to ensure all data is compatible with CrewAI
+            sanitized_task_input = self._sanitize_for_crewai(task_input)
             
-            # Create agent and execute task
-            agent = await plugin.create_agent(task_data)
-            result = await plugin.execute_task(agent, task_data)
+            logger.info(f"🔧 Task input parameters sanitized for CrewAI")
+            
+            # DIRECT CALL TO run_crew_task instead of using plugin system
+            from ..controllers.crew_runner import run_crew_task
+            
+            logger.info(f"\n🚀 Executing crew task via direct call to run_crew_task")
+            result = await run_crew_task(
+                task_id=task.id,
+                task_input=sanitized_task_input,
+                persistence_model=self.persistence_model
+            )
+            logger.info(f"✅ Crew task executed successfully: {result}")
             
             return result
+            
         except Exception as e:
-            logger.error(f"❌ Error running CrewAI task: {str(e)}")
+            error_msg = f"Error in CrewAI task execution: {str(e)}"
+            logger.error(error_msg)
             logger.exception(e)
-            raise TaskExecutionError(f"Failed to run CrewAI task: {str(e)}")
+            return {
+                "status": "failed",
+                "error": error_msg,
+                "response": error_msg
+            }
 
     async def _run_tree_flow_task(
         self,
