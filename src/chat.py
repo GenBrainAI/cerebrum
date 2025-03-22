@@ -171,15 +171,44 @@ def load_state(state_path: Optional[str] = None):
                                         persistence_model.tasksmanagers.create(TasksManager(**tm_data))
                                 elif collection_name == 'tasks':
                                     for task_id, task_data in raw_data.items():
+                                        # Debug print for task data
+                                        print(f"\n🔍 Task data for {task_id}:")
+                                        print(f"  crewai_config_id: {task_data.get('crewai_config_id')}")
                                         persistence_model.tasks.create(Task(**task_data))
+                                elif collection_name == 'crewai_config':
+                                    # Debug print for crewai_config data
+                                    print(f"\n🔍 CrewAI config data:")
+                                    for config_id, config_data in raw_data.items():
+                                        print(f"  Config ID: {config_id}")
+                                        # Create CrewAIConfig objects properly
+                                        from server.models.agent import CrewAIConfig
+                                        persistence_model.crewai_config.create(CrewAIConfig(**config_data))
                                 else:
-                                    # For other collections, use update
-                                    persistence_model.update(collection_name, raw_data)
+                                    # For other collections, use collection method
+                                    collection = persistence_model.collection(collection_name)
+                                    for item_id, item_data in raw_data.items():
+                                        try:
+                                            collection.create(item_id, item_data)
+                                        except Exception as e:
+                                            print(f"❌ Error creating {collection_name} item {item_id}: {str(e)}")
                                 print(f"  Loaded {collection_name}: {len(raw_data) if isinstance(raw_data, dict) else 'non-dict data'}")
                             except Exception as e:
                                 print(f"❌ Error loading {collection_name}: {str(e)}")
                         else:
                             print(f"  Empty {collection_name} in state data")
+                
+                # Add verification of loaded tasks with crewai_config_id
+                print("\n🔍 Verifying loaded tasks with crewai_config_id:")
+                tasks = persistence_model.tasks.list()
+                for task in tasks:
+                    if hasattr(task, 'crewai_config_id') and task.crewai_config_id:
+                        print(f"  Task {task.id} ({task.name}) has crewai_config_id: {task.crewai_config_id}")
+                        # Verify the config exists
+                        config = persistence_model.crewai_config.read(task.crewai_config_id)
+                        if config:
+                            print(f"    ✅ CrewAI config found: {config.id}")
+                        else:
+                            print(f"    ❌ CrewAI config NOT found for ID: {task.crewai_config_id}")
                 
                 # Process context state if available
                 if 'context_state' in state_data:
@@ -1079,6 +1108,40 @@ async def render_main_chat():
     
     # Display chat messages
     if st.session_state.messages is not None:
+        # Add CSS for proper markdown rendering
+        st.markdown("""
+        <style>
+        .chat-message {
+            margin-bottom: 10px;
+        }
+        .chat-message p {
+            margin-bottom: 5px;
+            white-space: pre-wrap;
+        }
+        .chat-message ul, .chat-message ol {
+            margin-left: 20px;
+            margin-bottom: 10px;
+        }
+        .chat-message h1, .chat-message h2, .chat-message h3, .chat-message h4 {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+        .chat-message code {
+            white-space: pre-wrap;
+        }
+        .chat-message pre {
+            white-space: pre-wrap;
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .stMarkdown {
+            overflow-wrap: break-word;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         for msg in st.session_state.messages:
             if msg is None:
                 continue
@@ -1092,6 +1155,7 @@ async def render_main_chat():
                     continue
                     
             with st.chat_message(msg.role):
+                # Use write for better markdown rendering
                 st.write(msg.content)
 
     # Chat input
@@ -1155,19 +1219,14 @@ async def render_main_chat():
                     response_text = full_response['response']
                 else:
                     response_text = str(full_response)
-                    
-                # Simulate streaming
-                current_response = ""
-                for chunk in response_text.split():
-                    current_response += chunk + " "
-                    time.sleep(0.02)
-                    message_placeholder.write(current_response + "▌")
-                message_placeholder.write(current_response)
+                
+                # Display the full response with proper formatting
+                message_placeholder.write(response_text)
 
                 # Add assistant response and save state
                 assistant_message = Message(
                     role="assistant",
-                    content=current_response,
+                    content=response_text,
                     file_ids=None,
                     created_at=None,
                     updated_at=None
@@ -1433,6 +1492,10 @@ def clear_session_state():
     st.session_state.current_session_id = None
     st.session_state.current_tasksmanager_id = None
     st.session_state.current_task_id = None
+    
+    # Save the empty session state to persist the changes
+    save_local_session()
+    print("\n🗑️ Cleared main chat session")
 
 def save_chat_messages(task_id: str, messages: List[Message]):
     """Save chat messages to task's current session."""

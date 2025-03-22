@@ -27,7 +27,7 @@ from src.server.controllers.persistence_controller import save_to_storage
 from src.server.tools.py_exec import PyExec
 from src.server.controllers.curried_proxy import CurriedProxy
 from src.server.models.tools_catalog import ToolsCatalog
-from src.server.context import knowledge_base
+from src.server.context.knowledge_base import KnowledgeBase
 
 # Setup logging
 logging.basicConfig(
@@ -49,22 +49,27 @@ async def add_brain_script_to_knowledge_base():
         with open(brain_script_path, 'r', encoding='utf-8') as f:
             brain_script_content = f.read()
         
-        # Add to knowledge base
-        # Note: This is commented out as the knowledge_base module doesn't have add_knowledge method
-        # We'll handle the context differently
-        # knowledge_id = await knowledge_base.add_knowledge(
-        #     content=brain_script_content,
-        #     domain="python_scripts",
-        #     metadata={
-        #         "name": "brain_script",
-        #         "description": "Left-brain/right-brain conversation model for idea generation",
-        #         "file_path": str(brain_script_path),
-        #         "tags": ["python", "idea_generation", "conversation_model", "brain_simulation"]
-        #     }
-        # )
+        # Initialize knowledge base
+        kb_dir = Path(project_root) / "persistent_state" / "knowledge_base"
+        kb_dir.mkdir(parents=True, exist_ok=True)
+        knowledge_base = KnowledgeBase(str(kb_dir))
         
-        # For now, just return a placeholder UUID
-        knowledge_id = str(uuid.uuid4())
+        # Add to knowledge base
+        tags = ["python", "idea_generation", "conversation_model", "brain_simulation"]
+        metadata = {
+            "name": "brain_script",
+            "description": "Left-brain/right-brain conversation model for idea generation",
+            "file_path": str(brain_script_path),
+            "tags": tags
+        }
+        
+        knowledge_id = await knowledge_base.add_knowledge(
+            content=brain_script_content,
+            domain="python_scripts",
+            metadata=metadata,
+            tags=tags
+        )
+        
         logger.info(f"✅ Added brain script to knowledge base with ID: {knowledge_id}")
         return knowledge_id
     except Exception as e:
