@@ -6,6 +6,139 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
+# Patch all required modules before importing SelfAwareSystem
+import sys
+from unittest import mock
+
+# Mock Component Analyzer
+class MockComponentAnalyzer:
+    def __init__(self, knowledge_system=None):
+        self.knowledge_system = knowledge_system
+        
+    async def analyze_component(self, component_path):
+        return {"mock": "analysis"}
+
+# Mock ResourceOptimizer
+class MockResourceOptimizer:
+    def __init__(self, knowledge_system=None, resource_monitor=None, telemetry_system=None):
+        self.knowledge_system = knowledge_system
+        self.resource_monitor = resource_monitor
+        self.telemetry_system = telemetry_system
+        self.resource_usage_stats = {}
+        self.resource_allocations = {}
+        self.optimization_history = []
+        
+    async def optimize_resource(self, component, resource_type):
+        return {"optimization": "result"}
+
+# Mock InteractionAnalyzer
+class MockInteractionAnalyzer:
+    def __init__(self, knowledge_system=None, component_analyzer=None):
+        self.knowledge_system = knowledge_system
+        self.component_analyzer = component_analyzer
+        
+    async def analyze_interaction(self, component_a, component_b):
+        return {"interaction": "analysis"}
+
+# Mock WorkflowOptimizer
+class MockWorkflowOptimizer:
+    def __init__(self, knowledge_system=None, goal_decomposition_engine=None):
+        self.knowledge_system = knowledge_system
+        self.goal_decomposition_engine = goal_decomposition_engine
+        
+    async def optimize_workflow(self, workflow_name):
+        return {"workflow": "optimized"}
+
+# Mock CodeParser
+class MockCodeParser:
+    def __init__(self):
+        pass
+        
+    async def parse_file(self, file_path):
+        return {"ast": "mock_ast", "imports": [], "functions": [], "classes": []}
+
+# Mock ComplexityAnalyzer
+class MockComplexityAnalyzer:
+    def __init__(self):
+        pass
+        
+    async def analyze_file(self, file_path):
+        return {"cyclomatic_complexity": 5, "cognitive_complexity": 3}
+
+# Mock DependencyMapper
+class MockDependencyMapper:
+    def __init__(self, code_parser=None):
+        self.code_parser = code_parser
+        
+    async def map_dependencies(self, component_path):
+        return {"dependencies": {}, "reverse_dependencies": {}}
+
+# Mock BehaviorMonitor
+class MockBehaviorMonitor:
+    def __init__(self, telemetry_system=None):
+        self.telemetry_system = telemetry_system
+        
+    async def start_monitoring(self, components=None):
+        return "mock_session_id"
+
+# Mock AnomalyDetector
+class MockAnomalyDetector:
+    def __init__(self, telemetry_collector=None):
+        self.telemetry_collector = telemetry_collector
+        
+    async def detect_anomalies(self, time_period=None):
+        return {"anomalies": []}
+
+# Mock PerformanceAnalyzer
+class MockPerformanceAnalyzer:
+    def __init__(self, telemetry_collector=None):
+        self.telemetry_collector = telemetry_collector
+        
+    async def analyze_performance(self, component=None, time_period=None):
+        return {"performance_metrics": {}, "bottlenecks": []}
+
+# Mock TelemetryCollector
+class MockTelemetryCollector:
+    def __init__(self):
+        pass
+        
+    async def collect_telemetry(self, component=None, metric_type=None):
+        return {"telemetry": "data"}
+
+# Apply all patches
+sys.modules['src.server.introspection.component_analysis.analyzer'] = mock.MagicMock()
+sys.modules['src.server.introspection.component_analysis.analyzer'].ComponentAnalyzer = MockComponentAnalyzer
+
+sys.modules['src.server.integration_optimization.resource_optimizer'] = mock.MagicMock()
+sys.modules['src.server.integration_optimization.resource_optimizer'].ResourceOptimizer = MockResourceOptimizer
+
+sys.modules['src.server.integration_optimization.interaction_analyzer'] = mock.MagicMock()
+sys.modules['src.server.integration_optimization.interaction_analyzer'].InteractionAnalyzer = MockInteractionAnalyzer
+
+sys.modules['src.server.integration_optimization.workflow_optimizer'] = mock.MagicMock()
+sys.modules['src.server.integration_optimization.workflow_optimizer'].WorkflowOptimizer = MockWorkflowOptimizer
+
+sys.modules['src.server.introspection.component_analysis.code_parser'] = mock.MagicMock()
+sys.modules['src.server.introspection.component_analysis.code_parser'].CodeParser = MockCodeParser
+
+sys.modules['src.server.introspection.component_analysis.complexity_analyzer'] = mock.MagicMock()
+sys.modules['src.server.introspection.component_analysis.complexity_analyzer'].ComplexityAnalyzer = MockComplexityAnalyzer
+
+sys.modules['src.server.introspection.component_analysis.dependency_mapper'] = mock.MagicMock()
+sys.modules['src.server.introspection.component_analysis.dependency_mapper'].DependencyMapper = MockDependencyMapper
+
+sys.modules['src.server.introspection.runtime_monitoring.behavior_monitor'] = mock.MagicMock()
+sys.modules['src.server.introspection.runtime_monitoring.behavior_monitor'].BehaviorMonitor = MockBehaviorMonitor
+
+sys.modules['src.server.introspection.runtime_monitoring.anomaly_detector'] = mock.MagicMock()
+sys.modules['src.server.introspection.runtime_monitoring.anomaly_detector'].AnomalyDetector = MockAnomalyDetector
+
+sys.modules['src.server.introspection.runtime_monitoring.performance_analyzer'] = mock.MagicMock()
+sys.modules['src.server.introspection.runtime_monitoring.performance_analyzer'].PerformanceAnalyzer = MockPerformanceAnalyzer
+
+sys.modules['src.server.introspection.runtime_monitoring.telemetry_collector'] = mock.MagicMock()
+sys.modules['src.server.introspection.runtime_monitoring.telemetry_collector'].TelemetryCollector = MockTelemetryCollector
+
 from src.server.self_aware_integration import SelfAwareSystem
 from src.server.system.cognitive_loop import (
     CognitiveLoopOrchestrator, 

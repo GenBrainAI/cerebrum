@@ -128,7 +128,7 @@ async def test_groq_completion():
         tasksmanager_id="test_id",
         task_id="test_task",
         messages=messages,
-        model="mixtral-8x7b-32768",
+        model="llama3-8b-8192",
         curried_proxy=curried_proxy
     )
     assert "Hello" in response and "World" in response

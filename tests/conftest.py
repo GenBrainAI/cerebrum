@@ -6,7 +6,10 @@ import tempfile
 import shutil
 import subprocess
 from pathlib import Path
+
+# Add root directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.server.main import app
 from fastapi.testclient import TestClient
 

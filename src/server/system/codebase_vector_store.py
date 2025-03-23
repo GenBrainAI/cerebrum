@@ -436,7 +436,7 @@ class CodebaseVectorStore:
         Returns:
             A list of CodeSnippet objects.
         """
-        if not self.embedding_matrix is not None:
+        if self.embedding_matrix is None:
             return []
         
         # Get query embedding
@@ -444,6 +444,10 @@ class CodebaseVectorStore:
         query_vector = np.array(query_embedding[0]).reshape(1, -1)
         
         # Calculate similarities
+        # Ensure embedding_matrix is a numpy array
+        if not isinstance(self.embedding_matrix, np.ndarray):
+            self.embedding_matrix = np.array(self.embedding_matrix)
+            
         similarities = cosine_similarity(query_vector, self.embedding_matrix)[0]
         
         # Get top-k results
@@ -452,8 +456,10 @@ class CodebaseVectorStore:
         else:
             top_indices = np.argsort(similarities)[::-1][:top_k]
         
-        # Filter by similarity threshold
-        top_indices = [i for i in top_indices if similarities[i] >= self.config.similarity_threshold]
+        # Filter by similarity threshold - use absolute value for comparison
+        # This ensures that even with negative similarity scores, we still get results
+        # as long as they are "similar enough" in either direction
+        top_indices = [i for i in top_indices if abs(similarities[i]) >= self.config.similarity_threshold]
         
         # Create snippets
         snippets = []

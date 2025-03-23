@@ -186,7 +186,7 @@ class ContextDatabase:
         query: Optional[str] = None,
         filters: Optional[Dict[str, Any]] = None,
         limit: int = 5,
-        min_relevance: float = 0.5,
+        min_relevance: float = 0.2,
         index_name: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Enhanced context search with filtering and relevance threshold."""
@@ -194,11 +194,15 @@ class ContextDatabase:
             print(f"\n🔍 DEBUG: search_context called with query='{query}', filters={filters}, limit={limit}, min_relevance={min_relevance}, index_name={index_name}")
             
             # Ensure index_name has the vs_ prefix if provided
+            prefixed_index_name = None
             if index_name:
-                original_index_name = index_name
-                index_name = self.vector_store.get_full_index_name(index_name)
-                if original_index_name != index_name:
-                    print(f"🔄 DEBUG: Added vs_ prefix to index_name: {original_index_name} -> {index_name}")
+                if index_name.strip():  # Only process non-empty strings
+                    original_index_name = index_name
+                    prefixed_index_name = self.vector_store.get_full_index_name(index_name)
+                    if original_index_name != prefixed_index_name:
+                        print(f"🔄 DEBUG: Added vs_ prefix to index_name: {original_index_name} -> {prefixed_index_name}")
+                else:
+                    print("⚠️ DEBUG: Empty index_name provided, will use default collection")
             else:
                 print("⚠️ DEBUG: No index_name provided, will use default collection")
             
@@ -211,7 +215,7 @@ class ContextDatabase:
                         print(f"📄 DEBUG: Looking up file ID: {file_id}")
                         # Use get_filtered_items_from_index instead of get_file_info
                         file_results = await self.vector_store.get_filtered_items_from_index(
-                            index_name=index_name or "default",
+                            index_name=prefixed_index_name or "default",
                             filters={"id": file_id},
                             limit=1
                         )
@@ -236,18 +240,18 @@ class ContextDatabase:
                     
                     # Fallback: Return all documents from the specified index or default collection
                     print("🔄 DEBUG: Falling back to returning all documents without embedding search")
-                    return await self._get_all_documents_fallback(index_name, limit)
+                    return await self._get_all_documents_fallback(prefixed_index_name, limit)
                 
                 print(f"🔢 DEBUG: Generated embedding with dimensions: {len(query_embedding[0])}")
                 print(f"🔢 DEBUG: First 5 embedding values: {query_embedding[0][:5]}")
                 
                 # Search vector store
                 # If index_name is provided, use it to search in the specific collection
-                if index_name:
-                    print(f"🔎 DEBUG: Searching in specific index: {index_name}")
+                if prefixed_index_name:
+                    print(f"🔎 DEBUG: Searching in specific index: {prefixed_index_name}")
                     # Search in the specific collection
                     results = await self.vector_store.search_in_index(
-                        index_name=index_name,
+                        index_name=prefixed_index_name,
                         embedding=query_embedding[0],
                         filters=filters,
                         limit=limit * 2  # Get extra results for filtering
@@ -266,7 +270,7 @@ class ContextDatabase:
                 # If no results from semantic search, try fallback
                 if not results:
                     print("🔄 DEBUG: No results from semantic search, trying fallback")
-                    return await self._get_all_documents_fallback(index_name, limit)
+                    return await self._get_all_documents_fallback(prefixed_index_name, limit)
                 
                 # Log individual result relevance scores for debugging
                 print("📊 DEBUG: Result relevance scores:")
@@ -284,7 +288,7 @@ class ContextDatabase:
             
             # If no query, return all documents
             print("🔄 DEBUG: No query provided, returning all documents")
-            return await self._get_all_documents_fallback(index_name, limit)
+            return await self._get_all_documents_fallback(prefixed_index_name, limit)
             
         except Exception as e:
             print(f"❌ DEBUG: Error in search_context: {str(e)}")

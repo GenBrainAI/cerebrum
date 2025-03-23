@@ -5,8 +5,6 @@ from crewai import Agent, Task, Crew
 from crewai_tools import WebsiteSearchTool, FileReadTool, SerperDevTool
 from fastapi import HTTPException
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '/Users/mb/projects/genbrain/cerebrum'))
-
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.models.agent import CreateCrewRequest, AgentModel, TaskModel
 from src.server.models.agent import CrewAIConfig

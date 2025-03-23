@@ -178,4 +178,22 @@ test_cerebrum_data/
 test_storage/
 tests/db/chroma.sqlite3
 
+# Planning Engine Test Outputs
+tests/self_aware/planning/test_data/
+tests/self_aware/planning/test_data/**
+**/test_data/planning/config/
+**/test_data/planning/implementation/
+**/test_data/planning/research/
+**/test_data/planning/goals/
+**/test_data/planning/allocation/
+**/test_data/planning/knowledge_gaps/
+**/test_data/planning/metrics/
+**/test_data/resources/
+**/test_data/knowledge/
+*.json.bak
+
+# Planning Engine Templates
+src/server/planning/templates/
+src/server/planning/templates/*.json
+
 

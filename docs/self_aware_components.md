@@ -44,6 +44,30 @@ Key features:
 - Codebase search and retrieval
 - Unified interface for all context operations
 
+## Planning Components
+
+### Goal Decomposition Engine
+
+The Goal Decomposition Engine breaks down complex goals into hierarchical subgoals and tasks. It enables the system to:
+
+1. Analyze complex goals and identify component subgoals
+2. Create logical dependencies between subgoals
+3. Generate concrete, actionable tasks
+4. Maintain a hierarchical goal tree structure
+5. Support visualization and exploration of goals
+
+### Research Planner
+
+The Research Planner identifies knowledge gaps and creates structured research plans. It enables the system to:
+
+1. Analyze its knowledge about specific topics and identify knowledge gaps
+2. Create comprehensive research plans to address knowledge gaps
+3. Generate concrete research tasks with appropriate strategies
+4. Prioritize tasks based on dependencies, importance, and estimated confidence gain
+5. Track research progress and integrate new knowledge
+
+### Knowledge Integration
+
 ## Usage
 
 See the demonstration script in `src/server/examples/self_aware_demo.py` for examples of how to use these components.

@@ -1,6 +1,6 @@
 import pytest
 import time
-from cerebrum.introspection.runtime_monitoring.telemetry_collector import TelemetryCollector
+from src.server.introspection.runtime_monitoring.telemetry_collector import TelemetryCollector
 
 @pytest.mark.asyncio
 class TestTelemetryCollector:

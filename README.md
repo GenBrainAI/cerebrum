@@ -194,3 +194,18 @@ For incremental indexing (only index files that have changed):
 # Perform incremental indexing
 python scripts/setup_vector_store.py --incremental
 ```
+
+## Components
+
+### Planning
+- **Goal Decomposition Engine**: Breaks down complex goals into manageable subgoals and tasks, creating a hierarchical goal tree.
+- **Research Planner**: Identifies knowledge gaps, creates structured research plans, and prioritizes research tasks to expand the system's knowledge.
+- **Task Management**: Handles task creation, assignment, tracking, and completion.
+
+## Features
+
+- **Self-aware planning**: The system can plan and reason about its own knowledge and capabilities.
+- **Goal decomposition**: Complex goals are automatically broken down into manageable subgoals and tasks.
+- **Knowledge gap analysis**: The system can identify areas where its knowledge is limited and create research plans.
+- **Interactive visualization**: Goal trees and research plans can be visualized and explored through interactive UI.
+- **Adaptive learning**: The system continually learns and improves through interaction and feedback.

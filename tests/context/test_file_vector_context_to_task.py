@@ -351,10 +351,9 @@ async def test_vector_store_file_processing(vector_store):
     # Verify chunks were created
     assert len(chunk_ids) > 1, "File should be split into multiple chunks"
     
-    # Get index contents using get_filtered_items_from_index
-    contents = await vector_store.get_filtered_items_from_index(
-        index_name=index_name,
-        limit=100  # High limit to get all chunks
+    # Get index contents using get_index_contents instead of get_filtered_items_from_index
+    contents = await vector_store.get_index_contents(
+        index_name=index_name
     )
     assert len(contents) == len(chunk_ids), "All chunks should be retrievable"
     

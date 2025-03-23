@@ -1,1 +1,0 @@
-self_aware_core.py

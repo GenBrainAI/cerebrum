@@ -487,94 +487,76 @@ class ContextProvider:
         max_tokens: Optional[int] = None,
         message_history: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
-        """
-        Get contexts based on a query, optimizing for token usage and relevance.
+        """Get all contexts relevant to a query for a task."""
+        # Calculate available tokens based on model and message history
+        available_tokens = self._calculate_available_tokens(model=model, max_tokens=max_tokens, message_history=message_history)
+        print(f"📊 DEBUG: Available tokens for context: {available_tokens}")
+        remaining_tokens = available_tokens
+        
+        # Get task-specific contexts
+        task_contexts = await self._get_task_specific_contexts(task_id)
+        
+        # Add task contexts to final contexts list
+        contexts = []
+        contexts, task_contexts, available_tokens, used_tokens = self._add_contexts_within_limit(
+            contexts, task_contexts, available_tokens, 0
+        )
+        remaining_tokens = available_tokens - used_tokens
+        print(f"📊 DEBUG: After adding task contexts: {used_tokens} tokens used, {remaining_tokens} remaining")
+        
+        # Search for relevant contexts in the context database
+        try:
+            vector_context_dicts = []
+            if query:
+                # Get the appropriate vector index name
+                if task_id:
+                    index_name = self._get_vector_index_name_from_task(task_id)
+                    if not index_name:
+                        index_name = self._find_relevant_index_name()
+                else:
+                    index_name = self._find_relevant_index_name()
+                
+                # Search for relevant contexts
+                vector_contexts = await self.context_db.search_context(query, limit=5, index_name=index_name)
+                if vector_contexts:
+                    vector_context_dicts = self._convert_vector_results_to_contexts(vector_contexts)
+            
+            # Add vector contexts to final contexts list based on priority and token limit
+            contexts, vector_context_dicts, available_tokens, used_tokens = self._add_contexts_within_limit(
+                contexts, vector_context_dicts, available_tokens, used_tokens
+            )
+            print(f"📊 DEBUG: After adding vector contexts: {used_tokens} tokens used, {available_tokens - used_tokens} remaining")
+            
+        except Exception as e:
+            print(f"❌ ERROR in get_contexts: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+        
+        # Sort contexts by priority (highest first)
+        contexts.sort(key=lambda x: x.get('priority', 0), reverse=True)
+        
+        return contexts
+    
+    def _calculate_available_tokens(
+        self,
+        model: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        message_history: Optional[List[Dict[str, Any]]] = None
+    ) -> int:
+        """Backward compatibility method for tests.
+        
+        Calls _calculate_token_budget and returns just the available_tokens value.
         
         Args:
-            query: The query to search for
-            task_id: Task ID to get task-specific contexts
             model: The model to use for token calculation
             max_tokens: Maximum tokens to use for contexts
             message_history: Optional message history for token calculation
             
         Returns:
-            List of context dictionaries sorted by priority
+            int: Available tokens for context
         """
-        print(f"\n🔍 DEBUG: get_contexts called with query='{query}', task_id={task_id}")
-        
-        contexts = []
-        
-        try:
-            # Initialize context database if needed
-            if not hasattr(self, 'context_db') or not self.context_db:
-                print("🔄 DEBUG: Initializing context database")
-                self.context_db = ContextDatabase()
-            
-            # Ensure task contexts are synced if we have a persistence model and task_id
-            if self.persistence_model and task_id:
-                try:
-                    task = self.persistence_model.tasks.read(task_id)
-                    if task:
-                        print(f"🔄 DEBUG: Syncing task contexts for task {task_id}")
-                        self.sync_task_contexts(task_id, task)
-                    else:
-                        print(f"⚠️ DEBUG: Task {task_id} not found in persistence model")
-                except Exception as e:
-                    print(f"❌ DEBUG: Error syncing task contexts: {str(e)}")
-            
-            # Calculate available tokens and initialize tracking
-            token_info = self._calculate_token_budget(model, max_tokens, message_history)
-            available_tokens = token_info['available_tokens']
-            used_tokens = 0
-            remaining_tokens = available_tokens
-            
-            # 1. First, get task-specific contexts
-            task_contexts = await self._get_task_specific_contexts(task_id)
-            print(f"📊 DEBUG: Found {len(task_contexts)} task contexts")
-            
-            # Add task contexts within token limit
-            contexts, used_tokens = self._add_contexts_within_limit(
-                contexts, task_contexts, available_tokens, used_tokens
-            )
-            remaining_tokens = available_tokens - used_tokens
-            print(f"📊 DEBUG: Added {len(contexts)} task contexts using {used_tokens} tokens")
-            
-            # 2. Get vector contexts using the index name from the task
-            vector_index_name = self._get_vector_index_name_from_task(task_id)
-            print(f"🔍 DEBUG: Vector index name from task: {vector_index_name}")
-            
-            # Calculate dynamic limit based on remaining tokens
-            estimated_contexts = max(1, remaining_tokens // 500)
-            print(f"📊 DEBUG: Estimated contexts to retrieve: {estimated_contexts}")
-            
-            # Search with the specific index - use lower relevance threshold (0.5 instead of 0.7)
-            print(f"🔍 DEBUG: search_context called with query='{query}', filters=None, limit={estimated_contexts}, min_relevance=0.5, index_name={vector_index_name}")
-            vector_contexts = await self.context_db.search_context(
-                query=query,
-                limit=estimated_contexts,
-                min_relevance=0.3,
-                index_name=vector_index_name
-            )
-            print(f"📊 DEBUG: Found {len(vector_contexts)} vector contexts")
-            
-            # Add vector contexts within token limit
-            vector_context_dicts = self._convert_vector_results_to_contexts(vector_contexts)
-            contexts, used_tokens = self._add_contexts_within_limit(
-                contexts, vector_context_dicts, available_tokens, used_tokens
-            )
-            
-            # Sort contexts by priority (highest first)
-            contexts.sort(key=lambda x: x.get('priority', 0), reverse=True)
-            print(f"📊 DEBUG: Final context count: {len(contexts)}")
-            
-            return contexts
-            
-        except Exception as e:
-            print(f"❌ DEBUG: Error in get_contexts: {str(e)}")
-            logger.error(f"Error getting contexts: {str(e)}")
-            import traceback
-            print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
-            return []
+        token_info = self._calculate_token_budget(model=model, max_tokens=max_tokens, message_history=message_history)
+        return token_info['available_tokens']
     
     def _calculate_token_budget(
         self,
@@ -582,7 +564,7 @@ class ContextProvider:
         max_tokens: Optional[int] = None,
         message_history: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, int]:
-        """Calculate token budget for context retrieval."""
+        """Calculate token budget for context based on model and message history."""
         # Default token limits by model
         model_limits = {
             "gpt-3.5-turbo": 4096,
@@ -811,8 +793,23 @@ class ContextProvider:
         new_contexts: List[Dict[str, Any]], 
         available_tokens: int, 
         used_tokens: int
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        """Add contexts within the token limit."""
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], int, int]:
+        """Add contexts within the token limit.
+        
+        Args:
+            existing_contexts: List of contexts already selected
+            new_contexts: List of new contexts to potentially add
+            available_tokens: Total available tokens
+            used_tokens: Tokens already used
+            
+        Returns:
+            Tuple containing:
+            - updated list of contexts
+            - remaining new contexts not added
+            - updated available tokens
+            - updated used tokens
+        """
+        remaining_contexts = []
         for ctx in new_contexts:
             content = ctx.get("content", "")
             token_count = self._estimate_token_count(content)
@@ -823,8 +820,9 @@ class ContextProvider:
                 used_tokens += token_count
             else:
                 print(f"⚠️ DEBUG: Skipping context due to token limit: {token_count} tokens needed, {available_tokens - used_tokens} remaining")
+                remaining_contexts.append(ctx)
         
-        return existing_contexts, used_tokens
+        return existing_contexts, remaining_contexts, available_tokens, used_tokens
     
     def _estimate_token_count(self, text: str) -> int:
         """Estimate token count for a text string.

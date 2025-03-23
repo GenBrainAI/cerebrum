@@ -17,6 +17,12 @@ alwaysApply: false
 - Never add stubbing or fake data patterns to code that affects the dev or prod environments
 - Never overwrite my .env file without first asking and confirming
 
+the selfaware features and developed code should be part of the whole system architecture and not separated, it should use the already developed curriedproxy, tools catalog and the other major mechanisms.
+
+Unit tests should be written in test directory orgenized by the subject of test.
+Keep clean code, as for code remarks, concider that the code will be maintained by generative ai agents, please provide context as needed.
+
+
 
 
 

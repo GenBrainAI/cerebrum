@@ -1,14 +1,17 @@
 import pytest
-from cerebrum.introspection.runtime_monitoring.behavior_monitor import (
+import asyncio
+from src.server.introspection.runtime_monitoring.behavior_monitor import (
     BehaviorMonitor, MonitoringSession, PerformanceMetrics
 )
 
 @pytest.mark.asyncio
 class TestBehaviorMonitor:
-    def setup_method(self):
-        self.monitor = BehaviorMonitor(mock_telemetry_system)
+    @pytest.fixture(autouse=True)
+    def setup_method(self, mock_telemetry_system):
+        self.mock_telemetry_system = mock_telemetry_system
+        self.monitor = BehaviorMonitor(self.mock_telemetry_system)
         
-    async def test_start_monitoring(self, mock_telemetry_system):
+    async def test_start_monitoring(self):
         """Test starting a monitoring session."""
         components = ["component1.py", "component2.py"]
         session_id = await self.monitor.start_monitoring(components)
@@ -22,7 +25,7 @@ class TestBehaviorMonitor:
         assert session.components == components
         assert session.active
         
-    async def test_start_monitoring_discover_components(self, mock_telemetry_system):
+    async def test_start_monitoring_discover_components(self):
         """Test starting monitoring with component discovery."""
         session_id = await self.monitor.start_monitoring()
         
@@ -33,7 +36,7 @@ class TestBehaviorMonitor:
         session = self.monitor.monitoring_sessions[session_id]
         assert isinstance(session.components, list)
         
-    async def test_analyze_performance(self, mock_telemetry_system, sample_telemetry_data):
+    async def test_analyze_performance(self, sample_telemetry_data):
         """Test analyzing performance metrics."""
         # Start monitoring
         session_id = await self.monitor.start_monitoring(["test_component.py"])
@@ -58,7 +61,7 @@ class TestBehaviorMonitor:
         })
         assert isinstance(metrics, PerformanceMetrics)
         
-    async def test_detect_anomalies(self, mock_telemetry_system, sample_telemetry_data):
+    async def test_detect_anomalies(self, sample_telemetry_data):
         """Test detecting anomalies."""
         # Start monitoring
         session_id = await self.monitor.start_monitoring(["test_component.py"])
@@ -70,7 +73,7 @@ class TestBehaviorMonitor:
         anomalies = await self.monitor.detect_anomalies()
         assert isinstance(anomalies, list)
         
-    async def test_identify_bottlenecks(self, mock_telemetry_system, sample_telemetry_data):
+    async def test_identify_bottlenecks(self, sample_telemetry_data):
         """Test identifying bottlenecks."""
         # Start monitoring
         session_id = await self.monitor.start_monitoring(["test_component.py"])
@@ -89,20 +92,38 @@ class TestBehaviorMonitor:
             assert "type" in bottleneck
             assert "suggestions" in bottleneck
             
-    async def test_discover_components(self, mock_telemetry_system):
+    async def test_discover_components(self):
         """Test discovering monitorable components."""
         components = await self.monitor._discover_components()
         assert isinstance(components, list)
         assert all(isinstance(c, str) for c in components)
         
-    async def test_collect_telemetry(self, mock_telemetry_system):
+    async def test_collect_telemetry(self):
         """Test collecting telemetry data."""
         # Start monitoring
         session_id = await self.monitor.start_monitoring(["test_component.py"])
         session = self.monitor.monitoring_sessions[session_id]
         
-        # Collect telemetry for a short period
-        await self.monitor._collect_telemetry(session_id)
+        # Create a task for collection and let it run briefly
+        collection_task = asyncio.create_task(self.monitor._collect_telemetry(session_id))
+        
+        # Wait briefly to allow some data collection
+        await asyncio.sleep(0.1)
+        
+        # Deactivate the session to stop collection
+        session.active = False
+        
+        # Wait for collection task to complete
+        try:
+            # Set a timeout to avoid hanging if the fix doesn't work
+            await asyncio.wait_for(collection_task, timeout=1.0)
+        except asyncio.TimeoutError:
+            # If we hit timeout, cancel the task
+            collection_task.cancel()
+            try:
+                await collection_task
+            except asyncio.CancelledError:
+                pass
         
         # Check collected data
         assert "test_component.py" in session.telemetry_data

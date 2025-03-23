@@ -43,6 +43,48 @@ from src.server.planning.goal_decomposition import (
     DecomposedGoal
 )
 
+# Import planning engine components
+from src.server.planning.planning_engine import (
+    PlanningEngine,
+    PlanType,
+    IntegratedPlan,
+    PlanningMetrics,
+    PlanVersion
+)
+from src.server.planning.planning_config import (
+    PlanningConfigManager,
+    PlanningConfig,
+    OptimizationGoal
+)
+from src.server.planning.planning_factory import PlanningEngineFactory
+from src.server.planning.planning_workflow import PlanningWorkflow
+from src.server.planning.planning_metrics import (
+    PlanningMetricsCollector,
+    MetricType,
+    MetricSnapshot,
+    MetricTrend
+)
+from src.server.planning.planning_visualization import (
+    PlanningVisualization,
+    VisualizationType,
+    OutputFormat
+)
+
+# Import introspection components
+from src.server.introspection.component_analysis.analyzer import ComponentAnalyzer
+from src.server.introspection.component_analysis.code_parser import CodeParser
+from src.server.introspection.component_analysis.complexity_analyzer import ComplexityAnalyzer
+from src.server.introspection.component_analysis.dependency_mapper import DependencyMapper
+
+from src.server.introspection.runtime_monitoring.behavior_monitor import BehaviorMonitor
+from src.server.introspection.runtime_monitoring.telemetry_collector import TelemetryCollector
+from src.server.introspection.runtime_monitoring.anomaly_detector import AnomalyDetector
+from src.server.introspection.runtime_monitoring.performance_analyzer import PerformanceAnalyzer
+
+from src.server.integration_optimization.interaction_analyzer import InteractionAnalyzer
+from src.server.integration_optimization.resource_optimizer import ResourceOptimizer
+from src.server.integration_optimization.workflow_optimizer import WorkflowOptimizer
+
 logger = logging.getLogger(__name__)
 
 class SelfAwareSystem:
@@ -56,6 +98,8 @@ class SelfAwareSystem:
     - Observability Layer (Supervision Hub, Resource Monitor, Metrics Collector)
     - Self-Modification Engine (Code Generator, Safety Validator, Integration Manager, Agentic Development Controller)
     - Planning Layer (Goal Decomposition Engine)
+    - Introspection Layer (Component Analysis, Runtime Monitoring)
+    - Integration Optimization Layer (Interaction Analysis, Resource Optimization, Workflow Optimization)
     """
     
     def __init__(self, storage_path: Optional[str] = None):
@@ -122,6 +166,39 @@ class SelfAwareSystem:
             knowledge_system=self.knowledge_system
         )
         
+        # Initialize Phase 4 Introspection Layer
+        self.component_analyzer = ComponentAnalyzer(
+            knowledge_system=self.knowledge_system
+        )
+        self.telemetry_collector = TelemetryCollector()
+        self.behavior_monitor = BehaviorMonitor(
+            telemetry_system=self.telemetry_collector
+        )
+        
+        # Initialize Phase 4 Integration Optimization Layer
+        self.interaction_analyzer = InteractionAnalyzer(
+            knowledge_system=self.knowledge_system,
+            component_analyzer=self.component_analyzer
+        )
+        self.resource_optimizer = ResourceOptimizer(
+            telemetry_system=self.telemetry_collector
+        )
+        self.workflow_optimizer = WorkflowOptimizer(
+            knowledge_system=self.knowledge_system,
+            goal_decomposition_engine=self.goal_decomposition_engine
+        )
+        
+        # Initialize planning engine components
+        self.planning_config_manager = PlanningConfigManager(
+            config_path=os.path.join(self.storage_path, "planning/config")
+        )
+        
+        # Will be initialized in initialize() method
+        self.planning_engine = None
+        self.planning_workflow = None
+        self.planning_metrics_collector = None
+        self.planning_visualization = None
+        
         logger.info(f"Self-Aware System initialized with storage path: {self.storage_path}")
 
     async def initialize(self):
@@ -139,6 +216,46 @@ class SelfAwareSystem:
         
         # Register specialized workers
         await self.register_specialized_workers()
+        
+        # Initialize Phase 4 Introspection Layer
+        # These are asynchronous initializations to load any necessary data or models
+        logger.info("Initializing Introspection Layer components")
+        # No explicit initialization needed for ComponentAnalyzer as it relies on the knowledge system
+        
+        # Initialize telemetry collector and behavior monitor
+        if hasattr(self.telemetry_collector, 'initialize'):
+            await self.telemetry_collector.initialize()
+        
+        if hasattr(self.behavior_monitor, 'initialize'):
+            await self.behavior_monitor.initialize()
+        
+        # Initialize Phase 4 Integration Optimization Layer
+        logger.info("Initializing Integration Optimization Layer components")
+        if hasattr(self.interaction_analyzer, 'initialize'):
+            await self.interaction_analyzer.initialize()
+            
+        if hasattr(self.resource_optimizer, 'initialize'):
+            await self.resource_optimizer.initialize()
+            
+        if hasattr(self.workflow_optimizer, 'initialize'):
+            await self.workflow_optimizer.initialize()
+        
+        # Initialize planning engine components
+        self.planning_engine = await PlanningEngineFactory.create_planning_engine(
+            config_path=os.path.join(self.storage_path, "planning/config/default_config.json"),
+            knowledge_system=self.knowledge_system,
+            storage_path=self.storage_path
+        )
+        
+        self.planning_workflow = PlanningWorkflow(self.planning_engine)
+        
+        self.planning_metrics_collector = PlanningMetricsCollector(
+            storage_path=os.path.join(self.storage_path, "planning/metrics")
+        )
+        
+        self.planning_visualization = PlanningVisualization(
+            storage_path=os.path.join(self.storage_path, "planning/visualizations")
+        )
         
         logger.info("Self-Aware System initialization completed")
 
@@ -794,6 +911,25 @@ class SelfAwareSystem:
         await self.resource_monitor.stop_monitoring()
         await self.metrics_collector.stop_collection()
         
+        # Shutdown Phase 4 Introspection Layer
+        logger.info("Shutting down Introspection Layer components")
+        if hasattr(self.telemetry_collector, 'shutdown'):
+            await self.telemetry_collector.shutdown()
+        
+        if hasattr(self.behavior_monitor, 'shutdown'):
+            await self.behavior_monitor.shutdown()
+        
+        # Shutdown Phase 4 Integration Optimization Layer
+        logger.info("Shutting down Integration Optimization Layer components")
+        if hasattr(self.interaction_analyzer, 'shutdown'):
+            await self.interaction_analyzer.shutdown()
+            
+        if hasattr(self.resource_optimizer, 'shutdown'):
+            await self.resource_optimizer.shutdown()
+            
+        if hasattr(self.workflow_optimizer, 'shutdown'):
+            await self.workflow_optimizer.shutdown()
+        
         # Shutdown parallel controller
         await self.parallel_controller.shutdown()
         
@@ -1026,4 +1162,591 @@ class SelfAwareSystem:
         Returns:
             Dictionary containing validation results
         """
-        return await self.goal_decomposition_engine.validate_decomposition(goal_id) 
+        return await self.goal_decomposition_engine.validate_decomposition(goal_id)
+
+    # New methods for Introspection Layer
+
+    async def analyze_component(self, component_name: str) -> Dict[str, Any]:
+        """Analyze a specific component"""
+        return await self.component_analyzer.analyze_component(component_name)
+
+    async def get_component_analysis(self, component_name: str) -> Dict[str, Any]:
+        """Get analysis results for a specific component"""
+        return await self.component_analyzer.get_analysis(component_name)
+
+    async def get_telemetry_data(self, component_name: str) -> Dict[str, Any]:
+        """Get telemetry data for a specific component"""
+        return await self.telemetry_collector.get_telemetry(component_name)
+
+    async def get_behavior_data(self, component_name: str) -> Dict[str, Any]:
+        """Get behavior data for a specific component"""
+        return await self.behavior_monitor.get_behavior_data(component_name)
+
+    # New methods for Integration Optimization Layer
+
+    async def analyze_interaction(self, component_name: str, other_component_name: str) -> Dict[str, Any]:
+        """Analyze interaction between two components"""
+        return await self.interaction_analyzer.analyze_interaction(component_name, other_component_name)
+
+    async def optimize_resource(self, component_name: str, resource_type: str) -> Dict[str, Any]:
+        """Optimize resource usage for a specific component"""
+        return await self.resource_optimizer.optimize_resource(component_name, resource_type)
+
+    async def optimize_workflow(self, workflow_name: str) -> Dict[str, Any]:
+        """Optimize a specific workflow"""
+        return await self.workflow_optimizer.optimize_workflow(workflow_name)
+
+    async def enable_introspective_cognitive_loop(self):
+        """
+        Enable advanced introspection capabilities in the cognitive loop.
+        This allows the system to analyze its own components and behavior during the cognitive cycle.
+        """
+        logger.info("Enabling introspective cognitive loop")
+        
+        # Create a task to analyze system components in the understanding phase
+        component_analysis_task_id = self.cognitive_orchestrator.create_task(
+            title="System Component Analysis",
+            description="Analyze the system's components to understand their structure and behavior.",
+            phase=CognitivePhase.UNDERSTAND,
+            worker_type=WorkerType.REQUIREMENTS,
+            priority=TaskPriority.MEDIUM,
+            context={
+                "introspection_type": "component_analysis",
+                "target_components": ["self_aware_integration", "cognitive_loop", "knowledge_integration"]
+            }
+        )
+        
+        # Create a task to monitor runtime behavior in the understanding phase
+        behavior_monitoring_task_id = self.cognitive_orchestrator.create_task(
+            title="Runtime Behavior Monitoring",
+            description="Monitor the runtime behavior of system components to identify patterns and anomalies.",
+            phase=CognitivePhase.UNDERSTAND,
+            worker_type=WorkerType.REQUIREMENTS,
+            priority=TaskPriority.MEDIUM,
+            context={
+                "introspection_type": "behavior_monitoring",
+                "monitoring_duration": 3600  # 1 hour
+            }
+        )
+        
+        # Create a task to analyze component interactions in the planning phase
+        interaction_analysis_task_id = self.cognitive_orchestrator.create_task(
+            title="Component Interaction Analysis",
+            description="Analyze interactions between system components to identify optimization opportunities.",
+            phase=CognitivePhase.PLAN,
+            worker_type=WorkerType.PLANNING,
+            priority=TaskPriority.MEDIUM,
+            context={
+                "optimization_type": "interaction_analysis",
+                "target_components": ["self_aware_integration", "cognitive_loop", "knowledge_integration"]
+            }
+        )
+        
+        # Create a task to optimize workflows in the execution phase
+        workflow_optimization_task_id = self.cognitive_orchestrator.create_task(
+            title="Workflow Optimization",
+            description="Optimize system workflows based on analysis results.",
+            phase=CognitivePhase.EXECUTE,
+            worker_type=WorkerType.IMPLEMENTATION,
+            priority=TaskPriority.MEDIUM,
+            context={
+                "optimization_type": "workflow_optimization",
+                "target_workflows": ["cognitive_cycle", "knowledge_retrieval"]
+            }
+        )
+        
+        # Create a task to evaluate optimizations in the reflection phase
+        optimization_evaluation_task_id = self.cognitive_orchestrator.create_task(
+            title="Optimization Evaluation",
+            description="Evaluate the impact of implemented optimizations.",
+            phase=CognitivePhase.REFLECT,
+            worker_type=WorkerType.EVALUATION,
+            priority=TaskPriority.MEDIUM,
+            context={
+                "evaluation_metrics": ["execution_time", "resource_usage", "success_rate"],
+                "related_tasks": [
+                    component_analysis_task_id,
+                    behavior_monitoring_task_id,
+                    interaction_analysis_task_id,
+                    workflow_optimization_task_id
+                ]
+            }
+        )
+        
+        # Update cognitive orchestrator development context
+        self.cognitive_orchestrator.update_development_context(
+            "introspection_enabled", True
+        )
+        
+        # Store tasks in the context for reference
+        self.cognitive_orchestrator.update_development_context(
+            "introspection_tasks", {
+                "component_analysis": component_analysis_task_id,
+                "behavior_monitoring": behavior_monitoring_task_id,
+                "interaction_analysis": interaction_analysis_task_id,
+                "workflow_optimization": workflow_optimization_task_id,
+                "optimization_evaluation": optimization_evaluation_task_id
+            }
+        )
+        
+        logger.info(f"Introspective cognitive loop enabled with initial tasks: {component_analysis_task_id}, {behavior_monitoring_task_id}")
+        return {
+            "component_analysis_task_id": component_analysis_task_id,
+            "behavior_monitoring_task_id": behavior_monitoring_task_id,
+            "interaction_analysis_task_id": interaction_analysis_task_id,
+            "workflow_optimization_task_id": workflow_optimization_task_id,
+            "optimization_evaluation_task_id": optimization_evaluation_task_id
+        }
+
+    # Planning Engine Integration Methods
+    
+    async def create_integrated_plan(
+        self, 
+        name: str,
+        description: str,
+        goal_requirements: Dict[str, Any],
+        goal_type: str,
+        strategy: str = "TOP_DOWN",
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create an integrated plan with all components.
+        
+        Args:
+            name: Name of the integrated plan
+            description: Description of the plan
+            goal_requirements: Requirements for the goal
+            goal_type: Type of goal (RESEARCH, DEVELOPMENT, ANALYSIS, etc.)
+            strategy: Strategy for goal decomposition (TOP_DOWN, BOTTOM_UP, etc.)
+            context: Additional context information
+            
+        Returns:
+            Dictionary containing the integrated plan ID and summary
+        """
+        logger.info(f"Creating integrated plan: {name}")
+        
+        # Convert string parameters to enum values
+        from src.server.planning.goal_decomposition import GoalType, DecompositionStrategy
+        
+        goal_type_enum = GoalType[goal_type]
+        decomposition_strategy = DecompositionStrategy[strategy]
+        
+        # Create complete plan
+        plan = await self.planning_engine.create_complete_plan(
+            name=name,
+            description=description,
+            goal_requirements=goal_requirements,
+            goal_type=goal_type_enum,
+            decomposition_strategy=decomposition_strategy,
+            context=context
+        )
+        
+        # Collect metrics
+        if plan.metrics and self.planning_metrics_collector:
+            self.planning_metrics_collector.collect_metrics(
+                plan_id=plan.id,
+                metrics=plan.metrics,
+                context={"creation_context": context}
+            )
+        
+        # Convert to dictionary
+        return {
+            "id": plan.id,
+            "name": plan.name,
+            "description": plan.description,
+            "goal_decomposition_id": plan.goal_decomposition_id,
+            "research_plan_ids": plan.research_plan_ids,
+            "implementation_plan_id": plan.implementation_plan_id,
+            "resource_allocation_id": plan.resource_allocation_id,
+            "status": plan.status,
+            "creation_time": plan.creation_time,
+            "plan_type": plan.plan_type.value if plan.plan_type else None,
+            "metrics": {
+                "planning_time": plan.metrics.planning_time if plan.metrics else None,
+                "complexity_score": plan.metrics.complexity_score if plan.metrics else None,
+                "confidence_score": plan.metrics.confidence_score if plan.metrics else None,
+                "resource_efficiency": plan.metrics.resource_efficiency if plan.metrics else None,
+                "adaptability_score": plan.metrics.adaptability_score if plan.metrics else None
+            } if plan.metrics else None,
+            "metadata": plan.metadata
+        }
+    
+    async def get_integrated_plan(self, plan_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get an integrated plan by ID.
+        
+        Args:
+            plan_id: ID of the plan
+            
+        Returns:
+            Dictionary with plan details or None if not found
+        """
+        if not self.planning_engine:
+            raise ValueError("Planning Engine not initialized")
+        
+        plan = self.planning_engine.integrated_plans.get(plan_id)
+        if not plan:
+            return None
+        
+        # Convert to dictionary
+        return {
+            "id": plan.id,
+            "name": plan.name,
+            "description": plan.description,
+            "goal_decomposition_id": plan.goal_decomposition_id,
+            "research_plan_ids": plan.research_plan_ids,
+            "implementation_plan_id": plan.implementation_plan_id,
+            "resource_allocation_id": plan.resource_allocation_id,
+            "status": plan.status,
+            "creation_time": plan.creation_time,
+            "plan_type": plan.plan_type.value if plan.plan_type else None,
+            "version_history": [
+                {
+                    "id": v.version_id,
+                    "timestamp": v.timestamp,
+                    "changes": v.changes
+                }
+                for v in plan.version_history
+            ] if plan.version_history else [],
+            "metadata": plan.metadata
+        }
+    
+    async def update_integrated_plan(
+        self,
+        plan_id: str,
+        updates: Dict[str, Any],
+        change_description: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Update an existing integrated plan.
+        
+        Args:
+            plan_id: ID of the plan to update
+            updates: Updates to apply to the plan
+            change_description: Description of the changes
+            context: Additional context
+            
+        Returns:
+            Dictionary with updated plan details
+        """
+        if not self.planning_engine:
+            raise ValueError("Planning Engine not initialized")
+            
+        context = context or {}
+        
+        # Update the plan
+        updated_plan = await self.planning_engine.update_plan(
+            plan_id=plan_id,
+            updates=updates,
+            change_description=change_description,
+            context=context
+        )
+        
+        # Convert to dictionary
+        return {
+            "id": updated_plan.id,
+            "name": updated_plan.name,
+            "status": updated_plan.status,
+            "latest_version": {
+                "id": updated_plan.version_history[-1].version_id,
+                "timestamp": updated_plan.version_history[-1].timestamp,
+                "changes": updated_plan.version_history[-1].changes
+            } if updated_plan.version_history else None,
+            "version_count": len(updated_plan.version_history) if updated_plan.version_history else 0
+        }
+    
+    async def list_integrated_plans(
+        self,
+        plan_type: Optional[str] = None,
+        status: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        List integrated plans with optional filtering.
+        
+        Args:
+            plan_type: Filter by plan type
+            status: Filter by status
+            
+        Returns:
+            List of plan summaries
+        """
+        if not self.planning_engine:
+            raise ValueError("Planning Engine not initialized")
+        
+        results = []
+        
+        for plan in self.planning_engine.integrated_plans.values():
+            # Apply filters if specified
+            if plan_type and (not plan.plan_type or plan.plan_type.value != plan_type):
+                continue
+                
+            if status and plan.status != status:
+                continue
+            
+            # Add summary to results
+            results.append({
+                "id": plan.id,
+                "name": plan.name,
+                "description": plan.description,
+                "status": plan.status,
+                "creation_time": plan.creation_time,
+                "plan_type": plan.plan_type.value if plan.plan_type else None
+            })
+        
+        return results
+    
+    async def create_research_driven_workflow(
+        self,
+        name: str,
+        description: str,
+        initial_goal: Dict[str, Any],
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a research-driven workflow that adapts based on research findings.
+        
+        Args:
+            name: Name of the workflow
+            description: Description of the workflow
+            initial_goal: Initial goal definition
+            context: Additional context information
+            
+        Returns:
+            Dictionary with workflow details
+        """
+        if not self.planning_workflow:
+            raise ValueError("Planning Workflow not initialized")
+            
+        context = context or {}
+        
+        # Create workflow
+        workflow_id = await self.planning_workflow.create_research_driven_workflow(
+            name=name,
+            description=description,
+            initial_goal=initial_goal,
+            context=context
+        )
+        
+        # Get workflow status
+        status = await self.planning_workflow.get_workflow_status(workflow_id)
+        
+        return {
+            "workflow_id": workflow_id,
+            "name": name,
+            "description": description,
+            "type": "research_driven",
+            "status": status["status"],
+            "steps": list(status["steps"].keys()),
+            "step_order": status["step_order"]
+        }
+    
+    async def create_implementation_focused_workflow(
+        self,
+        name: str,
+        description: str,
+        implementation_requirements: List[str],
+        constraints: List[str],
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create an implementation-focused workflow that emphasizes solution design.
+        
+        Args:
+            name: Name of the workflow
+            description: Description of the workflow
+            implementation_requirements: Implementation requirements
+            constraints: Implementation constraints
+            context: Additional context information
+            
+        Returns:
+            Dictionary with workflow details
+        """
+        if not self.planning_workflow:
+            raise ValueError("Planning Workflow not initialized")
+            
+        context = context or {}
+        
+        # Create workflow
+        workflow_id = await self.planning_workflow.create_implementation_focused_workflow(
+            name=name,
+            description=description,
+            implementation_requirements=implementation_requirements,
+            constraints=constraints,
+            context=context
+        )
+        
+        # Get workflow status
+        status = await self.planning_workflow.get_workflow_status(workflow_id)
+        
+        return {
+            "workflow_id": workflow_id,
+            "name": name,
+            "description": description,
+            "type": "implementation_focused",
+            "status": status["status"],
+            "steps": list(status["steps"].keys()),
+            "step_order": status["step_order"]
+        }
+    
+    async def execute_planning_workflow(self, workflow_id: str) -> Dict[str, Any]:
+        """
+        Execute a planning workflow by processing its steps in order.
+        
+        Args:
+            workflow_id: ID of the workflow to execute
+            
+        Returns:
+            Workflow execution result
+        """
+        if not self.planning_workflow:
+            raise ValueError("Planning Workflow not initialized")
+        
+        # Execute workflow
+        result = await self.planning_workflow.execute_workflow(workflow_id)
+        
+        return result
+    
+    async def get_planning_workflow_status(self, workflow_id: str) -> Dict[str, Any]:
+        """
+        Get the current status of a planning workflow.
+        
+        Args:
+            workflow_id: ID of the workflow
+            
+        Returns:
+            Workflow status information
+        """
+        if not self.planning_workflow:
+            raise ValueError("Planning Workflow not initialized")
+        
+        return await self.planning_workflow.get_workflow_status(workflow_id)
+    
+    async def visualize_integrated_plan(
+        self,
+        plan_id: str,
+        visualization_type: str,
+        output_format: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a visualization for an integrated plan.
+        
+        Args:
+            plan_id: ID of the plan to visualize
+            visualization_type: Type of visualization to generate
+            output_format: Output format for the visualization
+            context: Additional context for the visualization
+            
+        Returns:
+            Visualization result with content and metadata
+        """
+        if not self.planning_visualization:
+            raise ValueError("Planning Visualization not initialized")
+            
+        if not self.planning_engine:
+            raise ValueError("Planning Engine not initialized")
+            
+        # Get the plan
+        plan = self.planning_engine.integrated_plans.get(plan_id)
+        if not plan:
+            raise ValueError(f"Plan not found: {plan_id}")
+            
+        # Convert string types to enums
+        vis_type = VisualizationType(visualization_type)
+        out_format = OutputFormat(output_format)
+        
+        # Generate visualization
+        result = self.planning_visualization.visualize_integrated_plan(
+            plan=plan,
+            visualization_type=vis_type,
+            output_format=out_format,
+            context=context
+        )
+        
+        return {
+            "visualization_id": result["id"],
+            "plan_id": result["plan_id"],
+            "type": result["type"],
+            "format": result["format"],
+            "content_type": result["content_type"],
+            "content": result["content"]
+        }
+    
+    async def get_plan_metrics(
+        self,
+        plan_id: str,
+        include_trends: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Get metrics for a plan.
+        
+        Args:
+            plan_id: ID of the plan
+            include_trends: Whether to include trend analysis
+            
+        Returns:
+            Dictionary with metrics data
+        """
+        if not self.planning_metrics_collector:
+            raise ValueError("Planning Metrics Collector not initialized")
+        
+        # Generate metrics report
+        report = self.planning_metrics_collector.generate_metrics_report(
+            plan_id=plan_id,
+            include_trends=include_trends
+        )
+        
+        return report
+    
+    async def compare_plans(
+        self,
+        plan_ids: List[str],
+        comparison_metrics: List[str],
+        output_format: str
+    ) -> Dict[str, Any]:
+        """
+        Compare multiple plans and visualize the comparison.
+        
+        Args:
+            plan_ids: List of plan IDs to compare
+            comparison_metrics: Metrics to use for comparison
+            output_format: Output format for the visualization
+            
+        Returns:
+            Comparison visualization result
+        """
+        if not self.planning_visualization:
+            raise ValueError("Planning Visualization not initialized")
+            
+        if not self.planning_engine:
+            raise ValueError("Planning Engine not initialized")
+            
+        # Get the plans
+        plans = []
+        for plan_id in plan_ids:
+            plan = self.planning_engine.integrated_plans.get(plan_id)
+            if plan:
+                plans.append(plan)
+        
+        if not plans:
+            raise ValueError("No valid plans found")
+            
+        # Convert output format string to enum
+        out_format = OutputFormat(output_format)
+        
+        # Generate comparison
+        result = self.planning_visualization.compare_plans(
+            plans=plans,
+            comparison_metrics=comparison_metrics,
+            output_format=out_format
+        )
+        
+        return {
+            "visualization_id": result["id"],
+            "type": result["type"],
+            "format": result["format"],
+            "content_type": result["content_type"],
+            "content": result["content"],
+            "plan_count": len(plans)
+        } 

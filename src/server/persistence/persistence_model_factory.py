@@ -11,19 +11,30 @@ class PersistenceModelFactory:
         # Check if we're in a Streamlit context
         try:
             import streamlit as st
-            if 'persistence_model' in st.session_state:
-                print("🔄 Using existing persistence model from session state")
-                return st.session_state.persistence_model
-            
-            # If we're in Streamlit but no instance exists yet
+            # Initialize instance if it doesn't exist
             if cls._instance is None:
                 print("🆕 Creating new persistence model")
                 if type == "inmemory":
                     cls._instance = InMemoryPersistenceModel()
                 else:
                     raise NotImplementedError(f"Unknown persistence model type: {type}")
-                st.session_state.persistence_model = cls._instance
-                print("✅ Stored new persistence model in session state")
+
+            # Check if streamlit session state is available and properly initialized
+            session_state_available = hasattr(st, 'session_state') and isinstance(st.session_state, dict)
+            
+            if session_state_available and 'persistence_model' in st.session_state:
+                print("🔄 Using existing persistence model from session state")
+                return st.session_state.persistence_model
+            
+            # Store instance in session state if possible
+            if session_state_available:
+                try:
+                    st.session_state.persistence_model = cls._instance
+                    print("✅ Stored new persistence model in session state")
+                except Exception as e:
+                    # Fall back to singleton if we can't store in session state
+                    print(f"⚠️ Could not store in session state: {str(e)}")
+                
             return cls._instance
             
         except ImportError:
@@ -41,7 +52,7 @@ class PersistenceModelFactory:
         cls._instance = None
         try:
             import streamlit as st
-            if 'persistence_model' in st.session_state:
+            if hasattr(st, 'session_state') and isinstance(st.session_state, dict) and 'persistence_model' in st.session_state:
                 del st.session_state.persistence_model
-        except ImportError:
+        except (ImportError, AttributeError):
             pass

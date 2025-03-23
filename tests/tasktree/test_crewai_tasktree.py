@@ -310,7 +310,7 @@ async def test_crewai_task_tree_error_handling(persistence_model, crewai_config)
         
         assert result is not None, "Task execution result should not be None"
         assert result['status'] == 'failed', "Task should have failed status"
-        assert 'CrewAI plugin not found' in str(result.get('error', '')), "Error should mention the CrewAI plugin not being found"
+        assert "Agent role 'Invalid Agent' not found in crew configuration" in str(result.get('error', '')), "Error should mention the invalid agent role"
         
         logger.info("✅ CrewAI task tree error handling test passed")
         

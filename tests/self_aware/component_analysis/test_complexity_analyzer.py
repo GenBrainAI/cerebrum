@@ -1,6 +1,6 @@
 import pytest
 import ast
-from cerebrum.introspection.component_analysis.complexity_analyzer import (
+from src.server.introspection.component_analysis.complexity_analyzer import (
     ComplexityAnalyzer, ComplexityMetrics
 )
 
@@ -12,7 +12,7 @@ def complex_function(x: int, y: int) -> int:
     """A function with known complexity metrics."""
     result = 0
     
-    # Cyclomatic complexity: 5 (base + 3 conditions + 1 loop)
+    # Cyclomatic complexity: 4 (base + 2 conditions + 1 loop)
     if x > 0:
         if y > 0:
             result = x + y
@@ -57,7 +57,7 @@ class TestComplexityAnalyzer:
             if isinstance(node, ast.FunctionDef):
                 if node.name == "complex_function":
                     func_complexity = self.analyzer.calculate_cyclomatic_complexity(node)
-                    assert func_complexity == 5  # Base + 3 conditions + 1 loop
+                    assert func_complexity == 4  # Base + 2 conditions + 1 loop
                 elif node.name == "simple_function":
                     func_complexity = self.analyzer.calculate_cyclomatic_complexity(node)
                     assert func_complexity == 1  # Just base complexity

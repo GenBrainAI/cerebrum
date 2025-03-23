@@ -439,7 +439,14 @@ class VectorStore:
 
     def _ensure_collection(self, collection_name: str) -> chromadb.Collection:
         """Ensure a collection exists and return it."""
-        print(f"🔍 DEBUG: _ensure_collection called for collection_name={collection_name}")
+        if not collection_name:
+            print(f"⚠️ DEBUG: Empty collection name provided to _ensure_collection")
+            return None
+            
+        # Always ensure we're using the correct prefix format for the collection name
+        prefixed_collection_name = self.get_full_index_name(collection_name)
+        
+        print(f"🔍 DEBUG: _ensure_collection called for collection_name={collection_name}, prefixed_name={prefixed_collection_name}")
         print(f"🔍 DEBUG: ChromaDB client: {self.client}")
         
         try:
@@ -449,18 +456,18 @@ class VectorStore:
             print(f"📋 DEBUG: All ChromaDB collections: {collection_names}")
             
             # Check if collection already exists in indices
-            if collection_name in self.indices:
-                print(f"✅ DEBUG: Collection {collection_name} already exists in indices")
+            if prefixed_collection_name in self.indices:
+                print(f"✅ DEBUG: Collection {prefixed_collection_name} already exists in indices")
                 
                 # Verify the collection is healthy
                 try:
                     # Try a simple operation to check if the collection is working properly
-                    collection = self.indices[collection_name]
+                    collection = self.indices[prefixed_collection_name]
                     count = collection.count()
-                    print(f"📊 DEBUG: Collection {collection_name} contains {count} documents")
+                    print(f"📊 DEBUG: Collection {prefixed_collection_name} contains {count} documents")
                     return collection
                 except Exception as e:
-                    print(f"⚠️ DEBUG: Collection {collection_name} exists but has errors: {str(e)}")
+                    print(f"⚠️ DEBUG: Collection {prefixed_collection_name} exists but has errors: {str(e)}")
                     if "Expected EmbeddingFunction.__call__ to have the following signature" in str(e):
                         print(f"⚠️ DEBUG: Embedding function interface issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
                         print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
@@ -468,50 +475,50 @@ class VectorStore:
                 
             # Try to get existing collection
             try:
-                print(f"🔍 DEBUG: Getting collection info for {collection_name}")
+                print(f"🔍 DEBUG: Getting collection info for {prefixed_collection_name}")
                 collection = self.client.get_collection(
-                    name=collection_name,
+                    name=prefixed_collection_name,
                     embedding_function=self.embedding_function
                 )
                 
                 # Check if collection has documents
                 count = collection.count()
-                print(f"📊 DEBUG: Collection {collection_name} contains {count} documents")
+                print(f"📊 DEBUG: Collection {prefixed_collection_name} contains {count} documents")
                 
                 # Add to indices
-                self.indices[collection_name] = collection
+                self.indices[prefixed_collection_name] = collection
                 return collection
                 
             except Exception as e:
-                print(f"⚠️ DEBUG: Collection {collection_name} not found: {str(e)}")
+                print(f"⚠️ DEBUG: Collection {prefixed_collection_name} not found: {str(e)}")
                 if "Expected EmbeddingFunction.__call__ to have the following signature" in str(e):
                     print(f"⚠️ DEBUG: Embedding function interface issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
                     print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
                     raise
                 
                 # Create new collection
-                print(f"🔄 DEBUG: Creating new collection: {collection_name}")
+                print(f"🔄 DEBUG: Creating new collection: {prefixed_collection_name}")
                 try:
                     metadata = {"description": f"Index for {collection_name} content"}
                     collection = self.client.create_collection(
-                        name=collection_name,
+                        name=prefixed_collection_name,
                         embedding_function=self.embedding_function,
                         metadata=metadata
                     )
                     
                     # Add to indices
-                    self.indices[collection_name] = collection
-                    print(f"✅ DEBUG: Created new collection: {collection_name}")
+                    self.indices[prefixed_collection_name] = collection
+                    print(f"✅ DEBUG: Created new collection: {prefixed_collection_name}")
                     return collection
                 except Exception as create_e:
-                    print(f"❌ DEBUG: Error creating collection {collection_name}: {str(create_e)}")
+                    print(f"❌ DEBUG: Error creating collection {prefixed_collection_name}: {str(create_e)}")
                     if "Expected metadata value to be a str, int, float or bool" in str(create_e):
                         print(f"⚠️ DEBUG: Metadata issue detected. Please run the cleanup_chroma.py script to clean up the ChromaDB data.")
                         print(f"⚠️ DEBUG: Command: python cleanup_chroma.py")
                     raise
                 
         except Exception as e:
-            print(f"❌ DEBUG: Error ensuring collection {collection_name}: {str(e)}")
+            print(f"❌ DEBUG: Error ensuring collection {prefixed_collection_name}: {str(e)}")
             import traceback
             print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
             raise

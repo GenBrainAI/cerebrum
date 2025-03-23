@@ -3,7 +3,7 @@ import ast
 import tempfile
 import os
 from pathlib import Path
-from cerebrum.introspection.component_analysis.dependency_mapper import (
+from src.server.introspection.component_analysis.dependency_mapper import (
     DependencyMapper, DependencyNode
 )
 
