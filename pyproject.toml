@@ -1,36 +1,22 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.black]
-line-length = 88
-exclude = '''
-(
-  /(
-      \.eggs         # exclude a few common directories in the
-    | \.git          # root of the project
-    | \.hg
-    | \.mypy_cache
-    | \.tox
-    | \.venv
-    | _build
-    | buck-out
-    | build
-    | dist
-  )/
-)
-'''
-
-[tool.isort]
-profile = "black"
-skip = [
-    '.eggs', '.git', '.hg', '.mypy_cache', '.nox', '.pants.d', '.tox',
-    '.venv', '_build', 'buck-out', 'build', 'dist', 'node_modules', 'venv',
+[project]
+name = "cerebrum"
+version = "1.0.0"
+description = "A self-modifying AI framework"
+requires-python = ">=3.8"
+authors = [
+    { name = "Your Name", email = "your.email@example.com" },
 ]
-skip_gitignore = true
+
+[tool.hatch.build]
+include = [
+    "cerebrum/**/*.py",
+    "cerebrum/py.typed",
+]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = "-v --tb=short"
+pythonpath = ["."]
 asyncio_mode = "auto"
