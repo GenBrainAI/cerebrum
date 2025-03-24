@@ -1,0 +1,2 @@
+resource_utilization,timestamp,average_execution_time,blocked_tasks,failed_tasks,success_rate,pending_tasks,end_time,total_duration,total_execution_time,running_tasks,total_tasks,start_time,throughput,completed_tasks
+{},2025-03-24T20:19:07.399769,0,0,0,0.0,1,,0.0,0,1,2,,0.0,0

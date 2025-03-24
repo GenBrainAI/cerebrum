@@ -1,8 +1,11 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Callable, Tuple
+from enum import Enum
+from dataclasses import dataclass, field
+import uuid
 from datetime import datetime
 import logging
-import uuid
-import time
+import asyncio
+from collections import defaultdict
 
 from .task_selector import Task, TaskStatus, TaskPriority, TaskDependency, TaskSelector
 from .context_manager import ContextManager, ContextType
@@ -13,47 +16,167 @@ from .dependency_resolver import DependencyResolver
 from .priority_calculator import PriorityCalculator
 from .task_configurator import TaskConfigurator
 from .resource_manager import ResourceManager
+from .parallel_execution_controller import (
+    ParallelExecutionController, ExecutionMode, ExecutionResult,
+    AsyncParallelExecutionController
+)
+from .execution_tracker import ExecutionTracker, TrackingLevel
 
 logger = logging.getLogger(__name__)
 
 class ExecutionEngine:
-    """Coordinates the execution of tasks, managing context and resources."""
+    """
+    Integrates all Execution Engine components (Task Selector, Context Manager,
+    Parallel Execution Controller, and Execution Tracker) to provide a unified
+    execution interface.
+    """
     
-    def __init__(self, context_manager=None, task_selector=None, context_validator=None, 
-                 context_optimizer=None, dependency_resolver=None, task_configurator=None,
-                 priority_calculator=None, selection_strategy="priority_first",
-                 mock_execution=True, resource_manager=None):
-        """Initialize the execution engine with the necessary components."""
-        # Initialize base components first
-        self.context_manager = context_manager or ContextManager()
-        self.resource_manager = resource_manager or ResourceManager()
+    def __init__(self, resource_manager=None, max_workers: int = 4,
+                tracking_level: TrackingLevel = TrackingLevel.STANDARD,
+                output_dir: str = None):
+        """Initialize the Execution Engine with all its components."""
+        # Initialize core components
+        self.task_selector = TaskSelector()
+        self.context_manager = ContextManager()
         
-        # Initialize dependent components
-        self.task_selector = task_selector or TaskSelector(self.context_manager, self.resource_manager)
-        self.context_validator = context_validator or ContextValidator(self.context_manager)
-        self.context_optimizer = context_optimizer or ContextOptimizer(self.context_manager)
-        self.dependency_resolver = dependency_resolver or DependencyResolver(self.task_selector)
-        self.task_configurator = task_configurator or TaskConfigurator(self.context_manager)
-        self.priority_calculator = priority_calculator or PriorityCalculator()
+        # Initialize execution controllers
+        self.parallel_controller = ParallelExecutionController(
+            self.task_selector,
+            self.context_manager,
+            resource_manager,
+            max_workers=max_workers
+        )
+        self.async_controller = AsyncParallelExecutionController(
+            self.task_selector,
+            self.context_manager,
+            resource_manager,
+            max_workers=max_workers
+        )
         
-        # Initialize context propagator with references to the other components
-        self.context_propagator = ContextPropagator(self.context_manager)
+        # Initialize execution tracker
+        self.execution_tracker = ExecutionTracker(
+            self.task_selector,
+            self.context_manager,
+            self.parallel_controller,
+            tracking_level=tracking_level,
+            output_dir=output_dir
+        )
         
-        # Ensure proper cross-references
-        self.context_manager.task_selector = self.task_selector
-        
-        # Runtime properties
-        self.selection_strategy = selection_strategy
-        self.current_task_id = None
-        self.execution_history = []
-        self.mock_execution = mock_execution
-        
-        # Initialize internal utilities
-        self.context_logger = self.ContextLogger(self.context_manager)
-        self.metrics_collector = self.MetricsCollector()
-        
-        logger.info("Execution engine initialized")
+        # Start tracking
+        self.execution_tracker.start_tracking()
+        logger.info("Execution Engine initialized and tracking started")
     
+    def register_task(self, task: Task) -> str:
+        """Register a task with the engine."""
+        task_id = self.task_selector.register_task(task)
+        logger.debug(f"Registered task {task_id}")
+        return task_id
+    
+    def register_task_executor(self, task_id: str, executor_func: Callable) -> None:
+        """Register an executor function for a task."""
+        self.parallel_controller.register_task_executor(task_id, executor_func)
+        self.async_controller.register_task_executor(task_id, executor_func)
+        logger.debug(f"Registered executor for task {task_id}")
+    
+    def execute_task(self, task_id: str, execution_mode: ExecutionMode = ExecutionMode.SEQUENTIAL,
+                   context_override: Dict[str, Any] = None) -> Optional[ExecutionResult]:
+        """Execute a single task."""
+        result = self.parallel_controller.execute_task(task_id, execution_mode, context_override)
+        if result:
+            self.execution_tracker.track_task_execution(task_id, result)
+        return result
+    
+    async def execute_task_async(self, task_id: str, execution_mode: ExecutionMode = ExecutionMode.SEQUENTIAL,
+                              context_override: Dict[str, Any] = None) -> Optional[ExecutionResult]:
+        """Execute a single task asynchronously."""
+        result = await self.async_controller.execute_task(task_id, execution_mode, context_override)
+        if result:
+            self.execution_tracker.track_task_execution(task_id, result)
+        return result
+    
+    def execute_tasks(self, task_ids: List[str], execution_mode: ExecutionMode = ExecutionMode.PARALLEL,
+                    max_concurrent: int = None) -> Dict[str, ExecutionResult]:
+        """Execute multiple tasks."""
+        results = self.parallel_controller.execute_tasks(task_ids, execution_mode, max_concurrent)
+        for task_id, result in results.items():
+            self.execution_tracker.track_task_execution(task_id, result)
+        return results
+    
+    async def execute_tasks_async(self, task_ids: List[str], execution_mode: ExecutionMode = ExecutionMode.PARALLEL,
+                               max_concurrent: int = None) -> Dict[str, ExecutionResult]:
+        """Execute multiple tasks asynchronously."""
+        results = await self.async_controller.execute_tasks(task_ids, execution_mode, max_concurrent)
+        for task_id, result in results.items():
+            self.execution_tracker.track_task_execution(task_id, result)
+        return results
+    
+    def stop_task(self, task_id: str) -> bool:
+        """Stop a running task."""
+        return self.parallel_controller.stop_task(task_id)
+    
+    async def stop_task_async(self, task_id: str) -> bool:
+        """Stop a running task asynchronously."""
+        return await self.async_controller.stop_task(task_id)
+    
+    def stop_all_tasks(self) -> List[str]:
+        """Stop all running tasks."""
+        return self.parallel_controller.stop_all_tasks()
+    
+    async def stop_all_tasks_async(self) -> List[str]:
+        """Stop all running tasks asynchronously."""
+        return await self.async_controller.stop_all_tasks()
+    
+    def wait_for_completion(self, task_ids: List[str], timeout: float = None) -> bool:
+        """Wait for tasks to complete."""
+        return self.parallel_controller.wait_for_completion(task_ids, timeout)
+    
+    async def wait_for_completion_async(self, task_ids: List[str], timeout: float = None) -> bool:
+        """Wait for tasks to complete asynchronously."""
+        return await self.async_controller.wait_for_completion(task_ids, timeout)
+    
+    def get_task_status(self, task_id: str) -> Optional[TaskStatus]:
+        """Get the current status of a task."""
+        task = self.task_selector.get_task_by_id(task_id)
+        return task.status if task else None
+    
+    def get_execution_result(self, task_id: str) -> Optional[ExecutionResult]:
+        """Get the execution result for a task."""
+        return self.parallel_controller.get_execution_result(task_id)
+    
+    def get_execution_summary(self) -> Dict[str, Any]:
+        """Get a summary of all execution metrics."""
+        return self.execution_tracker.get_execution_summary()
+    
+    def get_task_timeline(self, task_id: str) -> List[Dict[str, Any]]:
+        """Get the execution timeline for a task."""
+        return self.execution_tracker.get_task_status_timeline(task_id)
+    
+    def get_resource_utilization(self) -> List[Dict[str, Any]]:
+        """Get resource utilization history."""
+        return self.execution_tracker.get_resource_utilization_history()
+    
+    def get_performance_stats(self) -> Dict[str, Dict[str, float]]:
+        """Get performance statistics by task type."""
+        return self.execution_tracker.get_task_performance_stats()
+    
+    def get_alerts(self, alert_type: str = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent alerts."""
+        return self.execution_tracker.get_alerts(alert_type, limit)
+    
+    def export_metrics(self, filename: str = None) -> str:
+        """Export execution metrics to CSV."""
+        return self.execution_tracker.export_metrics_csv(filename)
+    
+    def export_report(self, filename: str = None) -> str:
+        """Export a detailed execution report."""
+        return self.execution_tracker.export_execution_report(filename)
+    
+    def cleanup(self):
+        """Clean up resources and stop tracking."""
+        self.execution_tracker.stop_tracking()
+        self.parallel_controller.stop_all_tasks()
+        logger.info("Execution Engine cleaned up")
+
     # Inner class for context logging
     class ContextLogger:
         """Utility class to log context at different phases of execution."""
@@ -188,258 +311,9 @@ class ExecutionEngine:
         
         return result
     
-    def register_task(self, task: Task) -> str:
-        """Register a task for execution."""
-        return self.task_selector.register_task(task)
-    
     def select_next_task(self, available_resources=None) -> Optional[Task]:
         """Select the next task to execute."""
         return self.task_selector.select_next_task(available_resources)
-    
-    def execute_task(self, task_id: str) -> Dict[str, Any]:
-        """Execute a task synchronously with the given ID."""
-        try:
-            task = self.task_selector.get_task(task_id)
-        except ValueError:
-            return {
-                "task_id": task_id,
-                "status": "not_found",
-                "error": f"Task with ID {task_id} not found"
-            }
-        
-        # Prepare context for task using the context_propagator
-        task_context = {}
-        if hasattr(self, 'context_propagator'):
-            task_context = self.context_propagator.prepare_context_for_task(task_id)
-            logger.debug(f"Prepared context for task {task_id}: {len(task_context)} keys")
-        
-        # Validate context for task requirements
-        validation_result, validation_errors = self.context_validator.validate_context(task)
-        if not validation_result:
-            logger.warning(f"Context validation failed for task {task.id}: {validation_errors}")
-            # Update task status to failed for validation failures
-            self.task_selector.update_task_status(task.id, TaskStatus.FAILED)
-            return {
-                "task_id": task.id,
-                "status": "failed",
-                "error": f"Context validation failed: {validation_errors}"
-            }
-        
-        # Log pre-execution context (if we have a context_logger)
-        if hasattr(self, 'context_logger') and hasattr(self.context_logger, 'log_pre_execution'):
-            self.context_logger.log_pre_execution(task)
-        elif hasattr(self, 'context_logger') and hasattr(self.context_logger, 'log_context'):
-            # Fallback for older implementations
-            self.context_logger.log_context("pre-execution", task.id, {})
-        
-        try:
-            # Execute the task
-            if hasattr(self, 'mock_execution') and self.mock_execution:
-                # Use simulated execution for tests/mocks
-                if hasattr(self, '_simulate_task_execution'):
-                    result = self._simulate_task_execution(task_id, task_context)
-                else:
-                    # Fallback basic simulation
-                    result = {
-                        "task_id": task.id,
-                        "status": "complete",
-                        "timestamp": datetime.now().isoformat()
-                    }
-            else:
-                # Use real execution if available
-                if hasattr(self, '_execute_real_task'):
-                    result = self._execute_real_task(task)
-                else:
-                    # Fallback basic execution
-                    result = {
-                        "task_id": task.id,
-                        "status": "complete",
-                        "timestamp": datetime.now().isoformat()
-                    }
-            
-            # Update task status - Do this BEFORE propagating context to ensure
-            # dependency resolution works properly
-            logger.debug(f"Updating task {task.id} status to COMPLETED")
-            self.task_selector.update_task_status(task.id, TaskStatus.COMPLETED)
-            
-            # Log post-execution context (if we have a context_logger)
-            if hasattr(self, 'context_logger') and hasattr(self.context_logger, 'log_post_execution'):
-                self.context_logger.log_post_execution(task, result)
-            elif hasattr(self, 'context_logger') and hasattr(self.context_logger, 'log_context'):
-                # Fallback for older implementations
-                self.context_logger.log_context("post-execution", task.id, {})
-            
-            # Propagate context from task output
-            if hasattr(self, 'context_propagator'):
-                logger.debug(f"Propagating context from task output for {task.id}")
-                self.context_propagator.propagate_from_task_output(task.id, result)
-            elif hasattr(self, 'propagate_context'):
-                self.propagate_context(task, result)
-            
-            # Record execution metrics
-            if hasattr(self, 'metrics_collector') and hasattr(self.metrics_collector, 'record_task_execution'):
-                self.metrics_collector.record_task_execution(task.id, True, result.get("execution_time", 0))
-            
-            # Add to execution history
-            history_entry = {
-                "task_id": task.id,
-                "name": task.name,
-                "status": "success",
-                "timestamp": datetime.now().isoformat(),
-                "result": result
-            }
-            self.execution_history.append(history_entry)
-            
-            return result
-        
-        except Exception as e:
-            logger.error(f"Error executing task {task.id}: {str(e)}")
-            
-            # Update task status to failed
-            self.task_selector.update_task_status(task.id, TaskStatus.FAILED)
-            
-            # Record execution metrics for failure
-            if hasattr(self, 'metrics_collector') and hasattr(self.metrics_collector, 'record_task_execution'):
-                self.metrics_collector.record_task_execution(task.id, False, 0)
-            
-            # Add to execution history
-            history_entry = {
-                "task_id": task.id,
-                "name": task.name,
-                "status": "failure",
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e)
-            }
-            self.execution_history.append(history_entry)
-            
-            return {
-                "task_id": task.id,
-                "status": "failed",
-                "error": str(e)
-            }
-    
-    def _simulate_task_execution(self, task_id, task_context=None):
-        """Simulates task execution for testing purposes."""
-        task = self.task_selector.get_task(task_id)
-        
-        if task.name == "Context Creator":
-            result = {
-                "task_id": task_id,
-                "status": "complete",
-                "timestamp": datetime.now().isoformat(),
-                "result_" + task_id: "success",
-                "task_output": {
-                    "created_value": 100
-                }
-            }
-            return result
-        
-        if task.name == "Context Modifier":
-            result = {
-                "task_id": task_id,
-                "status": "complete",
-                "timestamp": datetime.now().isoformat(),
-                "result_" + task_id: "success",
-                "task_output": {
-                    "created_value": 100,
-                    "modified_value": 200
-                }
-            }
-            return result
-            
-        if task.name == "Context Cleaner":
-            result = {
-                "task_id": task_id,
-                "status": "complete",
-                "timestamp": datetime.now().isoformat(),
-                "result_" + task_id: "success",
-                "task_output": {
-                    "final_value": "cleaned"
-                }
-            }
-            return result
-        
-        if task.name == "Processing Task":
-            try:
-                input_data = None
-                if task_context and "input_data" in task_context:
-                    input_data = task_context.get("input_data")
-                
-                # Process the input data 
-                processed_data = {"value": (input_data["value"] * 2 if input_data else 42)}
-                
-                result = {
-                    "task_id": task_id,
-                    "status": "complete",
-                    "timestamp": datetime.now().isoformat(),
-                    "execution_time": 0.5,
-                    "processed_data": processed_data,
-                    "result_" + task_id: "success",
-                    "context_requirements": task.context_requirements if hasattr(task, "context_requirements") else [],
-                    "task_output": {
-                        "processed_data": processed_data
-                    }
-                }
-                return result
-            except Exception as e:
-                return {"task_id": task_id, "status": "error", "error": str(e), "result_" + task_id: "error"}
-        
-        if task.name == "Data Collector":
-            raw_data = None
-            if task_context and "raw_data" in task_context:
-                raw_data = task_context.get("raw_data")
-            else:
-                raw_data = {"value": 5}  # Default if not provided
-                
-            result = {
-                "task_id": task_id,
-                "status": "complete",
-                "timestamp": datetime.now().isoformat(),
-                "result_" + task_id: "success",
-                "processed_data": {"value": raw_data["value"] * 2},
-                "task_output": {
-                    "processed_data": {"value": raw_data["value"] * 2}
-                }
-            }
-            return result
-            
-        if task.name == "Data Processor" or task.name == "Result Generator":
-            input_data = None
-            processed_data = None
-            if task_context:
-                if "raw_data" in task_context:
-                    input_data = task_context.get("raw_data")
-                if "processed_data" in task_context:
-                    processed_data = task_context.get("processed_data")
-                    
-            result = {
-                "task_id": task_id,
-                "status": "complete",
-                "timestamp": datetime.now().isoformat(),
-                "result_" + task_id: "success",
-                "final_result": {"value": (processed_data["value"] * 2 if processed_data else 100)},
-                "task_output": {
-                    "final_result": {"value": (processed_data["value"] * 2 if processed_data else 100)}
-                }
-            }
-            return result
-        
-        if task.name == "Failing Task":
-            return {
-                "task_id": task_id,
-                "status": "error",
-                "timestamp": datetime.now().isoformat(),
-                "error": "Simulated task failure",
-                "result_" + task_id: "error"
-            }
-            
-        # Generic task simulation
-        return {
-            "task_id": task_id,
-            "status": "complete",
-            "timestamp": datetime.now().isoformat(),
-            "result_" + task_id: "success"
-        }
     
     def execute_next_task(self, available_resources=None) -> Optional[Dict[str, Any]]:
         """Select and execute the next task."""

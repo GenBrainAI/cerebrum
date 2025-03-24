@@ -11,8 +11,8 @@ from fastapi import (
 from fastapi.exceptions import HTTPException
 from starlette.responses import Response
 
-from src.server.controllers import openapi
-from src.server.models.toolset_credentials import ToolsetCredentials
+from ..controllers import openapi
+from ..models.toolset_credentials import ToolsetCredentials
 from ..controllers.persistence_controller import load_from_storage, save_to_storage
 from ..models.error import Error
 from ..models.function import Function, ResolvedSchema, ParameterSchema, ResponseContent, ServerInfo, Info
