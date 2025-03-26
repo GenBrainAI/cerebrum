@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import asyncio
 from datetime import datetime
+import pytest_asyncio
 
 from src.server.self_aware_integration import (
     SelfAwareSystem,
@@ -24,23 +25,23 @@ class TestSelfAwareSystem:
         with tempfile.TemporaryDirectory() as tmpdirname:
             yield tmpdirname
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def self_aware_system(self, temp_dir):
         """Create a self-aware system for testing"""
         system = SelfAwareSystem(storage_path=temp_dir)
         await system.initialize()
-        return system
+        yield system
 
     @pytest.mark.asyncio
     async def test_initialization(self, self_aware_system):
         """Test initialization of the self-aware system"""
         # Add some basic knowledge for testing
-        self_aware_system.add_semantic_knowledge(
+        semantic_id = self_aware_system.add_semantic_knowledge(
             concept="Self-Aware Cerebrum",
             definition="A cognitive architecture that can understand and modify itself."
         )
         
-        self_aware_system.add_procedural_knowledge(
+        procedural_id = self_aware_system.add_procedural_knowledge(
             task_name="Run Cognitive Cycle",
             description="Execute a full cognitive cycle",
             steps=["Initialize", "Process", "Evaluate"],
@@ -48,16 +49,33 @@ class TestSelfAwareSystem:
         )
         
         # Verify that the system components are initialized
-        assert self_aware_system.parameter_manager is not None
-        assert self_aware_system.knowledge_system is not None
-        assert self_aware_system.cognitive_orchestrator is not None
+        assert self_aware_system.parameter_manager is not None, "Parameter manager should be initialized"
+        assert self_aware_system.knowledge_system is not None, "Knowledge system should be initialized"
+        assert self_aware_system.cognitive_orchestrator is not None, "Cognitive orchestrator should be initialized"
         
-        # Verify that basic knowledge is loaded
+        # Verify the IDs were returned
+        assert semantic_id is not None, "Should return a valid ID for semantic knowledge"
+        assert procedural_id is not None, "Should return a valid ID for procedural knowledge"
+        
+        # Verify that semantic knowledge item exists directly
+        semantic_item = self_aware_system.knowledge_system.get_semantic_memory(semantic_id)
+        assert semantic_item is not None, "Semantic memory item should exist"
+        assert semantic_item.concept == "Self-Aware Cerebrum", "Concept should match"
+        
+        # Verify that procedural knowledge item exists directly
+        procedural_item = self_aware_system.knowledge_system.get_procedural_memory(procedural_id)
+        assert procedural_item is not None, "Procedural memory item should exist"
+        assert procedural_item.task_name == "Run Cognitive Cycle", "Task name should match"
+        
+        # Now verify the search works
         semantic_results = self_aware_system.knowledge_system.search_semantic_memory("cerebrum")
         procedural_results = self_aware_system.knowledge_system.search_procedural_memory("cognitive")
         
-        assert len(semantic_results) > 0
-        assert len(procedural_results) > 0
+        assert len(semantic_results) > 0, "Should find at least one semantic result"
+        assert semantic_results[0].concept == "Self-Aware Cerebrum", "Should find the right concept"
+        
+        assert len(procedural_results) > 0, "Should find at least one procedural result"
+        assert procedural_results[0].task_name == "Run Cognitive Cycle", "Should find the right task"
 
     @pytest.mark.asyncio
     async def test_add_semantic_knowledge(self, self_aware_system):
@@ -116,7 +134,7 @@ class TestSelfAwareSystem:
     @pytest.mark.asyncio
     async def test_create_cognitive_task(self, self_aware_system):
         """Test creating a cognitive task"""
-        task_id = self_aware_system.create_cognitive_task(
+        task_id = await self_aware_system.create_cognitive_task(
             title="Analyze System Performance",
             description="Evaluate the current system performance and identify bottlenecks",
             phase=CognitivePhase.UNDERSTAND,
@@ -128,7 +146,7 @@ class TestSelfAwareSystem:
         assert task_id is not None
         
         # Get the task and verify its properties
-        task = self_aware_system.get_cognitive_task(task_id)
+        task = await self_aware_system.get_cognitive_task(task_id)
         assert task is not None
         assert task.title == "Analyze System Performance"
         assert task.phase == CognitivePhase.UNDERSTAND
@@ -181,10 +199,10 @@ class TestSelfAwareSystem:
     async def test_update_development_context(self, self_aware_system):
         """Test updating development context"""
         # Update the context
-        self_aware_system.update_development_context("test_key", "test_value")
+        await self_aware_system.update_development_context("test_key", "test_value")
         
         # Get the updated context
-        context = self_aware_system.get_development_context("test_key")
+        context = await self_aware_system.get_development_context("test_key")
         
         # Verify the context was updated
         assert context == "test_value"
@@ -193,7 +211,7 @@ class TestSelfAwareSystem:
     async def test_get_current_phase(self, self_aware_system):
         """Test getting the current phase"""
         # Get the current phase
-        phase = self_aware_system.get_current_phase()
+        phase = await self_aware_system.get_current_phase()
         
         # Verify the phase
         assert phase is not None
@@ -203,7 +221,7 @@ class TestSelfAwareSystem:
     async def test_get_tasks_by_phase(self, self_aware_system):
         """Test getting tasks by phase"""
         # Create a task
-        self_aware_system.create_cognitive_task(
+        await self_aware_system.create_cognitive_task(
             title="Test Task",
             description="A test task",
             phase=CognitivePhase.UNDERSTAND,
@@ -211,7 +229,7 @@ class TestSelfAwareSystem:
         )
         
         # Get tasks for the phase
-        tasks = self_aware_system.get_tasks_by_phase(CognitivePhase.UNDERSTAND)
+        tasks = await self_aware_system.get_tasks_by_phase(CognitivePhase.UNDERSTAND)
         
         # Verify the tasks
         assert tasks is not None
@@ -231,7 +249,7 @@ class TestSelfAwareSystem:
     async def test_record_task_performance(self, self_aware_system):
         """Test recording task performance"""
         # Create a task
-        task_id = self_aware_system.create_cognitive_task(
+        task_id = await self_aware_system.create_cognitive_task(
             title="Performance Test Task",
             description="A task for testing performance recording",
             phase=CognitivePhase.UNDERSTAND
@@ -247,5 +265,4 @@ class TestSelfAwareSystem:
             quality_score=0.85
         )
         
-        # No direct way to verify, but ensure it doesn't raise exceptions
-        assert True 
+        # No direct way to verify, but ensure it doesn't raise exceptions 

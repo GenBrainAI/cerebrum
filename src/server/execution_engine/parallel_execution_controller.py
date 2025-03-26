@@ -25,12 +25,34 @@ class ExecutionMode(Enum):
 class ExecutionResult:
     task_id: str
     success: bool
-    output: Dict[str, Any]
-    start_time: datetime
-    end_time: datetime
+    output: Dict[str, Any] = field(default_factory=dict)
+    start_time: datetime = field(default_factory=datetime.now)
+    end_time: datetime = field(default_factory=datetime.now)
     error: Optional[str] = None
     duration: float = 0
     resource_usage: Dict[str, float] = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Ensure output is a dictionary
+        if self.output is None:
+            self.output = {}
+        elif not isinstance(self.output, dict):
+            self.output = {"result": self.output}
+        
+        # Validate dictionary keys to ensure they are hashable
+        for key in list(self.output.keys()):
+            if not isinstance(key, str):
+                # Convert unhashable keys to strings
+                str_key = str(key)
+                self.output[str_key] = self.output.pop(key)
+        
+        # Calculate duration if not provided
+        if not self.duration and self.start_time and self.end_time:
+            self.duration = (self.end_time - self.start_time).total_seconds()
+        
+        # Initialize resource usage if None
+        if self.resource_usage is None:
+            self.resource_usage = {}
 
 class ResourceCoordinator:
     """
@@ -269,9 +291,25 @@ class ParallelExecutionController:
         with self.results_lock:
             return self.execution_results.get(task_id)
     
-    def execute_task(self, task_id: str, execution_mode: ExecutionMode = ExecutionMode.SEQUENTIAL,
-                   context_override: Dict[str, Any] = None) -> Optional[ExecutionResult]:
-        """Execute a task with the specified execution mode."""
+    def execute_task(
+        self,
+        task_id: str,
+        execution_mode: ExecutionMode = ExecutionMode.SEQUENTIAL,
+        context_override: Dict[str, Any] = None,
+        context: Dict[str, Any] = None
+    ) -> Optional[ExecutionResult]:
+        """
+        Execute a single task.
+        
+        Args:
+            task_id: The ID of the task to execute.
+            execution_mode: The execution mode to use.
+            context_override: Optional context data to override task context.
+            context: Optional context data for the task.
+            
+        Returns:
+            Optional[ExecutionResult]: The result of the task execution, or None if execution fails.
+        """
         task = self.task_selector.get_task_by_id(task_id)
         if not task:
             logger.error(f"Task {task_id} not found")
@@ -290,77 +328,157 @@ class ParallelExecutionController:
         
         logger.info(f"Executing task {task_id} in {execution_mode.value} mode")
         
-        # Prepare context
-        task_context = context_override if context_override is not None else self.context_manager.prepare_task_context(task_id)
-        
-        # Try to allocate resources
-        if not self.resource_manager.allocate_resources(task_id, task.estimated_resources):
-            logger.warning(f"Could not allocate resources for task {task_id}")
+        try:
+            # Prepare context
+            task_context = context if context is not None else context_override if context_override is not None else self.context_manager.prepare_task_context(task_id)
+            
+            # Try to allocate resources if task has estimated resources
+            if task.estimated_resources:
+                try:
+                    if not self.resource_manager.allocate_resources(task_id, task.estimated_resources):
+                        logger.warning(f"Could not allocate resources for task {task_id}")
+                        # Create a failure result
+                        result = ExecutionResult(
+                            task_id=task_id,
+                            success=False,
+                            output={"error": "Failed to allocate resources"},
+                            start_time=datetime.now(),
+                            end_time=datetime.now(),
+                            error="Resource allocation failed",
+                            duration=0,
+                            resource_usage={}
+                        )
+                        with self.results_lock:
+                            self.execution_results[task_id] = result
+                            self.running_tasks.remove(task_id)
+                        return result
+                except Exception as e:
+                    logger.error(f"Error allocating resources for task {task_id}: {str(e)}")
+                    # Continue execution with no resources if allocation fails
+            
+            # Mark task as in progress
+            self.task_selector.update_task_status(task_id, TaskStatus.IN_PROGRESS)
+            
+            # Execute based on mode
+            if execution_mode == ExecutionMode.SEQUENTIAL:
+                result = self._execute_sequential(task_id, task_context)
+            else:
+                result = self._execute_parallel(task_id, task_context)
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in execute_task for {task_id}: {str(e)}")
+            # Create a failure result
+            result = ExecutionResult(
+                task_id=task_id,
+                success=False,
+                output={"error": str(e)},
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                error=str(e),
+                duration=0,
+                resource_usage={}
+            )
             with self.results_lock:
+                self.execution_results[task_id] = result
                 self.running_tasks.remove(task_id)
-            return None
-        
-        # Mark task as in progress
-        self.task_selector.update_task_status(task_id, TaskStatus.IN_PROGRESS)
-        
-        # Execute based on mode
-        if execution_mode == ExecutionMode.SEQUENTIAL:
-            result = self._execute_sequential(task_id, task_context)
-        else:
-            result = self._execute_parallel(task_id, task_context)
-        
-        return result
+            return result
     
-    def _execute_sequential(self, task_id: str, task_context: Dict[str, Any]) -> ExecutionResult:
-        """Execute a task sequentially."""
-        start_time = datetime.now()
-        success = False
-        error = None
-        output = {}
-        resource_usage = {}
+    def _execute_sequential(
+        self, task_id: str, context: Dict[str, Any] = None
+    ) -> ExecutionResult:
+        """
+        Execute a task sequentially.
+        
+        Args:
+            task_id: The ID of the task to execute.
+            context: Optional context data for the task.
+            
+        Returns:
+            ExecutionResult: The result of the task execution.
+        """
+        if task_id not in self.task_executors:
+            raise ValueError(f"No executor registered for task {task_id}")
+        
+        executor = self.task_executors[task_id]
+        resources_allocated = {}
         
         try:
-            # Execute the task first
-            executor = self.task_executors[task_id]
-            output = executor(task_context)
-            success = True
-        except Exception as e:
-            logger.error(f"Error executing task {task_id}: {str(e)}")
-            output = {"error": str(e)}
-            error = str(e)
-        finally:
+            start_time = datetime.now()
+            
+            # Allocate resources if needed
+            if hasattr(executor, "resource_requirements") and self.resource_manager:
+                requirements = executor.resource_requirements()
+                if requirements:
+                    resources_allocated = self.resource_manager.allocate_resources(task_id, requirements)
+            
+            # Execute the task
+            try:
+                raw_output = executor(task_id, context)
+                success = True
+                error = None
+                
+                # Standardize output format
+                if isinstance(raw_output, dict) and "result" in raw_output:
+                    output = raw_output
+                else:
+                    output = {"result": raw_output}
+                
+            except Exception as e:
+                logger.error(f"Error executing task {task_id}: {str(e)}")
+                success = False
+                output = {}
+                error = str(e)
+            
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             
-            # Release resources outside of any locks
-            resource_usage = self.resource_manager.release_resources(task_id)
+            # Free allocated resources
+            if resources_allocated and self.resource_manager:
+                self.resource_manager.free_resources(task_id, resources_allocated)
             
-            # Create result
+            # Create and return execution result
             result = ExecutionResult(
                 task_id=task_id,
                 success=success,
                 output=output,
+                error=error,
                 start_time=start_time,
                 end_time=end_time,
-                error=error,
                 duration=duration,
-                resource_usage=resource_usage
+                resource_usage=resources_allocated
             )
             
-            # Update task status
-            new_status = TaskStatus.COMPLETED if success else TaskStatus.FAILED
-            self.task_selector.update_task_status(task_id, new_status)
+            # Update task status in task_selector if available
+            if hasattr(self, 'task_selector') and self.task_selector:
+                new_status = TaskStatus.COMPLETED if success else TaskStatus.FAILED
+                self.task_selector.update_task_status(task_id, new_status)
+                if success:
+                    self.task_selector.update_dependent_tasks(task_id)
             
-            # Update context if successful
-            if success:
-                self.context_manager.propagate_context_from_task(task_id, output)
+            return result
             
-            # Store result
-            with self.results_lock:
-                self.execution_results[task_id] = result
-                self.running_tasks.remove(task_id)
+        except Exception as e:
+            # Free allocated resources in case of error
+            if resources_allocated and self.resource_manager:
+                self.resource_manager.free_resources(task_id, resources_allocated)
             
-            logger.info(f"Task {task_id} completed with status: {new_status.value}, duration: {duration:.2f}s")
+            logger.error(f"Failed to execute task {task_id}: {str(e)}")
+            
+            result = ExecutionResult(
+                task_id=task_id,
+                success=False,
+                output={},
+                error=f"Error executing task: {str(e)}",
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                resource_usage={}
+            )
+            
+            # Update task status to FAILED
+            if hasattr(self, 'task_selector') and self.task_selector:
+                self.task_selector.update_task_status(task_id, TaskStatus.FAILED)
+            
             return result
     
     def _execute_parallel(self, task_id: str, task_context: Dict[str, Any]) -> None:
@@ -577,32 +695,67 @@ class AsyncParallelExecutionController:
         
         logger.info(f"Executing task {task_id} in {execution_mode.value} mode")
         
-        # Prepare context
-        task_context = context_override if context_override is not None else self.context_manager.prepare_task_context(task_id)
-        
-        # Try to allocate resources
-        if not self.resource_manager.allocate_resources(task_id, task.estimated_resources):
-            logger.warning(f"Could not allocate resources for task {task_id}")
-            async with self.results_lock:
-                self.running_tasks.remove(task_id)
-            return None
-        
-        # Mark task as in progress
-        self.task_selector.update_task_status(task_id, TaskStatus.IN_PROGRESS)
-        
-        # Execute based on mode
-        if execution_mode == ExecutionMode.SEQUENTIAL:
-            result = await self._execute_sequential(task_id, task_context)
-        else:
-            # For parallel mode, we still execute sequentially but don't wait for result
-            if execution_mode == ExecutionMode.PARALLEL:
-                asyncio.create_task(self._execute_sequential(task_id, task_context))
-                result = None
+        try:
+            # Prepare context
+            task_context = context_override if context_override is not None else self.context_manager.prepare_task_context(task_id)
+            
+            # Try to allocate resources if task has estimated resources
+            if task.estimated_resources:
+                try:
+                    if not self.resource_manager.allocate_resources(task_id, task.estimated_resources):
+                        logger.warning(f"Could not allocate resources for task {task_id}")
+                        # Create a failure result
+                        result = ExecutionResult(
+                            task_id=task_id,
+                            success=False,
+                            output={"error": "Failed to allocate resources"},
+                            start_time=datetime.now(),
+                            end_time=datetime.now(),
+                            error="Resource allocation failed",
+                            duration=0,
+                            resource_usage={}
+                        )
+                        async with self.results_lock:
+                            self.execution_results[task_id] = result
+                            self.running_tasks.remove(task_id)
+                        return result
+                except Exception as e:
+                    logger.error(f"Error allocating resources for task {task_id}: {str(e)}")
+                    # Continue execution with no resources if allocation fails
+            
+            # Mark task as in progress
+            self.task_selector.update_task_status(task_id, TaskStatus.IN_PROGRESS)
+            
+            # Execute based on mode
+            if execution_mode == ExecutionMode.SEQUENTIAL:
+                result = await self._execute_sequential(task_id, task_context)
             else:
-                async with self.semaphore:
-                    result = await self._execute_sequential(task_id, task_context)
-        
-        return result
+                # For parallel mode, we still execute sequentially but don't wait for result
+                if execution_mode == ExecutionMode.PARALLEL:
+                    asyncio.create_task(self._execute_sequential(task_id, task_context))
+                    result = None
+                else:
+                    async with self.semaphore:
+                        result = await self._execute_sequential(task_id, task_context)
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in execute_task for {task_id}: {str(e)}")
+            # Create a failure result
+            result = ExecutionResult(
+                task_id=task_id,
+                success=False,
+                output={"error": str(e)},
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                error=str(e),
+                duration=0,
+                resource_usage={}
+            )
+            async with self.results_lock:
+                self.execution_results[task_id] = result
+                self.running_tasks.remove(task_id)
+            return result
     
     async def _execute_sequential(self, task_id: str, task_context: Dict[str, Any]) -> ExecutionResult:
         """Execute a task sequentially."""
@@ -610,10 +763,10 @@ class AsyncParallelExecutionController:
         try:
             executor = self.task_executors[task_id]
             if asyncio.iscoroutinefunction(executor):
-                output = await executor(task_context)
+                output = await executor(task_id, task_context)
             else:
                 # Run sync function in executor to avoid blocking the event loop
-                output = await self.loop.run_in_executor(None, executor, task_context)
+                output = await self.loop.run_in_executor(None, executor, task_id, task_context)
             success = True
             error = None
         except Exception as e:
@@ -626,7 +779,7 @@ class AsyncParallelExecutionController:
         duration = (end_time - start_time).total_seconds()
         
         # Release resources
-        resource_usage = self.resource_manager.release_resources(task_id)
+        resource_usage = self.resource_manager.free_resources(task_id)
         
         # Create result
         result = ExecutionResult(

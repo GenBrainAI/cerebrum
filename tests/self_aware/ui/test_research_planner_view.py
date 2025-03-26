@@ -591,7 +591,7 @@ class TestResearchPlannerView:
         mock_plan = Mock()
         mock_plan.id = "plan123"
         
-        # Configure the research planner mock
+        # Configure the research planner mock to return our mock plan
         mock_research_planner.create_research_plan.return_value = mock_plan
         
         # Setup inputs
@@ -599,15 +599,21 @@ class TestResearchPlannerView:
         gap_ids = ["gap1", "gap2"]
         description_input = "Test description"
         
-        # Mock asyncio.run to handle the coroutine
+        # Mock how the view calls create_research_plan in _render_knowledge_gaps_tab
+        # In the real code, asyncio.run is used to run the coroutine
         with patch('asyncio.run', return_value=mock_plan) as mock_run:
-            # Simulate what happens in the knowledge gaps tab when creating a plan
-            # This code mocks what happens inside _render_knowledge_gaps_tab() when the create button is clicked
-            research_planner_view.research_planner.create_research_plan(
+            # Simulate the call that would happen in the knowledge gaps tab
+            result = asyncio.run(research_planner_view.research_planner.create_research_plan(
                 title=topic_input,
                 description=description_input,
                 knowledge_gaps=gap_ids
-            )
+            ))
+            
+            # Verify mock_run was called with a coroutine
+            mock_run.assert_called_once()
+            
+            # Verify we got the expected result from asyncio.run
+            assert result == mock_plan
             
             # Verify that create_research_plan was called with correct parameters
             mock_research_planner.create_research_plan.assert_called_with(

@@ -50,6 +50,26 @@ class ContextManager:
         self.task_selector = task_selector
         logger.info("Context manager initialized")
         
+    @property
+    def global_context(self) -> Dict[str, Any]:
+        """Get the global context dictionary."""
+        return self.contexts[ContextType.GLOBAL]
+
+    @property
+    def session_context(self) -> Dict[str, Any]:
+        """Get the session context dictionary."""
+        return self.contexts[ContextType.SESSION]
+
+    @property
+    def task_context(self) -> Dict[str, Any]:
+        """Get the task context dictionary."""
+        return self.contexts[ContextType.TASK]
+
+    @property
+    def temporary_context(self) -> Dict[str, Any]:
+        """Get the temporary context dictionary."""
+        return self.contexts[ContextType.TEMPORARY]
+        
     def set_context(self, key: str, value: Any, context_type: ContextType = ContextType.TASK, 
                    expires_at: datetime = None, metadata: Dict[str, Any] = None, skip_validation: bool = False) -> None:
         """Set a context value."""
@@ -113,6 +133,25 @@ class ContextManager:
                     return entry.value
         
         return default
+    
+    def has_context(self, key: str) -> bool:
+        """
+        Check if a context key exists in any context type.
+        
+        Args:
+            key: The key to check.
+            
+        Returns:
+            bool: True if the key exists in any non-expired context, False otherwise.
+        """
+        # Check all context types in order of precedence
+        for context_type in [ContextType.TASK, ContextType.SESSION, ContextType.GLOBAL, ContextType.TEMPORARY]:
+            if key in self.contexts[context_type]:
+                entry = self.contexts[context_type][key]
+                if not entry.is_expired():
+                    return True
+        
+        return False
     
     def get_typed_context(self, key: str, context_type: ContextType, default: Any = None) -> Any:
         """Get a context value from a specific context type."""

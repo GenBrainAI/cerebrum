@@ -197,7 +197,7 @@ class CognitiveLoopOrchestrator:
             }
             json.dump(state, f, indent=2)
     
-    def create_task(self, title: str, description: str, phase: CognitivePhase, 
+    async def create_task(self, title: str, description: str, phase: CognitivePhase, 
                    worker_type: Optional[WorkerType] = None, priority: TaskPriority = TaskPriority.MEDIUM,
                    parent_id: Optional[str] = None, context: Optional[Dict[str, Any]] = None) -> str:
         """Create a new cognitive task and return its ID"""
@@ -221,11 +221,11 @@ class CognitiveLoopOrchestrator:
         self._save_data()
         return task.id
     
-    def get_task(self, task_id: str) -> Optional[CognitiveTask]:
+    async def get_task(self, task_id: str) -> Optional[CognitiveTask]:
         """Get a task by ID"""
         return self.tasks.get(task_id)
     
-    def update_task(self, task_id: str, **kwargs) -> bool:
+    async def update_task(self, task_id: str, **kwargs) -> bool:
         """Update a task with new values"""
         if task_id not in self.tasks:
             return False
@@ -240,7 +240,7 @@ class CognitiveLoopOrchestrator:
         self._save_data()
         return True
     
-    def update_task_status(self, task_id: str, status: TaskStatus) -> bool:
+    async def update_task_status(self, task_id: str, status: TaskStatus) -> bool:
         """Update a task's status"""
         if task_id not in self.tasks:
             return False
@@ -250,7 +250,7 @@ class CognitiveLoopOrchestrator:
         self._save_data()
         return True
     
-    def set_task_result(self, task_id: str, result: Any) -> bool:
+    async def set_task_result(self, task_id: str, result: Any) -> bool:
         """Set a task's result"""
         if task_id not in self.tasks:
             return False
@@ -261,7 +261,7 @@ class CognitiveLoopOrchestrator:
         self._save_data()
         return True
     
-    def set_task_error(self, task_id: str, error: str) -> bool:
+    async def set_task_error(self, task_id: str, error: str) -> bool:
         """Set a task's error"""
         if task_id not in self.tasks:
             return False
@@ -272,48 +272,42 @@ class CognitiveLoopOrchestrator:
         self._save_data()
         return True
     
-    def get_tasks_by_phase(self, phase: CognitivePhase, status: Optional[TaskStatus] = None) -> List[CognitiveTask]:
-        """Get tasks for a specific phase, optionally filtered by status"""
+    async def get_tasks_by_phase(self, phase: CognitivePhase, status: Optional[TaskStatus] = None) -> List[CognitiveTask]:
+        """Get all tasks in a specific phase"""
         tasks = [task for task in self.tasks.values() if task.phase == phase]
-        
-        if status is not None:
+        if status:
             tasks = [task for task in tasks if task.status == status]
-        
         return tasks
     
-    def get_tasks_by_worker(self, worker_type: WorkerType, status: Optional[TaskStatus] = None) -> List[CognitiveTask]:
-        """Get tasks for a specific worker type, optionally filtered by status"""
+    async def get_tasks_by_worker(self, worker_type: WorkerType, status: Optional[TaskStatus] = None) -> List[CognitiveTask]:
+        """Get all tasks assigned to a specific worker type"""
         tasks = [task for task in self.tasks.values() if task.worker_type == worker_type]
-        
-        if status is not None:
+        if status:
             tasks = [task for task in tasks if task.status == status]
-        
         return tasks
     
-    def get_subtasks(self, task_id: str) -> List[CognitiveTask]:
-        """Get all subtasks for a task"""
+    async def get_subtasks(self, task_id: str) -> List[CognitiveTask]:
+        """Get all subtasks of a task"""
         if task_id not in self.tasks:
             return []
-        
-        task = self.tasks[task_id]
-        return [self.tasks[subtask_id] for subtask_id in task.subtasks if subtask_id in self.tasks]
+        return [self.tasks[subtask_id] for subtask_id in self.tasks[task_id].subtasks if subtask_id in self.tasks]
     
-    def set_current_phase(self, phase: CognitivePhase) -> None:
-        """Set the current phase of the cognitive loop"""
+    async def set_current_phase(self, phase: CognitivePhase) -> None:
+        """Set the current cognitive phase"""
         self.current_phase = phase
         self._save_data()
     
-    def get_current_phase(self) -> CognitivePhase:
-        """Get the current phase of the cognitive loop"""
+    async def get_current_phase(self) -> CognitivePhase:
+        """Get the current cognitive phase"""
         return self.current_phase
     
-    def update_development_context(self, key: str, value: Any) -> None:
+    async def update_development_context(self, key: str, value: Any) -> None:
         """Update a value in the development context"""
         self.development_context[key] = value
         self._save_data()
     
-    def get_development_context(self, key: Optional[str] = None) -> Any:
-        """Get a value from the development context, or the entire context if no key is specified"""
+    async def get_development_context(self, key: Optional[str] = None) -> Any:
+        """Get a value from the development context"""
         if key is None:
             return self.development_context
         return self.development_context.get(key)
@@ -321,7 +315,7 @@ class CognitiveLoopOrchestrator:
     async def _handle_understand_phase(self) -> bool:
         """Handle the understand phase of the cognitive loop"""
         # Get all pending understand tasks
-        tasks = self.get_tasks_by_phase(CognitivePhase.UNDERSTAND, TaskStatus.PENDING)
+        tasks = await self.get_tasks_by_phase(CognitivePhase.UNDERSTAND, TaskStatus.PENDING)
         
         # Sort by priority
         tasks.sort(key=lambda t: t.priority.value, reverse=True)
@@ -333,8 +327,7 @@ class CognitiveLoopOrchestrator:
                 workers = self.workers.get(task.worker_type, [])
                 for worker in workers:
                     if await worker.can_handle(task):
-                        task.update_status(TaskStatus.IN_PROGRESS)
-                        self._save_data()
+                        await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
                         
                         try:
                             updated_task = await worker.process_task(task)
@@ -342,7 +335,7 @@ class CognitiveLoopOrchestrator:
                             self._save_data()
                         except Exception as e:
                             logger.error(f"Error processing task {task.id}: {e}")
-                            self.set_task_error(task.id, str(e))
+                            await self.set_task_error(task.id, str(e))
                         
                         break
             else:
@@ -350,9 +343,8 @@ class CognitiveLoopOrchestrator:
                 for worker_type, workers in self.workers.items():
                     for worker in workers:
                         if await worker.can_handle(task):
-                            task.update_status(TaskStatus.IN_PROGRESS)
-                            task.worker_type = worker_type
-                            self._save_data()
+                            await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
+                            await self.update_task(task.id, worker_type=worker_type)
                             
                             try:
                                 updated_task = await worker.process_task(task)
@@ -360,7 +352,7 @@ class CognitiveLoopOrchestrator:
                                 self._save_data()
                             except Exception as e:
                                 logger.error(f"Error processing task {task.id}: {e}")
-                                self.set_task_error(task.id, str(e))
+                                await self.set_task_error(task.id, str(e))
                             
                             break
                     else:
@@ -368,12 +360,12 @@ class CognitiveLoopOrchestrator:
                     break
         
         # Check if all understand tasks are completed
-        pending_tasks = self.get_tasks_by_phase(CognitivePhase.UNDERSTAND, TaskStatus.PENDING)
-        in_progress_tasks = self.get_tasks_by_phase(CognitivePhase.UNDERSTAND, TaskStatus.IN_PROGRESS)
+        pending_tasks = await self.get_tasks_by_phase(CognitivePhase.UNDERSTAND, TaskStatus.PENDING)
+        in_progress_tasks = await self.get_tasks_by_phase(CognitivePhase.UNDERSTAND, TaskStatus.IN_PROGRESS)
         
         if not pending_tasks and not in_progress_tasks:
             # All understand tasks are completed, move to plan phase
-            self.set_current_phase(CognitivePhase.PLAN)
+            await self.set_current_phase(CognitivePhase.PLAN)
             return True
         
         return False
@@ -381,7 +373,7 @@ class CognitiveLoopOrchestrator:
     async def _handle_plan_phase(self) -> bool:
         """Handle the plan phase of the cognitive loop"""
         # Get all pending plan tasks
-        tasks = self.get_tasks_by_phase(CognitivePhase.PLAN, TaskStatus.PENDING)
+        tasks = await self.get_tasks_by_phase(CognitivePhase.PLAN, TaskStatus.PENDING)
         
         # Sort by priority
         tasks.sort(key=lambda t: t.priority.value, reverse=True)
@@ -393,8 +385,7 @@ class CognitiveLoopOrchestrator:
                 workers = self.workers.get(task.worker_type, [])
                 for worker in workers:
                     if await worker.can_handle(task):
-                        task.update_status(TaskStatus.IN_PROGRESS)
-                        self._save_data()
+                        await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
                         
                         try:
                             updated_task = await worker.process_task(task)
@@ -402,7 +393,7 @@ class CognitiveLoopOrchestrator:
                             self._save_data()
                         except Exception as e:
                             logger.error(f"Error processing task {task.id}: {e}")
-                            self.set_task_error(task.id, str(e))
+                            await self.set_task_error(task.id, str(e))
                         
                         break
             else:
@@ -410,9 +401,8 @@ class CognitiveLoopOrchestrator:
                 for worker_type, workers in self.workers.items():
                     for worker in workers:
                         if await worker.can_handle(task):
-                            task.update_status(TaskStatus.IN_PROGRESS)
-                            task.worker_type = worker_type
-                            self._save_data()
+                            await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
+                            await self.update_task(task.id, worker_type=worker_type)
                             
                             try:
                                 updated_task = await worker.process_task(task)
@@ -420,7 +410,7 @@ class CognitiveLoopOrchestrator:
                                 self._save_data()
                             except Exception as e:
                                 logger.error(f"Error processing task {task.id}: {e}")
-                                self.set_task_error(task.id, str(e))
+                                await self.set_task_error(task.id, str(e))
                             
                             break
                     else:
@@ -428,12 +418,12 @@ class CognitiveLoopOrchestrator:
                     break
         
         # Check if all plan tasks are completed
-        pending_tasks = self.get_tasks_by_phase(CognitivePhase.PLAN, TaskStatus.PENDING)
-        in_progress_tasks = self.get_tasks_by_phase(CognitivePhase.PLAN, TaskStatus.IN_PROGRESS)
+        pending_tasks = await self.get_tasks_by_phase(CognitivePhase.PLAN, TaskStatus.PENDING)
+        in_progress_tasks = await self.get_tasks_by_phase(CognitivePhase.PLAN, TaskStatus.IN_PROGRESS)
         
         if not pending_tasks and not in_progress_tasks:
             # All plan tasks are completed, move to execute phase
-            self.set_current_phase(CognitivePhase.EXECUTE)
+            await self.set_current_phase(CognitivePhase.EXECUTE)
             return True
         
         return False
@@ -441,7 +431,7 @@ class CognitiveLoopOrchestrator:
     async def _handle_execute_phase(self) -> bool:
         """Handle the execute phase of the cognitive loop"""
         # Get all pending execute tasks
-        tasks = self.get_tasks_by_phase(CognitivePhase.EXECUTE, TaskStatus.PENDING)
+        tasks = await self.get_tasks_by_phase(CognitivePhase.EXECUTE, TaskStatus.PENDING)
         
         # Sort by priority
         tasks.sort(key=lambda t: t.priority.value, reverse=True)
@@ -453,8 +443,7 @@ class CognitiveLoopOrchestrator:
                 workers = self.workers.get(task.worker_type, [])
                 for worker in workers:
                     if await worker.can_handle(task):
-                        task.update_status(TaskStatus.IN_PROGRESS)
-                        self._save_data()
+                        await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
                         
                         try:
                             updated_task = await worker.process_task(task)
@@ -462,7 +451,7 @@ class CognitiveLoopOrchestrator:
                             self._save_data()
                         except Exception as e:
                             logger.error(f"Error processing task {task.id}: {e}")
-                            self.set_task_error(task.id, str(e))
+                            await self.set_task_error(task.id, str(e))
                         
                         break
             else:
@@ -470,9 +459,8 @@ class CognitiveLoopOrchestrator:
                 for worker_type, workers in self.workers.items():
                     for worker in workers:
                         if await worker.can_handle(task):
-                            task.update_status(TaskStatus.IN_PROGRESS)
-                            task.worker_type = worker_type
-                            self._save_data()
+                            await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
+                            await self.update_task(task.id, worker_type=worker_type)
                             
                             try:
                                 updated_task = await worker.process_task(task)
@@ -480,7 +468,7 @@ class CognitiveLoopOrchestrator:
                                 self._save_data()
                             except Exception as e:
                                 logger.error(f"Error processing task {task.id}: {e}")
-                                self.set_task_error(task.id, str(e))
+                                await self.set_task_error(task.id, str(e))
                             
                             break
                     else:
@@ -488,12 +476,12 @@ class CognitiveLoopOrchestrator:
                     break
         
         # Check if all execute tasks are completed
-        pending_tasks = self.get_tasks_by_phase(CognitivePhase.EXECUTE, TaskStatus.PENDING)
-        in_progress_tasks = self.get_tasks_by_phase(CognitivePhase.EXECUTE, TaskStatus.IN_PROGRESS)
+        pending_tasks = await self.get_tasks_by_phase(CognitivePhase.EXECUTE, TaskStatus.PENDING)
+        in_progress_tasks = await self.get_tasks_by_phase(CognitivePhase.EXECUTE, TaskStatus.IN_PROGRESS)
         
         if not pending_tasks and not in_progress_tasks:
             # All execute tasks are completed, move to reflect phase
-            self.set_current_phase(CognitivePhase.REFLECT)
+            await self.set_current_phase(CognitivePhase.REFLECT)
             return True
         
         return False
@@ -501,7 +489,7 @@ class CognitiveLoopOrchestrator:
     async def _handle_reflect_phase(self) -> bool:
         """Handle the reflect phase of the cognitive loop"""
         # Get all pending reflect tasks
-        tasks = self.get_tasks_by_phase(CognitivePhase.REFLECT, TaskStatus.PENDING)
+        tasks = await self.get_tasks_by_phase(CognitivePhase.REFLECT, TaskStatus.PENDING)
         
         # Sort by priority
         tasks.sort(key=lambda t: t.priority.value, reverse=True)
@@ -513,8 +501,7 @@ class CognitiveLoopOrchestrator:
                 workers = self.workers.get(task.worker_type, [])
                 for worker in workers:
                     if await worker.can_handle(task):
-                        task.update_status(TaskStatus.IN_PROGRESS)
-                        self._save_data()
+                        await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
                         
                         try:
                             updated_task = await worker.process_task(task)
@@ -522,7 +509,7 @@ class CognitiveLoopOrchestrator:
                             self._save_data()
                         except Exception as e:
                             logger.error(f"Error processing task {task.id}: {e}")
-                            self.set_task_error(task.id, str(e))
+                            await self.set_task_error(task.id, str(e))
                         
                         break
             else:
@@ -530,9 +517,8 @@ class CognitiveLoopOrchestrator:
                 for worker_type, workers in self.workers.items():
                     for worker in workers:
                         if await worker.can_handle(task):
-                            task.update_status(TaskStatus.IN_PROGRESS)
-                            task.worker_type = worker_type
-                            self._save_data()
+                            await self.update_task_status(task.id, TaskStatus.IN_PROGRESS)
+                            await self.update_task(task.id, worker_type=worker_type)
                             
                             try:
                                 updated_task = await worker.process_task(task)
@@ -540,7 +526,7 @@ class CognitiveLoopOrchestrator:
                                 self._save_data()
                             except Exception as e:
                                 logger.error(f"Error processing task {task.id}: {e}")
-                                self.set_task_error(task.id, str(e))
+                                await self.set_task_error(task.id, str(e))
                             
                             break
                     else:
@@ -548,12 +534,12 @@ class CognitiveLoopOrchestrator:
                     break
         
         # Check if all reflect tasks are completed
-        pending_tasks = self.get_tasks_by_phase(CognitivePhase.REFLECT, TaskStatus.PENDING)
-        in_progress_tasks = self.get_tasks_by_phase(CognitivePhase.REFLECT, TaskStatus.IN_PROGRESS)
+        pending_tasks = await self.get_tasks_by_phase(CognitivePhase.REFLECT, TaskStatus.PENDING)
+        in_progress_tasks = await self.get_tasks_by_phase(CognitivePhase.REFLECT, TaskStatus.IN_PROGRESS)
         
         if not pending_tasks and not in_progress_tasks:
             # All reflect tasks are completed, move back to understand phase for the next cycle
-            self.set_current_phase(CognitivePhase.UNDERSTAND)
+            await self.set_current_phase(CognitivePhase.UNDERSTAND)
             return True
         
         return False
@@ -568,7 +554,7 @@ class CognitiveLoopOrchestrator:
     async def run_cognitive_cycle(self) -> None:
         """Run a complete cognitive cycle"""
         # Start with understand phase
-        self.set_current_phase(CognitivePhase.UNDERSTAND)
+        await self.set_current_phase(CognitivePhase.UNDERSTAND)
         
         # Process each phase until completion
         max_iterations = 100  # Prevent infinite loops
@@ -578,7 +564,8 @@ class CognitiveLoopOrchestrator:
             iteration_count += 1
             phase_completed = await self.process_current_phase()
             
-            if phase_completed and self.current_phase == CognitivePhase.UNDERSTAND:
+            current_phase = await self.get_current_phase()
+            if phase_completed and current_phase == CognitivePhase.UNDERSTAND:
                 # We've completed a full cycle
                 break
         
@@ -590,6 +577,10 @@ class CognitiveLoopOrchestrator:
         while True:
             await self.process_current_phase()
             await asyncio.sleep(interval_seconds)
+
+    async def get_tasks(self) -> Dict[str, CognitiveTask]:
+        """Get all tasks in the system"""
+        return self.tasks
 
 class RequirementsWorker(WorkerInterface):
     """Worker for requirements analysis tasks"""

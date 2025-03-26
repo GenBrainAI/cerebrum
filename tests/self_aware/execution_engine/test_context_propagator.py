@@ -25,18 +25,23 @@ class TestContextPropagator:
         """Test adding propagation rules."""
         # Add a simple rule
         context_propagator.add_rule("source", "target")
-        assert "source" in context_propagator.propagation_rules
+        # Check if the rule is in the list of propagation rules
+        assert any(rule[0] == "source" for rule in context_propagator.propagation_rules)
         
+        # Find the rule with source pattern "source"
+        source_rule = next(rule for rule in context_propagator.propagation_rules if rule[0] == "source")
+        source_pattern, target_pattern, transform_func = source_rule
         # Default transform should be identity
-        source_pattern, target_pattern, transform_func = "source", "target", context_propagator.propagation_rules["source"][1]
         assert transform_func("test") == "test"
         
         # Add a rule with transform
         transform = lambda x: x.upper()
         context_propagator.add_rule("source2", "target2", transform)
         
+        # Find the rule with source pattern "source2"
+        source2_rule = next(rule for rule in context_propagator.propagation_rules if rule[0] == "source2")
+        _, _, transform_func2 = source2_rule
         # Check transform works
-        _, _, transform_func2 = "source2", "target2", context_propagator.propagation_rules["source2"][1]
         assert transform_func2("test") == "TEST"
 
     def test_match_pattern(self, context_propagator):

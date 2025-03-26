@@ -278,8 +278,15 @@ class ContextPropagator:
 
     @property
     def propagation_rules(self):
-        """Return a dictionary representation of the rules for backward compatibility."""
-        rules_dict = {}
-        for source_pattern, target_pattern, transform_func in self._rules:
-            rules_dict[source_pattern] = (target_pattern, transform_func)
-        return rules_dict 
+        """Get all the propagation rules."""
+        return self._rules
+        
+    @property
+    def rules(self) -> Dict[str, List[str]]:
+        """Get a dictionary of source-to-target rules mappings for use in the ExecutionEngine."""
+        result = {}
+        for source_pattern, target_pattern, _ in self._rules:
+            if source_pattern not in result:
+                result[source_pattern] = []
+            result[source_pattern].append(target_pattern)
+        return result 

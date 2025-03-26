@@ -29,12 +29,18 @@ class MockGitHub:
 import github.MainClass
 github.MainClass.Github = MockGitHub
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="function")
 def event_loop():
-    """Create an instance of the default event loop for each test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    """Create an instance of the default event loop for each test function."""
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
-    loop.close()
+    # Close the loop explicitly
+    if loop.is_running():
+        loop.stop()
+    if not loop.is_closed():
+        loop.close()
 
 @pytest.fixture
 def temp_dir():

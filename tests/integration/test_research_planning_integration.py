@@ -15,6 +15,8 @@ import shutil
 import json
 from datetime import datetime
 import uuid
+from pathlib import Path
+from typing import Dict, Any
 
 from src.server.planning.research_planner import (
     ResearchPlanner,
@@ -27,6 +29,15 @@ from src.server.planning.goal_decomposition import GoalDecompositionEngine
 from src.server.context.knowledge_integration import KnowledgeIntegrationSystem
 from src.server.ui.research_planner_view import ResearchPlannerView
 
+class SessionStateMock(dict):
+    """Mock for Streamlit's session state that supports both dict and attribute access."""
+    def __getattr__(self, key):
+        if key not in self:
+            self[key] = {}
+        return self[key]
+    
+    def __setattr__(self, key, value):
+        self[key] = value
 
 class TestResearchPlanningIntegration:
     """Integration test suite for the research planning system."""
@@ -288,25 +299,29 @@ class TestResearchPlanningIntegration:
     
     def test_ui_session_state_initialization(self, ui_component):
         """Test that UI component initializes session state correctly."""
-        # Mock streamlit components
+        # Create a mock session state that supports both dict and attribute access
+        mock_session_state = SessionStateMock()
+        
+        # Mock streamlit components and session state
         with patch("streamlit.title"), \
              patch("streamlit.radio", return_value="Knowledge Gaps"), \
-             patch.object(ui_component, "_render_knowledge_gaps_tab"):
-            
-            # Ensure session state is empty
-            if hasattr(st, "session_state"):
-                st.session_state.clear()
-            else:
-                setattr(st, "session_state", {})
+             patch.object(ui_component, "_render_knowledge_gaps_tab"), \
+             patch("streamlit.session_state", new=mock_session_state):
             
             # Render the UI
             ui_component.render()
             
-            # Verify session state was initialized
-            assert "knowledge_gaps" in st.session_state
-            assert "current_plan_id" in st.session_state
-            assert "search_results" in st.session_state
-            assert "selected_tab" in st.session_state
+            # Verify session state was initialized with expected keys
+            assert "knowledge_gaps" in mock_session_state
+            assert "current_plan_id" in mock_session_state
+            assert "search_results" in mock_session_state
+            assert "selected_tab" in mock_session_state
+            assert mock_session_state["selected_tab"] == "Knowledge Gaps"
+            
+            # Verify default values
+            assert isinstance(mock_session_state["knowledge_gaps"], dict)
+            assert mock_session_state["current_plan_id"] is None
+            assert isinstance(mock_session_state["search_results"], dict)
     
     @pytest.mark.asyncio
     async def test_end_to_end_workflow(self, research_planner, goal_engine, knowledge_system):

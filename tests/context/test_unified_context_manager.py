@@ -8,6 +8,7 @@ from typing import Dict, Any
 import asyncio
 import shutil
 from unittest.mock import patch
+import pytest_asyncio
 
 from src.server.context.unified_context_manager import (
     UnifiedContextManager,
@@ -17,7 +18,7 @@ from src.server.context.unified_context_manager import (
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
 
-@pytest.fixture(autouse=True)
+@pytest_asyncio.fixture(autouse=True)
 async def clear_context_db(context_manager):
     """Clear the context database before each test."""
     # Reset any existing data
@@ -37,7 +38,7 @@ def temp_data_dir():
     yield temp_dir
     shutil.rmtree(temp_dir)
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def context_manager(temp_data_dir):
     """Create a UnifiedContextManager instance with temporary storage."""
     # Reset the persistence model factory to ensure a clean state

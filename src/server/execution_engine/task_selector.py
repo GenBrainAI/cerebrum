@@ -115,32 +115,25 @@ class TaskSelector:
         
         # If task was completed, check if any dependent tasks can be unblocked
         if status == TaskStatus.COMPLETED and old_status != TaskStatus.COMPLETED:
-            self._update_dependent_tasks(task_id)
+            self.update_dependent_tasks(task_id)
     
-    def _update_dependent_tasks(self, completed_task_id: str) -> None:
-        """Update tasks that depend on the completed task."""
-        if completed_task_id not in self.dependency_graph:
+    def update_dependent_tasks(self, task_id: str) -> None:
+        """Update the status of tasks that depend on the completed task."""
+        completed_task = self.get_task_by_id(task_id)
+        if not completed_task or completed_task.status != TaskStatus.COMPLETED:
             return
-        
-        logger.debug(f"Updating dependent tasks for completed task: {completed_task_id}")
-        for dependent_id in self.dependency_graph[completed_task_id]:
-            dependent_task = self.tasks[dependent_id]
-            if dependent_task.status == TaskStatus.BLOCKED:
-                # Check if all dependencies are now satisfied
-                all_deps_satisfied = True
-                for dep in dependent_task.dependencies:
-                    if dep.task_id in self.tasks:
-                        if self.tasks[dep.task_id].status != TaskStatus.COMPLETED:
-                            all_deps_satisfied = False
-                            break
-                    else:
-                        all_deps_satisfied = False
-                        break
-                
-                if all_deps_satisfied:
-                    dependent_task.status = TaskStatus.READY
-                    dependent_task.updated_at = datetime.now()
-                    logger.info(f"Task {dependent_id} is now ready for execution")
+
+        # Find all tasks that depend on the completed task
+        for task in self.tasks.values():
+            if any(dep.task_id == task_id for dep in task.dependencies):
+                # Check if all dependencies are completed
+                all_deps_completed = all(
+                    self.get_task_by_id(dep.task_id).status == TaskStatus.COMPLETED
+                    for dep in task.dependencies
+                )
+                if all_deps_completed and task.status == TaskStatus.BLOCKED:
+                    task.status = TaskStatus.READY
+                    self.update_task_status(task.id, TaskStatus.READY)
     
     def select_next_task(self, available_resources: Dict[str, float] = None) -> Optional[Task]:
         """Select the next task to execute based on the current selection strategy."""

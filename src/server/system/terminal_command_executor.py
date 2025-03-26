@@ -430,6 +430,7 @@ class TerminalCommandExecutor:
         # Determine if shell is needed
         use_shell = any(char in command for char in ['|', '>', '<', ';', '&&', '||', '`', '$', '*', '?', '{', '}', '[', ']'])
         
+        process = None
         try:
             # Create subprocess
             process = await asyncio.create_subprocess_shell(
@@ -467,21 +468,26 @@ class TerminalCommandExecutor:
                 }
                 
             except asyncio.TimeoutError:
-                # Try to terminate the process
-                try:
-                    process.terminate()
-                    await asyncio.sleep(0.1)
-                    if process.returncode is None:
-                        process.kill()
-                except:
-                    pass
+                # Attempt to terminate the process
+                if process and process.returncode is None:
+                    try:
+                        process.terminate()
+                        # Wait a short time for graceful termination
+                        try:
+                            await asyncio.wait_for(process.wait(), 1.0)
+                        except asyncio.TimeoutError:
+                            # Force kill if termination didn't work
+                            process.kill()
+                    except Exception as e:
+                        logger.warning(f"Error terminating process: {str(e)}")
                 
-                raise asyncio.TimeoutError(f"Command execution timed out after {timeout} seconds")
+                # Re-raise the TimeoutError to be caught by the calling method
+                raise asyncio.TimeoutError(f"Command execution timed out after {timeout} seconds: {command}")
                 
+        except asyncio.TimeoutError:
+            # Re-raise to be handled by the calling method
+            raise
         except Exception as e:
-            if isinstance(e, asyncio.TimeoutError):
-                raise
-            
             return {
                 "exit_code": -1,
                 "stdout": "",

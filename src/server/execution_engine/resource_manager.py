@@ -50,6 +50,19 @@ class ResourceManager:
         # Track resource allocations by task ID
         self.task_allocations = {}
     
+    @property
+    def available_resources(self) -> Dict[str, float]:
+        """
+        Get available resources (limits minus used).
+        
+        Returns:
+            Dictionary of available resources
+        """
+        return {
+            resource: self.limits[resource] - self.used.get(resource, 0)
+            for resource in self.limits
+        }
+    
     def check_resources_available(self, required_resources: Dict[str, float]) -> bool:
         """
         Check if requested resources are available within limits.
@@ -109,18 +122,6 @@ class ResourceManager:
         # Remove task allocation record
         del self.task_allocations[task_id]
     
-    def get_available_resources(self) -> Dict[str, float]:
-        """
-        Get available resources (limits minus used).
-        
-        Returns:
-            Dictionary of available resources
-        """
-        return {
-            resource: self.limits[resource] - self.used.get(resource, 0)
-            for resource in self.limits
-        }
-    
     def get_resource_utilization(self) -> Dict[str, float]:
         """
         Get current resource utilization as percentages.
@@ -132,6 +133,15 @@ class ResourceManager:
             resource: (self.used.get(resource, 0.0) / self.limits[resource] * 100) if self.limits[resource] > 0 else 0.0
             for resource in self.limits
         }
+    
+    def get_available_resources(self) -> Dict[str, float]:
+        """
+        Get available resources (limits minus used).
+        
+        Returns:
+            Dictionary of available resources
+        """
+        return self.available_resources
     
     def set_resource_limits(self, new_limits: Dict[str, float]) -> None:
         """
@@ -241,6 +251,18 @@ class ResourceManager:
             "resource_usage": self.used.copy(),
             "utilization": self.get_resource_utilization()
         }
+    
+    def get_allocated_resources(self, task_id: str) -> Dict[str, float]:
+        """
+        Get resources allocated to a specific task.
+        
+        Args:
+            task_id: Unique identifier for the task
+            
+        Returns:
+            Dictionary of allocated resources for the task
+        """
+        return self.task_allocations.get(task_id, {})
     
     def reserve_resources(self, resources: Dict[str, float]) -> str:
         """

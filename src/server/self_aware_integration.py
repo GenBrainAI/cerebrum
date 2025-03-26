@@ -385,29 +385,29 @@ class SelfAwareSystem:
         """Add episodic knowledge to the system"""
         return self.knowledge_system.add_episodic_memory(title, description, **kwargs)
     
-    def create_cognitive_task(self, title: str, description: str, phase: CognitivePhase, **kwargs):
+    async def create_cognitive_task(self, title: str, description: str, phase: CognitivePhase, **kwargs):
         """Create a new cognitive task"""
-        return self.cognitive_orchestrator.create_task(title, description, phase, **kwargs)
-    
-    def get_cognitive_task(self, task_id: str):
+        return await self.cognitive_orchestrator.create_task(title, description, phase, **kwargs)
+
+    async def get_cognitive_task(self, task_id: str):
         """Get a cognitive task by ID"""
-        return self.cognitive_orchestrator.get_task(task_id)
-    
-    def get_current_phase(self):
+        return await self.cognitive_orchestrator.get_task(task_id)
+
+    async def get_current_phase(self):
         """Get the current phase of the cognitive loop"""
-        return self.cognitive_orchestrator.get_current_phase()
-    
-    def get_tasks_by_phase(self, phase: CognitivePhase, **kwargs):
+        return await self.cognitive_orchestrator.get_current_phase()
+
+    async def get_tasks_by_phase(self, phase: CognitivePhase, **kwargs):
         """Get tasks for a specific phase"""
-        return self.cognitive_orchestrator.get_tasks_by_phase(phase, **kwargs)
-    
-    def update_development_context(self, key: str, value: Any):
+        return await self.cognitive_orchestrator.get_tasks_by_phase(phase, **kwargs)
+
+    async def update_development_context(self, key: str, value: Any):
         """Update a value in the development context"""
-        self.cognitive_orchestrator.update_development_context(key, value)
-    
-    def get_development_context(self, key: Optional[str] = None):
+        await self.cognitive_orchestrator.update_development_context(key, value)
+
+    async def get_development_context(self, key: Optional[str] = None):
         """Get a value from the development context"""
-        return self.cognitive_orchestrator.get_development_context(key)
+        return await self.cognitive_orchestrator.get_development_context(key)
     
     # New methods for Parallel Execution Controller
     

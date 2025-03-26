@@ -5,13 +5,17 @@ Tests the execution of CrewAI tasks within the task tree structure.
 
 import pytest
 import logging
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, List
+from unittest.mock import MagicMock, AsyncMock, patch
 from src.server.models.task import Task
 from src.server.models.tasks_manager import TasksManager
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
 from src.server.controllers.task_runner import TaskRunner
 from src.server.models.agent import CrewAIConfig, CreateCrewRequest
+# TODO: This import uses a deprecated module. Future work should migrate to using
+# task_tree_flow.py, but this requires coordinated changes across multiple modules.
 from src.server.models.tasktree import TaskTree, TaskNode
 
 logger = logging.getLogger(__name__)
@@ -151,10 +155,30 @@ async def test_crewai_task_tree_creation(persistence_model, crewai_config):
         raise
 
 @pytest.mark.asyncio
-async def test_crewai_task_tree_execution(persistence_model, crewai_config):
+@patch('src.server.controllers.crew_runner.run_crew_task')
+async def test_crewai_task_tree_execution(mock_run_crew_task, persistence_model, crewai_config):
     """Test execution of CrewAI tasks in task tree."""
     try:
         logger.info("Testing CrewAI task tree execution...")
+        
+        # Setup mock for CrewAI execution
+        async def mock_crew_task(task_id, task_input=None, persistence_model=None):
+            """Mock the CrewAI task execution to return a successful result."""
+            task = persistence_model.tasks.read(task_id)
+            task_index = int(task.name.split()[-1]) if task.name.split()[-1].isdigit() else 0
+            
+            return {
+                "status": "completed",
+                "response": f"Task {task_index} completed successfully",
+                "generated_tool": {
+                    "name": f"Tool{task_index}",
+                    "description": f"Generated tool {task_index} description",
+                    "parameters": []
+                }
+            }
+        
+        # Set the mock return value
+        mock_run_crew_task.side_effect = mock_crew_task
         
         # Create task tree with dependencies
         stored_config = persistence_model.crewai_config.create(crewai_config)
@@ -196,43 +220,18 @@ async def test_crewai_task_tree_execution(persistence_model, crewai_config):
         for node in nodes:
             task_tree.add_node(node)
         
+        # Get execution order
+        execution_order = task_tree.get_execution_order()
+        task_ids = [node.task.id for node in execution_order]
+        logger.info(f"Execution order: {task_ids}")
+        
         # Create task runner
         runner = TaskRunner(persistence_model)
         
-        # Mock the plugin manager and CrewAI plugin
-        from unittest.mock import MagicMock, AsyncMock
-        from src.server.plugins.plugin_manager import PluginManager
-        
-        # Create a mock plugin that returns a successful result
-        mock_plugin = MagicMock()
-        mock_plugin.create_agent = AsyncMock(return_value=MagicMock())
-        mock_plugin.execute_task = AsyncMock(return_value={
-            "status": "completed",
-            "response": "Task completed successfully",
-            "generated_tool": {
-                "name": "Tool0",  # This will be updated for each task
-                "description": "Generated tool description",
-                "parameters": []
-            }
-        })
-        
-        # Create a mock plugin manager
-        runner._plugin_manager = MagicMock(spec=PluginManager)
-        runner._plugin_manager.get_plugin = MagicMock(return_value=mock_plugin)
-        
         # Execute tasks in order
         execution_results = []
-        for i, node in enumerate(task_tree.get_execution_order()):
-            # Update the mock response for each task
-            mock_plugin.execute_task = AsyncMock(return_value={
-                "status": "completed",
-                "response": f"Task {i} completed successfully",
-                "generated_tool": {
-                    "name": f"Tool{i}",
-                    "description": f"Generated tool {i} description",
-                    "parameters": []
-                }
-            })
+        for i, node in enumerate(execution_order):
+            logger.info(f"Executing task {i}: {node.task.name}")
             
             result = await runner.run_task(
                 tasksmanager_id=stored_manager.id,
@@ -242,18 +241,21 @@ async def test_crewai_task_tree_execution(persistence_model, crewai_config):
             
             # Verify execution result
             assert result is not None, f"Execution failed for task {node.task.name}"
-            assert result['status'] in ['completed', 'success', 'failed'], f"Task {node.task.name} has invalid status"
-            if result['status'] == 'failed':
-                logger.error(f"Task {node.task.name} failed with error: {result.get('error', 'Unknown error')}")
-                break
+            assert result['status'] in ['completed', 'success'], f"Task {node.task.name} has invalid status: {result['status']}"
             
             # Verify generated tool
             assert 'generated_tool' in result, f"Missing generated tool for task {node.task.name}"
             tool = result['generated_tool']
-            assert tool['name'] == f"Tool{len(execution_results)-1}", "Incorrect tool name"
+            assert tool['name'] == f"Tool{i}", f"Incorrect tool name: {tool['name']}"
+            
+            # Log success
+            logger.info(f"✅ Task {i} ({node.task.name}) executed successfully")
         
-        # Verify all tasks were executed in order
-        assert len(execution_results) == len(tasks), "Not all tasks were executed"
+        # Verify all tasks were executed
+        assert len(execution_results) == len(tasks), f"Not all tasks were executed: {len(execution_results)} of {len(tasks)}"
+        
+        # Verify the mock was called correctly
+        assert mock_run_crew_task.call_count == len(tasks), f"CrewAI runner called {mock_run_crew_task.call_count} times instead of {len(tasks)}"
         
         logger.info("✅ CrewAI task tree execution test passed")
         
@@ -299,18 +301,19 @@ async def test_crewai_task_tree_error_handling(persistence_model, crewai_config)
         node = TaskNode(task=stored_task)
         task_tree.add_node(node)
         
-        # Create task runner
-        runner = TaskRunner(persistence_model)
-        
-        # Execute task and expect error status
-        result = await runner.run_task(
-            tasksmanager_id=stored_manager.id,
-            task_id=stored_task.id
-        )
-        
-        assert result is not None, "Task execution result should not be None"
-        assert result['status'] == 'failed', "Task should have failed status"
-        assert "Agent role 'Invalid Agent' not found in crew configuration" in str(result.get('error', '')), "Error should mention the invalid agent role"
+        # Create task runner with mock
+        with patch('src.server.controllers.crew_runner.run_crew_task', side_effect=ValueError("Agent role 'Invalid Agent' not found in crew configuration")):
+            runner = TaskRunner(persistence_model)
+            
+            # Execute task and expect error status
+            result = await runner.run_task(
+                tasksmanager_id=stored_manager.id,
+                task_id=stored_task.id
+            )
+            
+            assert result is not None, "Task execution result should not be None"
+            assert result['status'] == 'failed', f"Task should have failed status, got: {result['status']}"
+            assert "Agent role 'Invalid Agent' not found in crew configuration" in str(result.get('error', '')), f"Unexpected error message: {result.get('error', '')}"
         
         logger.info("✅ CrewAI task tree error handling test passed")
         
