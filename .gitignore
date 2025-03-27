@@ -137,11 +137,16 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# OS specific
 .DS_Store
 
+# IDE and editor specific
 .venv
-
 .history
+.vscode/
+.idea/
+
+# Project specific
 combined_tests.txt
 combined_code.txt
 chroma.sqlite3
@@ -152,18 +157,28 @@ persistent_state/context/*/
 
 sms_*
 
+# Documentation non-git files
 docs/non_git_files/*
 
+# Temporary repositories
 temp_repos/
 
-# Test directories
+# Test directories and files
 test_context_db/
 test_context_db/**
 persistent_state/*
+tests/persistent_state/
+tests/persistent_state/**
+tests/test_persistent_state/
+tests/test_persistent_state/**
+tests/test_metrics.csv
+tests/test_report.json
 
+# Vector stores test directories
 test_persistent_state/vector_store/
 test_persistent_state/vector_store/**
 
+# State directories
 state/views/specialized/agent_framework
 state/views/specialized/task_generation
 state/views/specialized/tool_management
@@ -174,43 +189,58 @@ state/specialized/tool_management/**
 state/specialized/agent_framework/**
 state/specialized/task_generation/**
 state/sessions/**
+tests/state/specialized/
+tests/state/specialized/**
+
+# Test data directories
 test_cerebrum_data/
 test_storage/
 tests/db/chroma.sqlite3
 
+# Resource monitoring test data
+data/resources/*
+!data/resources/__init__.py
+**/data/resources/*
+!**/data/resources/__init__.py
+**/temp_*/ 
+
 # Planning Engine Test Outputs
-tests/self_aware/planning/test_data/
-tests/self_aware/planning/test_data/**
-**/test_data/planning/config/
-**/test_data/planning/implementation/
-**/test_data/planning/research/
-**/test_data/planning/goals/
-**/test_data/planning/allocation/
-**/test_data/planning/knowledge_gaps/
-**/test_data/planning/metrics/
-**/test_data/resources/
-**/test_data/knowledge/
+tests/self_aware/planning/test_data/*
+!tests/self_aware/planning/test_data/__init__.py
+tests/self_aware/planning/test_data/**/*
+!tests/self_aware/planning/test_data/**/__init__.py
+**/test_data/planning/config/*
+!**/test_data/planning/config/__init__.py
+**/test_data/planning/implementation/*
+!**/test_data/planning/implementation/__init__.py
+**/test_data/planning/research/*
+!**/test_data/planning/research/__init__.py
+**/test_data/planning/goals/*
+!**/test_data/planning/goals/__init__.py
+**/test_data/planning/allocation/*
+!**/test_data/planning/allocation/__init__.py
+**/test_data/planning/knowledge_gaps/*
+!**/test_data/planning/knowledge_gaps/__init__.py
+**/test_data/planning/metrics/*
+!**/test_data/planning/metrics/__init__.py
+**/test_data/resources/*
+!**/test_data/resources/__init__.py
+**/test_data/knowledge/*
+!**/test_data/knowledge/__init__.py
 *.json.bak
 
 # Planning Engine Templates
-src/server/planning/templates/
-src/server/planning/templates/*.json
+src/server/planning/templates/*
+!src/server/planning/templates/__init__.py
 
-# Resource monitoring test files
-tests/test_metrics.csv
-tests/test_report.json
-tests/persistent_state/
-tests/test_persistent_state/
-tests/state/
-tests/src/
+# Duplicated test directories
 tests/tests/
+tests/tests/**
 
-# Development files
-tests/state/specialized/
-persistent_state/
-self_aware/observability/
+# Generated test code
+tests/src/
+tests/src/**
+!tests/src/**/__init__.py
 
-# Test data directories
-data/resources/
-
-
+# Make sure to not ignore any __init__.py files anywhere
+!**/__init__.py
