@@ -196,4 +196,21 @@ tests/self_aware/planning/test_data/**
 src/server/planning/templates/
 src/server/planning/templates/*.json
 
+# Resource monitoring test files
+tests/test_metrics.csv
+tests/test_report.json
+tests/persistent_state/
+tests/test_persistent_state/
+tests/state/
+tests/src/
+tests/self_aware/observability/
+tests/tests/
+
+# Resource monitoring development files
+src/server/observability/resource_monitoring/
+data/resources/
+tests/state/specialized/
+tests/persistent_state/
+tests/self_aware/observability/
+
 
