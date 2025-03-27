@@ -206,11 +206,12 @@ tests/src/
 tests/self_aware/observability/
 tests/tests/
 
-# Resource monitoring development files
-src/server/observability/resource_monitoring/
-data/resources/
+# Development files
 tests/state/specialized/
-tests/persistent_state/
-tests/self_aware/observability/
+persistent_state/
+self_aware/observability/
+
+# Test data directories
+data/resources/
 
 
