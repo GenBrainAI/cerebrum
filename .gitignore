@@ -203,7 +203,6 @@ tests/persistent_state/
 tests/test_persistent_state/
 tests/state/
 tests/src/
-tests/self_aware/observability/
 tests/tests/
 
 # Development files
