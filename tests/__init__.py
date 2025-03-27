@@ -1,1 +1,3 @@
-# Tests package for Self-Aware Cerebrum
+"""
+Test package for Cerebrum.
+"""

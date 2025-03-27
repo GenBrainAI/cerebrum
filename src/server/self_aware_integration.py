@@ -26,6 +26,8 @@ from src.server.system_access.test_runner import TestRunner
 from src.server.observability.supervision_hub import SupervisionHub
 from src.server.observability.resource_monitor import ResourceMonitor
 from src.server.observability.metrics_collector import MetricsCollector
+from src.server.observability.progress_tracker import ProgressTracker, ProgressState, ProgressMetric
+from src.server.observability.intervention_interface import InterventionInterface, InterventionLevel, InterventionContext, InterventionRequest, ResponseAction
 
 # Import self-modification components
 from src.server.self_modification.code_generator import CodeGenerator
@@ -95,7 +97,7 @@ class SelfAwareSystem:
     - Development Cognitive Loop Orchestrator
     - Parallel Execution Controller
     - System Access Layer (Package Manager, Git Manager, Test Runner)
-    - Observability Layer (Supervision Hub, Resource Monitor, Metrics Collector)
+    - Observability Layer (Supervision Hub, Resource Monitor, Metrics Collector, Progress Tracker, Intervention Interface)
     - Self-Modification Engine (Code Generator, Safety Validator, Integration Manager, Agentic Development Controller)
     - Planning Layer (Goal Decomposition Engine)
     - Introspection Layer (Component Analysis, Runtime Monitoring)
@@ -144,6 +146,25 @@ class SelfAwareSystem:
         self.resource_monitor = ResourceMonitor()
         self.metrics_collector = MetricsCollector(
             storage_path=os.path.join(self.storage_path, "metrics")
+        )
+        self.progress_tracker = ProgressTracker(
+            config={
+                "tracking_level": "standard",
+                "snapshot_interval": 120,
+                "storage_path": os.path.join(self.storage_path, "progress"),
+                "notification_thresholds": {
+                    "stalled_minutes": 15,
+                    "completion_percentage": 75.0,
+                    "failure_count": 3
+                }
+            }
+        )
+        self.intervention_interface = InterventionInterface(
+            config={
+                "storage_path": os.path.join(self.storage_path, "interventions"),
+                "notification_channels": ["console"],
+                "default_timeout": 3600
+            }
         )
         
         # Initialize Self-Modification Engine
@@ -214,6 +235,9 @@ class SelfAwareSystem:
         # Initialize Cognitive Loop Orchestrator
         await self.cognitive_orchestrator.initialize()
         
+        # Initialize Observability Layer
+        await self.initialize_observability_layer()
+        
         # Register specialized workers
         await self.register_specialized_workers()
         
@@ -258,6 +282,30 @@ class SelfAwareSystem:
         )
         
         logger.info("Self-Aware System initialization completed")
+
+    async def initialize_observability_layer(self):
+        """Initialize the observability layer components."""
+        logger.info("Initializing Observability Layer components")
+        
+        # Initialize Progress Tracker if it has an initialize method
+        if hasattr(self.progress_tracker, 'initialize'):
+            await self.progress_tracker.initialize()
+        
+        # Initialize Intervention Interface if it has an initialize method
+        if hasattr(self.intervention_interface, 'initialize'):
+            await self.intervention_interface.initialize()
+        
+        # Initialize other observability components
+        if hasattr(self.supervision_hub, 'initialize'):
+            await self.supervision_hub.initialize()
+        
+        if hasattr(self.resource_monitor, 'initialize'):
+            await self.resource_monitor.initialize()
+        
+        if hasattr(self.metrics_collector, 'initialize'):
+            await self.metrics_collector.initialize()
+        
+        logger.info("Observability Layer initialized successfully")
 
     async def register_specialized_workers(self):
         """Register specialized workers with the cognitive orchestrator."""
@@ -906,35 +954,23 @@ class SelfAwareSystem:
         return await self.metrics_collector.get_system_health()
     
     async def shutdown(self):
-        """Shutdown all components gracefully."""
-        # Stop monitoring and metrics collection
-        await self.resource_monitor.stop_monitoring()
-        await self.metrics_collector.stop_collection()
+        """Shut down the system gracefully."""
+        logger.info("Shutting down Self-Aware System")
         
-        # Shutdown Phase 4 Introspection Layer
-        logger.info("Shutting down Introspection Layer components")
-        if hasattr(self.telemetry_collector, 'shutdown'):
-            await self.telemetry_collector.shutdown()
+        # Shut down progress_tracker background tasks
+        if hasattr(self.progress_tracker, "snapshot_tasks"):
+            for task_id, task in self.progress_tracker.snapshot_tasks.items():
+                if not task.done():
+                    task.cancel()
         
-        if hasattr(self.behavior_monitor, 'shutdown'):
-            await self.behavior_monitor.shutdown()
-        
-        # Shutdown Phase 4 Integration Optimization Layer
-        logger.info("Shutting down Integration Optimization Layer components")
-        if hasattr(self.interaction_analyzer, 'shutdown'):
-            await self.interaction_analyzer.shutdown()
+        # Shut down other components with shutdown methods
+        if hasattr(self.cognitive_orchestrator, 'shutdown'):
+            await self.cognitive_orchestrator.shutdown()
             
-        if hasattr(self.resource_optimizer, 'shutdown'):
-            await self.resource_optimizer.shutdown()
+        if hasattr(self.parallel_controller, 'shutdown'):
+            await self.parallel_controller.shutdown()
             
-        if hasattr(self.workflow_optimizer, 'shutdown'):
-            await self.workflow_optimizer.shutdown()
-        
-        # Shutdown parallel controller
-        await self.parallel_controller.shutdown()
-        
-        # Log shutdown
-        logger.info("Self-Aware System shutdown complete")
+        logger.info("Self-Aware System shut down successfully")
     
     async def start_monitoring_and_metrics(self):
         """Start resource monitoring and metrics collection tasks"""
@@ -1749,4 +1785,288 @@ class SelfAwareSystem:
             "content_type": result["content_type"],
             "content": result["content"],
             "plan_count": len(plans)
-        } 
+        }
+
+    # Progress Tracker methods
+    async def register_tracked_item(self, 
+                                  item_id: str,
+                                  item_type: str,
+                                  name: str,
+                                  description: str,
+                                  parent_id: Optional[str] = None,
+                                  expected_duration: Optional[int] = None,
+                                  metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Register an item to be tracked by the Progress Tracker.
+        
+        Args:
+            item_id: Unique identifier for the item
+            item_type: Type of item (e.g., "task", "milestone", "project")
+            name: Display name for the item
+            description: Description of the item
+            parent_id: Optional parent item ID for hierarchical tracking
+            expected_duration: Expected duration in seconds
+            metrics: Optional metrics to track
+            
+        Returns:
+            Dictionary with item details
+        """
+        # Convert metrics if provided
+        progress_metrics = None
+        if metrics:
+            progress_metrics = {}
+            for name, metric_data in metrics.items():
+                if isinstance(metric_data, dict):
+                    progress_metrics[name] = ProgressMetric(
+                        name=metric_data.get("name", name),
+                        description=metric_data.get("description", ""),
+                        current_value=metric_data.get("current_value", 0),
+                        target_value=metric_data.get("target_value", 100),
+                        unit=metric_data.get("unit", "")
+                    )
+        
+        # Register with progress tracker
+        item = await self.progress_tracker.register_item(
+            item_id=item_id,
+            item_type=item_type,
+            name=name,
+            description=description,
+            parent_id=parent_id,
+            expected_duration=expected_duration,
+            metrics=progress_metrics
+        )
+        
+        return item
+    
+    async def update_tracked_item(self,
+                                item_id: str,
+                                state: Optional[str] = None,
+                                completion_percentage: Optional[float] = None,
+                                message: Optional[str] = None,
+                                metrics_updates: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Update progress for a tracked item.
+        
+        Args:
+            item_id: ID of the item to update
+            state: New state for the item
+            completion_percentage: Updated completion percentage
+            message: Optional status message
+            metrics_updates: Updates to metric values
+            
+        Returns:
+            Updated item data
+        """
+        # Convert state if provided
+        progress_state = None
+        if state:
+            progress_state = ProgressState(state)
+        
+        # Update with progress tracker
+        updated_item = await self.progress_tracker.update_progress(
+            item_id=item_id,
+            state=progress_state,
+            completion_percentage=completion_percentage,
+            message=message,
+            metrics_updates=metrics_updates
+        )
+        
+        return updated_item
+    
+    async def get_progress_report(self,
+                                item_id: Optional[str] = None,
+                                include_children: bool = True) -> Dict[str, Any]:
+        """
+        Get a progress report for an item or the entire system.
+        
+        Args:
+            item_id: Optional item ID to get report for specific item
+            include_children: Whether to include child items
+            
+        Returns:
+            Progress report data
+        """
+        return await self.progress_tracker.get_progress_report(
+            item_id=item_id,
+            include_children=include_children
+        )
+    
+    async def create_progress_visualization(self,
+                                          item_id: Optional[str] = None,
+                                          visualization_type: str = "progress_timeline",
+                                          options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Create a visualization of progress data.
+        
+        Args:
+            item_id: Optional item ID to visualize
+            visualization_type: Type of visualization to create
+            options: Additional options for visualization
+            
+        Returns:
+            Visualization data with image
+        """
+        return await self.progress_tracker.create_visualization(
+            item_id=item_id,
+            visualization_type=visualization_type,
+            options=options
+        )
+    
+    # Intervention Interface methods
+    async def request_human_intervention(self,
+                                       title: str,
+                                       description: str,
+                                       level: Union[InterventionLevel, str],
+                                       component: str,
+                                       operation: str,
+                                       options: List[str],
+                                       context_data: Optional[Dict[str, Any]] = None,
+                                       timeout: Optional[int] = None,
+                                       required_role: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Request human intervention for a system operation.
+        
+        Args:
+            title: Title for the intervention request
+            description: Detailed description of the issue
+            level: Intervention level (InterventionLevel enum or string)
+            component: Component requesting intervention
+            operation: Operation requiring intervention
+            options: Possible response actions
+            context_data: Additional context data
+            timeout: Optional timeout in seconds
+            required_role: Optional role required to respond
+            
+        Returns:
+            Dictionary with intervention details
+        """
+        # Convert level to enum if it's a string
+        if isinstance(level, str):
+            try:
+                intervention_level = InterventionLevel[level.upper()]
+            except (KeyError, AttributeError):
+                raise ValueError(f"Invalid intervention level: {level}")
+        else:
+            intervention_level = level
+        
+        # Get string options (don't convert to ResponseAction)
+        response_options = options
+        
+        # Create context
+        context_data = context_data or {}
+        context = InterventionContext(
+            component=component,
+            action=operation,
+            data={
+                "related_items": context_data.get("related_items", []),
+                "metrics": context_data.get("metrics", {}),
+                "system_state": context_data.get("system_state", {}),
+                "decision_factors": context_data.get("decision_factors", {})
+            }
+        )
+        
+        # Create request
+        request = InterventionRequest(
+            title=title,
+            description=description,
+            level=intervention_level,
+            options=response_options,
+            context=context,
+            require_response=True
+        )
+        
+        # Submit intervention request with timeout and role parameters
+        result = await self.intervention_interface.request_intervention(
+            request=request,
+            timeout=timeout,
+            role=required_role
+        )
+        
+        return result
+    
+    async def respond_to_intervention_request(self,
+                                           intervention_id: str,
+                                           action: str,
+                                           notes: Optional[str] = None,
+                                           modifications: Optional[Dict[str, Any]] = None,
+                                           responder: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Respond to an intervention request.
+        
+        Args:
+            intervention_id: ID of the intervention to respond to
+            action: Action to take (continue, modify, cancel, restart, escalate, pause)
+            notes: Optional notes from responder
+            modifications: Optional modifications to the operation
+            responder: ID of the responding user
+            
+        Returns:
+            Dictionary with response results
+        """
+        # Convert action to enum
+        response_action = ResponseAction(action)
+        
+        # Create response
+        from src.server.observability.intervention_interface import InterventionResponse
+        response = InterventionResponse(
+            approved=action != "cancel",
+            message=notes or "",
+            action=response_action,
+            modifications=modifications
+        )
+        
+        # Submit response
+        result = await self.intervention_interface.respond_to_intervention(
+            intervention_id=intervention_id,
+            response=response
+        )
+        
+        return result
+    
+    async def get_intervention_details(self, intervention_id: str) -> Dict[str, Any]:
+        """
+        Get details of an intervention request.
+        
+        Args:
+            intervention_id: ID of the intervention
+            
+        Returns:
+            Dictionary with intervention details
+        """
+        return await self.intervention_interface.get_intervention(intervention_id)
+    
+    async def get_pending_intervention_requests(self, role: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get all pending intervention requests.
+        
+        Args:
+            role: Optional role to filter by
+            
+        Returns:
+            List of pending intervention requests
+        """
+        return await self.intervention_interface.get_pending_interventions(role=role)
+    
+    async def close_intervention_request(self,
+                                      intervention_id: str,
+                                      status: str,
+                                      notes: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Close an intervention request without a formal response.
+        
+        Args:
+            intervention_id: ID of the intervention to close
+            status: Status to set (typically "closed")
+            notes: Optional notes about closure
+            
+        Returns:
+            Dictionary with closure results
+        """
+        from src.server.observability.intervention_interface import InterventionStatus
+        intervention_status = InterventionStatus(status)
+        
+        return await self.intervention_interface.close_intervention(
+            intervention_id=intervention_id,
+            status=intervention_status,
+            notes=notes
+        ) 

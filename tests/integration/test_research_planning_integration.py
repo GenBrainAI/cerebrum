@@ -302,11 +302,14 @@ class TestResearchPlanningIntegration:
         # Create a mock session state that supports both dict and attribute access
         mock_session_state = SessionStateMock()
         
-        # Mock streamlit components and session state
+        # Mock streamlit components and session state with a more comprehensive approach
         with patch("streamlit.title"), \
              patch("streamlit.radio", return_value="Knowledge Gaps"), \
              patch.object(ui_component, "_render_knowledge_gaps_tab"), \
-             patch("streamlit.session_state", new=mock_session_state):
+             patch("streamlit.session_state", new=mock_session_state), \
+             patch("streamlit.logger.get_logger", return_value=MagicMock()), \
+             patch("streamlit.config.get_config_options", return_value=MagicMock()), \
+             patch("streamlit.runtime.exists", return_value=True):
             
             # Render the UI
             ui_component.render()

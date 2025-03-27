@@ -29,14 +29,14 @@
       "resource_utilization": {},
       "success_rate": 0.0,
       "throughput": 0.0,
-      "start_time": "2025-03-27T00:52:44.933703",
-      "end_time": "2025-03-27T00:52:45.039173",
-      "total_duration": 0.10547
+      "start_time": "2025-03-27T20:14:21.408826",
+      "end_time": "2025-03-27T20:14:21.514757",
+      "total_duration": 0.105931
     },
     "tracking_level": "standard"
   },
   "task_performance": {
-    "<Mock name='mock.get_task_by_id().name' id='13139285904'>": {
+    "<Mock name='mock.get_task_by_id().name' id='13513619088'>": {
       "count": 1,
       "total_duration": 1.0,
       "min_duration": 1.0,
@@ -58,18 +58,18 @@
     "resource_utilization": {},
     "success_rate": 0.0,
     "throughput": 0.0,
-    "start_time": "2025-03-27T00:52:44.933703",
-    "end_time": "2025-03-27T00:52:45.038975",
-    "total_duration": 0.105272
+    "start_time": "2025-03-27T20:14:21.408826",
+    "end_time": "2025-03-27T20:14:21.514445",
+    "total_duration": 0.105619
   },
   "errors": [],
   "execution_history": [
     {
-      "timestamp": "2025-03-27T00:52:44.828382",
+      "timestamp": "2025-03-27T20:14:21.303914",
       "event_type": "tracking_started"
     },
     {
-      "timestamp": "2025-03-27T00:52:44.933703",
+      "timestamp": "2025-03-27T20:14:21.408826",
       "event_type": "task_execution",
       "task_id": "test_task",
       "status": "completed",
@@ -83,7 +83,7 @@
   ],
   "metrics_history": [
     {
-      "timestamp": "2025-03-27T00:52:44.828588",
+      "timestamp": "2025-03-27T20:14:21.304193",
       "metrics": {
         "total_tasks": 2,
         "completed_tasks": 0,
@@ -102,7 +102,7 @@
       }
     },
     {
-      "timestamp": "2025-03-27T00:52:44.933703",
+      "timestamp": "2025-03-27T20:14:21.408826",
       "metrics": {
         "total_tasks": 2,
         "completed_tasks": 0,
@@ -115,9 +115,9 @@
         "resource_utilization": {},
         "success_rate": 0.0,
         "throughput": 0.0,
-        "start_time": "2025-03-27T00:52:44.933703",
-        "end_time": "2025-03-27T00:52:44.933762",
-        "total_duration": 5.9e-05
+        "start_time": "2025-03-27T20:14:21.408826",
+        "end_time": "2025-03-27T20:14:21.408949",
+        "total_duration": 0.000123
       }
     }
   ],
@@ -126,7 +126,7 @@
       "rule_name": "high_resource_usage",
       "type": "warning",
       "message": "High resource usage detected for task test_task",
-      "timestamp": "2025-03-27T00:52:44.933777",
+      "timestamp": "2025-03-27T20:14:21.408977",
       "trigger_count": 1
     }
   ],

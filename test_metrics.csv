@@ -1,2 +1,2 @@
-completed_tasks,total_duration,success_rate,pending_tasks,average_execution_time,resource_utilization,blocked_tasks,end_time,start_time,running_tasks,failed_tasks,timestamp,total_execution_time,throughput,total_tasks
-0,0.0,0.0,1,0,{},0,,,1,0,2025-03-27T00:52:45.836420,0,0.0,2
+blocked_tasks,average_execution_time,total_execution_time,start_time,total_tasks,failed_tasks,success_rate,pending_tasks,running_tasks,completed_tasks,throughput,end_time,total_duration,timestamp,resource_utilization
+0,0,0,,2,0,0.0,1,1,0,0.0,,0.0,2025-03-27T20:14:22.312752,{}
