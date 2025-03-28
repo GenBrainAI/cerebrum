@@ -16,6 +16,11 @@ from src.server.observability.intervention_interface import (
 from src.server.observability.resource_monitoring import (
     ResourceType, BudgetPeriod, ResourceUsage, Budget, BudgetAlert, ResourceMonitor
 )
+from src.server.observability.metrics_monitoring import (
+    MetricType, MetricCategory, MetricPriority, MetricDefinition,
+    MetricValue, MetricQuery, AnomalyDefinition, AnomalyEvent,
+    MetricsCollector
+)
 
 __all__ = [
     # Progress tracking
@@ -36,5 +41,16 @@ __all__ = [
     'ResourceUsage',
     'Budget',
     'BudgetAlert',
-    'ResourceMonitor'
+    'ResourceMonitor',
+    
+    # Metrics monitoring
+    'MetricType',
+    'MetricCategory',
+    'MetricPriority',
+    'MetricDefinition',
+    'MetricValue',
+    'MetricQuery',
+    'AnomalyDefinition',
+    'AnomalyEvent',
+    'MetricsCollector'
 ] 
