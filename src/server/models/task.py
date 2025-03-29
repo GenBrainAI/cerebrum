@@ -90,6 +90,9 @@ class Task(BaseModel):
     input_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Input data for task execution")
     result: Optional[str] = Field(default=None, description="Result of task execution")
     last_response: Optional[str] = Field(default=None, description="Last response from the task execution")
+    input_from_tasks: List[str] = Field(default_factory=list, description="IDs of tasks that provide input to this task")
+    output_to_tasks: List[str] = Field(default_factory=list, description="IDs of tasks that receive output from this task")
+    output_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Output data from task execution for handover")
 
     def create_session(self, name: Optional[str] = None) -> str:
         """Create a new chat session"""

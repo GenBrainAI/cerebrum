@@ -353,6 +353,38 @@ class TaskHierarchyController:
             self.logger.error(f"Error deleting task: {str(e)}")
             return False
             
+    async def run_task_sequence(self, tasksmanager_id: str, task_ids: List[str], 
+                              running_extra_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run a sequence of tasks with output handover between tasks.
+        
+        Args:
+            tasksmanager_id: ID of the task manager
+            task_ids: List of task IDs to execute in sequence
+            running_extra_params: Optional parameters to pass to the first task
+            
+        Returns:
+            Dict containing results for each task
+        """
+        try:
+            # Initialize task runner if needed
+            if not self.task_runner:
+                self.task_runner = TaskRunner(self.global_persistence)
+                await self.task_runner.initialize()
+            
+            # Run task sequence
+            results = await self.task_runner.run_task_sequence(
+                tasksmanager_id=tasksmanager_id,
+                task_ids=task_ids,
+                running_extra_params=running_extra_params
+            )
+            
+            return results
+        except Exception as e:
+            self.logger.error(f"Error executing task sequence: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            raise
+    
     def get_system_message(self, obj: Any) -> Optional[str]:
         """Extract system message from a task or task manager."""
         if not obj or not hasattr(obj, 'messages'):
@@ -702,3 +734,104 @@ class TaskHierarchyController:
                     self.logger.error(f"Error in save loop: {str(e)}", exc_info=True)
         except Exception as e:
             self.logger.error(f"Error triggering save state: {str(e)}", exc_info=True)
+
+    # Add this method after the get_task_tree method
+    async def get_task_tree_with_handover(self):
+        """Get the task hierarchy with handover relationships."""
+        try:
+            self.logger.info("Building task hierarchy tree with handover relationships...")
+            
+            # Create root node
+            root = TreeNode(
+                id=UUID('00000000-0000-0000-0000-000000000000'),
+                name="Task Hierarchy",
+                type="root",
+                children=[]
+            )
+            
+            # Get all task managers
+            task_managers = self.global_persistence.tasksmanagers.list()
+            
+            # Create task manager nodes
+            for tm in task_managers:
+                try:
+                    # Safely convert ID to UUID, generate a new one if invalid
+                    try:
+                        tm_uuid = UUID(tm.id)
+                    except (ValueError, TypeError, AttributeError):
+                        tm_uuid = uuid4()
+                        self.logger.warning(f"Invalid UUID format for task manager ID: {tm.id}, generated new UUID: {tm_uuid}")
+                        
+                    tm_node = TreeNode(
+                        id=tm_uuid,
+                        name=f"{tm.name}",
+                        type="tasksmanager",
+                        data={"id": tm.id, "model": tm.model},
+                        children=[]
+                    )
+                    
+                    # Get tasks for this task manager
+                    tasks = [t for t in self.global_persistence.tasks.list() if t.tasksmanager_id == tm.id]
+                    
+                    # Create task nodes
+                    task_nodes = {}
+                    for task in tasks:
+                        try:
+                            # Safely convert task ID to UUID
+                            try:
+                                task_uuid = UUID(task.id)
+                            except (ValueError, TypeError, AttributeError):
+                                task_uuid = uuid4()
+                                self.logger.warning(f"Invalid UUID format for task ID: {task.id}, generated new UUID: {task_uuid}")
+                                
+                            task_node = TreeNode(
+                                id=task_uuid,
+                                name=f"{task.name}",
+                                type="task",
+                                data={
+                                    "id": task.id, 
+                                    "model": getattr(task, "model", None), 
+                                    "tasksmanager_id": tm.id,
+                                    "plugin": getattr(task, "plugin", "default")
+                                },
+                                children=[]
+                            )
+                            task_nodes[task.id] = task_node
+                            tm_node.children.append(task_node)
+                        except Exception as e:
+                            self.logger.error(f"Error creating node for task {getattr(task, 'id', 'unknown')}: {str(e)}")
+                            continue
+                    
+                    # Add handover relationships
+                    for task in tasks:
+                        if hasattr(task, 'input_from_tasks') and task.input_from_tasks:
+                            task_node = task_nodes.get(task.id)
+                            if not task_node:
+                                continue
+                                
+                            # Add visual indicator for inputs
+                            task_node.data["has_inputs"] = True
+                            
+                            # Create connections for each input
+                            for input_task_id in task.input_from_tasks:
+                                if input_task_id in task_nodes:
+                                    # Add connection indicator
+                                    input_node = task_nodes[input_task_id]
+                                    outputs_to = input_node.data.get("outputs_to", [])
+                                    if task.id not in outputs_to:
+                                        outputs_to.append(task.id)
+                                    input_node.data["outputs_to"] = outputs_to
+                    
+                    # Add the manager node
+                    root.children.append(tm_node)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing task manager {getattr(tm, 'id', 'unknown')}: {str(e)}")
+                    continue
+            
+            return root
+        except Exception as e:
+            self.logger.error(f"Error building task hierarchy tree: {str(e)}")
+            import traceback
+            self.logger.error(f"Stack trace: {traceback.format_exc()}")
+            return None

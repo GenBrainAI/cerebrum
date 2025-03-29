@@ -42,6 +42,16 @@ class TaskHierarchySidebar:
         with st.sidebar:
             st.header("Task Hierarchy")
             
+            # Add reset button for chat history
+            col1, col2 = st.columns([0.1, 0.9])
+            with col1:
+                if st.button("🔄", help="Reset chat history", key="reset_task_chat_history"):
+                    # Get the view and clear session
+                    from src.pages.task_hierarchy_view import TaskHierarchyView
+                    view = TaskHierarchyView()
+                    view.clear_session()
+                    st.rerun()
+            
             # Get state status from controller
             if self.controller and self.controller.view_state:
                 # Ensure controller is using the correct persistence model based on active tab

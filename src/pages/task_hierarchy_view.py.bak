@@ -1,0 +1,481 @@
+# src/pages/task_hierarchy_view.py
+import streamlit as st
+import asyncio
+import pandas as pd
+from src.server.views.controllers.task_view_controller import TaskHierarchyController
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.views.components.tree_component import TreeComponent
+from src.server.views.components.header import render_header
+from src.server.views.components.sidebar.task_hierarchy_sidebar import render_task_hierarchy_sidebar
+from src.server.views.components.task_handover_component import TaskHandoverComponent
+from src.server.views.components.task_tree_handover_component import TaskTreeHandoverComponent
+from src.server.views.components.handover_info_component import HandoverInfoComponent
+from src.server.views.base_view import BaseView
+from src.server.views.models.view_types import ViewType
+from typing import Dict, Any
+from src.server.models.message import Message
+from datetime import datetime, timedelta
+from src.server.controllers.task_runner import TaskRunner
+from src.server.views.components.task_management_component import render_task_management
+
+class TaskHierarchyView(BaseView):
+    def __init__(self):
+        super().__init__(ViewType.TASK_HIERARCHY)
+    
+    def get_session_data(self) -> Dict[str, Any]:
+        """Get session data for persistence"""
+        data = super().get_session_data()
+        
+        # Save chat history
+        if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            task_status = st.session_state.task_controller.view_state.task_status
+            print(f"📝 Saving task status to session: {task_status}")
+            
+            data["chat_history"] = st.session_state.task_controller.view_state.chat_history
+            data["selected_node"] = st.session_state.task_controller.view_state.selected_node
+            data["expanded_nodes"] = st.session_state.task_controller.view_state.expanded_nodes
+            data["task_status"] = task_status
+            
+            # Store task management specific state
+            data["selected_task_manager"] = st.session_state.task_controller.view_state.selected_task_manager
+            data["selected_task"] = st.session_state.task_controller.view_state.selected_task
+            
+            # Save active tab
+            data["active_tab"] = st.session_state.get("active_tab", 0)
+            
+        return data
+    
+    def restore_session_state(self, session_data: Dict[str, Any]):
+        """Restore session state from saved data"""
+        super().restore_session_state(session_data)
+        
+        if "chat_history" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.chat_history = session_data["chat_history"]
+            
+        if "selected_node" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.selected_node = session_data["selected_node"]
+            
+        if "expanded_nodes" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.expanded_nodes = session_data["expanded_nodes"]
+            
+        if "task_status" in session_data and hasattr(st.session_state, "task_controller"):
+            # Ensure all required fields are present in task_status
+            task_status = session_data["task_status"]
+            print(f"📝 Restoring task status from session: {task_status}")
+            
+            if task_status and isinstance(task_status, dict):
+                # Make sure all required fields are present
+                if "loaded" in task_status:
+                    # If loaded is True, ensure all required fields are present
+                    if task_status.get("loaded", False):
+                        print(f"📝 Task status has loaded=True, checking required fields")
+                        required_fields = ["task_id", "task_name", "tasksmanager_id", "tasksmanager_name"]
+                        missing_fields = [field for field in required_fields if field not in task_status]
+                        
+                        if missing_fields:
+                            print(f"📝 Missing required fields in task_status: {missing_fields}")
+                            # If any required field is missing, set loaded to False
+                            task_status["loaded"] = False
+                            task_status["tasksmanager_name"] = task_status.get("tasksmanager_name", "")
+                            task_status["task_name"] = task_status.get("task_name", "")
+                        else:
+                            print(f"📝 All required fields present in task_status")
+                    
+                    # Update the view state with the validated task_status
+                    st.session_state.task_controller.view_state.task_status = task_status
+                    print(f"📝 Updated view_state.task_status: {st.session_state.task_controller.view_state.task_status}")
+            
+        # Restore task management specific state
+        if "selected_task_manager" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.selected_task_manager = session_data["selected_task_manager"]
+            
+        if "selected_task" in session_data and hasattr(st.session_state, "task_controller"):
+            st.session_state.task_controller.view_state.selected_task = session_data["selected_task"]
+            
+        # Restore active tab
+        if "active_tab" in session_data:
+            st.session_state.active_tab = session_data["active_tab"]
+    
+    def clear_session(self):
+        """Clear chat history and other session state"""
+        if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            st.session_state.task_controller.view_state.chat_history = []
+            st.session_state.task_controller.view_state.selected_node = None
+            st.session_state.task_controller.view_state.expanded_nodes = []
+            st.session_state.task_controller.view_state.task_status = {
+                "loaded": False,
+                "tasksmanager_name": "",
+                "task_name": ""
+            }
+            
+            # Clear task management specific state
+            st.session_state.task_controller.view_state.selected_task_manager = None
+            st.session_state.task_controller.view_state.selected_task = None
+            
+            # Reset active tab
+            st.session_state.active_tab = 0
+
+    def save_session(self):
+        """Save the current view session."""
+        # First, ensure task_status is properly set
+        if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            task_status = st.session_state.task_controller.view_state.task_status
+            if not task_status.get("loaded", False):
+                # Try to find a task manager and task to set as active
+                task_managers = st.session_state.task_controller.get_task_managers()
+                if task_managers:
+                    tasks = st.session_state.task_controller.get_tasks(task_managers[0].id)
+                    if tasks:
+                        print(f"📝 Setting active task before saving session")
+                        st.session_state.task_controller.view_state.set_active_task(
+                            task_id=tasks[0].id,
+                            task_name=tasks[0].name,
+                            manager_id=task_managers[0].id,
+                            manager_name=task_managers[0].name
+                        )
+                        print(f"📝 Updated task status before saving: {st.session_state.task_controller.view_state.task_status}")
+        
+        # Call parent save_session method
+        super().save_session()
+
+# Load CSS for task handover styling
+def load_css():
+    """Load CSS for task handover styling."""
+    with open("src/server/static/css/task_handover.css", "r") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+def render_task_details(controller, task_id):
+    """Render details for the selected task."""
+    # Get the task
+    task = controller.persistence_model.tasks.read(task_id)
+    if not task:
+        st.warning(f"Task with ID {task_id} not found.")
+        return
+        
+    # Display task details
+    st.subheader(f"Task: {task.name}")
+    
+    # Basic task information
+    st.write(f"**Task ID:** {task.id}")
+    st.write(f"**Description:** {task.description or 'No description'}")
+    
+    # Task properties
+    with st.expander("Task Properties", expanded=False):
+        props = {
+            "Model": getattr(task, "model", "Not specified"),
+            "Status": getattr(task, "status", "Not specified"),
+            "Created": getattr(task, "created_at", "Not specified"),
+            "Updated": getattr(task, "updated_at", "Not specified")
+        }
+        
+        for key, value in props.items():
+            st.write(f"**{key}:** {value}")
+    
+    # Task system message
+    if hasattr(task, "messages") and task.messages:
+        with st.expander("System Message", expanded=False):
+            system_messages = [m for m in task.messages if m.role == "system"]
+            if system_messages:
+                st.code(system_messages[0].content)
+            else:
+                st.write("No system message defined.")
+    
+    # Display handover information
+    handover_info = HandoverInfoComponent(controller.persistence_model)
+    handover_info.render(task_id)
+
+def render_observability_view():
+    """Render observability view for task insights"""
+    st.subheader("Tasks Observability")
+    
+    # Get controller from session state
+    if not hasattr(st.session_state, "task_controller"):
+        st.warning("Task controller not initialized.")
+        return
+    
+    controller = st.session_state.task_controller
+    
+    # Get all tasks
+    tasks = controller.persistence_model.tasks.list()
+    
+    if not tasks:
+        st.info("No tasks found. Create some tasks to see insights.")
+        return
+    
+    # Create dataframe with task metrics
+    task_data = []
+    for task in tasks:
+        # Get task manager
+        tm = controller.persistence_model.tasksmanagers.read(task.tasksmanager_id)
+        
+        # Collect task data
+        task_info = {
+            "ID": task.id,
+            "Name": task.name,
+            "Manager": tm.name if tm else "Unknown",
+            "Status": getattr(task, "status", "Unknown"),
+            "Model": getattr(task, "model", "Not specified"),
+            "Has Input Tasks": "Yes" if (hasattr(task, "input_from_tasks") and task.input_from_tasks) else "No"
+        }
+        
+        # Add to collection
+        task_data.append(task_info)
+    
+    # Display task metrics
+    if task_data:
+        df = pd.DataFrame(task_data)
+        st.dataframe(df, use_container_width=True)
+        
+        # Show summary statistics
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Tasks", len(tasks))
+        
+        with col2:
+            tasks_with_input = sum(1 for t in tasks if hasattr(t, "input_from_tasks") and t.input_from_tasks)
+            st.metric("Tasks with Handover", tasks_with_input)
+        
+        # Visualize task relationships
+        if tasks_with_input > 0:
+            st.subheader("Task Handover Visualization")
+            st.info("The visualization below shows tasks with handover relationships.")
+            
+            # Create a visual representation of handover relationships
+            task_handover_component = TaskHandoverComponent(controller)
+            task_handover_component.render()
+
+async def render_task_hierarchy_view():
+    """Render Task Hierarchy View"""
+    try:
+        # Initialize session state for active tab if not already set
+        if "active_tab" not in st.session_state:
+            st.session_state.active_tab = 0
+            
+        # Load CSS for task handover styling
+        load_css()
+        
+        # Render header
+        render_header("Task Hierarchy")
+        
+        # Get or initialize the Task Hierarchy Controller
+        controller = None
+        if "task_controller" in st.session_state:
+            controller = st.session_state.task_controller
+        else:
+            # Initialize persistence model
+            persistence_model = PersistenceModelFactory.persistence_model()
+            
+            # Create controller
+            controller = TaskHierarchyController(persistence_model)
+            st.session_state.task_controller = controller
+            
+            # Initialize the controller
+            await controller.initialize()
+        
+        # Render sidebar
+        await render_task_hierarchy_sidebar()
+        
+        # Add reset button in sidebar
+        with st.sidebar:
+            col1, col2 = st.columns([0.1, 0.9])
+            with col1:
+                if st.button("🔄", help="Reset chat history"):
+                    view = TaskHierarchyView()
+                    view.clear_session()
+                    st.rerun()
+            
+            # Add navigation links to sidebar
+            st.sidebar.markdown("### Navigation")
+            view_options = ["💬 Chat", "🌳 Task Tree", "⚙️ Task Management", "📊 Observability"]
+            
+            # Get active tab with default value
+            active_tab = st.session_state.get("active_tab", 0)
+            
+            # Create columns for navigation links
+            cols = st.sidebar.columns(2)
+            for i, view_name in enumerate(view_options):
+                col_idx = i % 2
+                # Highlight the active tab in the sidebar
+                button_style = "primary" if active_tab == i else "secondary"
+                if cols[col_idx].button(view_name, key=f"nav_{i}", type=button_style):
+                    st.session_state.active_tab = i
+                    st.rerun()
+        
+        # Main content - ensure tabs are in the main content area
+        st.write("## Task Management")
+        
+        # Create tabs
+        tab_names = ["💬 Chat", "🌳 Task Tree", "⚙️ Task Management", "📊 Observability"]
+        
+        # Function to handle tab change
+        def on_tab_change():
+            view = TaskHierarchyView()
+            view.save_session()
+        
+        # Create tabs
+        selected_tab = st.radio("", tab_names, index=st.session_state.active_tab, horizontal=True, 
+                               on_change=on_tab_change, key="task_view_tabs")
+        st.session_state.active_tab = tab_names.index(selected_tab)
+        
+        # Render the selected tab content
+        if st.session_state.active_tab == 0:  # Chat tab
+            st.subheader("Task Interaction")
+            
+            # Check if a task is loaded
+            if not controller.view_state.task_status["loaded"]:
+                st.info("👈 Please select a task from the sidebar to start chatting.")
+            else:
+                # Display task info with state indicator
+                task_status = controller.view_state.task_status
+                task_id = task_status.get("task_id")
+                
+                # Check if this is a specialized state task
+                is_specialized = False
+                if hasattr(controller, 'local_persistence') and controller.local_persistence:
+                    try:
+                        # Try to find this task in specialized state
+                        specialized_task = controller.local_persistence.tasks.read(task_id)
+                        if specialized_task:
+                            is_specialized = True
+                    except:
+                        pass
+                
+                # Display task info with state indicator
+                if is_specialized:
+                    st.write(f"**Current Task:** {task_status['tasksmanager_name']} - {task_status['task_name']} (Specialized State)")
+                else:
+                    st.write(f"**Current Task:** {task_status['tasksmanager_name']} - {task_status['task_name']} (Global State)")
+                
+                # Add some spacing
+                st.write("")
+                
+                # Create a container for the chat history
+                chat_container = st.container()
+                with chat_container:
+                    # Display messages
+                    for msg in controller.view_state.chat_history:
+                        if isinstance(msg, Message):
+                            role = msg.role
+                            content = msg.content
+                        elif isinstance(msg, dict):
+                            role = msg["role"]
+                            content = msg["content"]
+                        else:
+                            role = getattr(msg, 'role', 'user')
+                            content = str(msg)
+                        
+                        with st.chat_message(role):
+                            st.write(content)
+                
+                # Add a bit of spacing before the input
+                st.write("")
+                
+                # Chat input
+                if prompt := st.chat_input("Type your message..."):
+                    with st.chat_message("user"):
+                        st.write(prompt)
+                    
+                    await controller.handle_chat(prompt)
+                    
+                    # Save session after each message
+                    view = TaskHierarchyView()
+                    view.save_session()
+                    
+                    st.rerun()
+        
+        elif st.session_state.active_tab == 1:  # Task Tree tab
+            st.subheader("Task Hierarchy Tree")
+            
+            # Display info about task hierarchy
+            st.info("This view shows the hierarchy of task managers and tasks. "
+                   "The tree now visualizes handover relationships between tasks.")
+
+            # Get task tree with handover relationships
+            task_tree = await controller.get_task_tree_with_handover()
+            
+            # Initialize tree component with handover visualization
+            if "tree_component" not in dir(controller) or not isinstance(controller.tree_component, TaskTreeHandoverComponent):
+                controller.tree_component = TaskTreeHandoverComponent(controller.handle_node_click)
+            
+            # Render tree with relationships
+            col1, col2 = st.columns([2, 3])
+            with col1:
+                # Render tree with handover relationships
+                selected_node = controller.tree_component.render(task_tree, "task_tree")
+                
+                # Handle selection
+                if selected_node:
+                    node_id = selected_node.get("id")
+                    node_type = selected_node.get("type")
+                    node_data = selected_node.get("data", {})
+                    
+                    # Store selection in controller
+                    controller.view_state.selected_node = node_id
+                    
+                    # Update selected task or task manager based on node type
+                    if node_type == "task":
+                        controller.view_state.selected_task = node_data.get("id")
+                    elif node_type == "tasksmanager":
+                        controller.view_state.selected_task_manager = node_data.get("id")
+                    
+                    # Save session state after node selection
+                    view = TaskHierarchyView()
+                    view.save_session()
+            
+            # Render details for selected node
+            with col2:
+                if controller.view_state.selected_node:
+                    selected_id = str(controller.view_state.selected_node)
+                    
+                    # Find the selected node in the tree
+                    found_node = task_tree.find_child(controller.view_state.selected_node)
+                    
+                    if found_node:
+                        if found_node.type == "task":
+                            # Render task details including handover information
+                            render_task_details(controller, found_node.data.get("id"))
+                        elif found_node.type == "tasksmanager":
+                            # Render task manager details
+                            tm_id = found_node.data.get("id")
+                            tm = controller.persistence_model.tasksmanagers.read(tm_id)
+                            
+                            if tm:
+                                st.subheader(f"Task Manager: {tm.name}")
+                                st.write(f"**ID:** {tm.id}")
+                                st.write(f"**Model:** {tm.model or 'Not specified'}")
+                                st.write(f"**Description:** {tm.description or 'No description'}")
+                    else:
+                        st.info("Select a task or task manager to view details.")
+                else:
+                    st.info("Select a task or task manager to view details.")
+        
+        elif st.session_state.active_tab == 2:  # Task Management tab
+            render_task_management(controller)
+            
+        elif st.session_state.active_tab == 3:  # Observability tab
+            render_observability_view()
+        
+    except Exception as e:
+        st.error(f"Error rendering task hierarchy view: {str(e)}")
+        import traceback
+        print(f"Error: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+
+def main():
+    try:
+        # Set page config for consistent UI
+        st.set_page_config(page_title="Task Hierarchy", layout="wide")
+        
+        # Run the async view
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(render_task_hierarchy_view())
+    except Exception as e:
+        st.error(f"Error running task hierarchy view: {str(e)}")
+        import traceback
+        print(f"Error: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+
+# Run the main function
+if __name__ == "__main__":
+    main()

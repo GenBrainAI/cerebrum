@@ -2,18 +2,21 @@
 import streamlit as st
 import asyncio
 import pandas as pd
-from server.views.controllers.task_view_controller import TaskHierarchyController
-from server.persistence.persistence_model_factory import PersistenceModelFactory
-from server.views.components.tree_component import TreeComponent
-from server.views.components.header import render_header
-from server.views.components.sidebar.task_hierarchy_sidebar import render_task_hierarchy_sidebar
-from server.views.base_view import BaseView
-from server.views.models.view_types import ViewType
+from src.server.views.controllers.task_view_controller import TaskHierarchyController
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.views.components.tree_component import TreeComponent
+from src.server.views.components.header import render_header
+from src.server.views.components.sidebar.task_hierarchy_sidebar import render_task_hierarchy_sidebar
+from src.server.views.components.task_handover_component import TaskHandoverComponent
+from src.server.views.components.task_tree_handover_component import TaskTreeHandoverComponent
+from src.server.views.components.handover_info_component import HandoverInfoComponent
+from src.server.views.base_view import BaseView
+from src.server.views.models.view_types import ViewType
 from typing import Dict, Any
-from server.models.message import Message
+from src.server.models.message import Message
 from datetime import datetime, timedelta
-from server.controllers.task_runner import TaskRunner
-from server.views.components.task_management_component import render_task_management
+from src.server.controllers.task_runner import TaskRunner
+from src.server.views.components.task_management_component import render_task_management
 
 class TaskHierarchyView(BaseView):
     def __init__(self):
@@ -135,6 +138,46 @@ class TaskHierarchyView(BaseView):
         # Call parent save_session method
         super().save_session()
 
+def render_task_details(controller, task_id):
+    """Render details for the selected task."""
+    # Get the task
+    task = controller.persistence_model.tasks.read(task_id)
+    if not task:
+        st.warning(f"Task with ID {task_id} not found.")
+        return
+        
+    # Display task details
+    st.subheader(f"Task: {task.name}")
+    
+    # Basic task information
+    st.write(f"**Task ID:** {task.id}")
+    st.write(f"**Description:** {task.description or 'No description'}")
+    
+    # Task properties
+    with st.expander("Task Properties", expanded=False):
+        props = {
+            "Model": getattr(task, "model", "Not specified"),
+            "Status": getattr(task, "status", "Not specified"),
+            "Created": getattr(task, "created_at", "Not specified"),
+            "Updated": getattr(task, "updated_at", "Not specified")
+        }
+        
+        for key, value in props.items():
+            st.write(f"**{key}:** {value}")
+    
+    # Task system message
+    if hasattr(task, "messages") and task.messages:
+        with st.expander("System Message", expanded=False):
+            system_messages = [m for m in task.messages if m.role == "system"]
+            if system_messages:
+                st.code(system_messages[0].content)
+            else:
+                st.write("No system message defined.")
+    
+    # Display handover information
+    handover_info = HandoverInfoComponent(controller.persistence_model)
+    handover_info.render(task_id)
+
 async def render_chat_view():
     """Render the chat interface"""
     st.subheader("Task Interaction")
@@ -241,9 +284,80 @@ def render_observability_view():
         with col3:
             st.metric(label="Memory Usage", value="128MB")
 
+async def render_tree_view(controller):
+    """Render the task tree with handover relationships"""
+    st.subheader("Task Hierarchy Tree")
+    
+    # Display info about task hierarchy
+    st.info("This view shows the hierarchy of task managers and tasks. "
+           "The tree now visualizes handover relationships between tasks.")
+
+    # Get task tree with handover relationships
+    task_tree = await controller.get_task_tree_with_handover()
+    
+    # Initialize tree component with handover visualization
+    if "tree_component" not in dir(controller) or not isinstance(controller.tree_component, TaskTreeHandoverComponent):
+        controller.tree_component = TaskTreeHandoverComponent(controller.handle_node_click)
+    
+    # Render tree with relationships
+    col1, col2 = st.columns([2, 3])
+    with col1:
+        # Render tree with handover relationships
+        selected_node = controller.tree_component.render(task_tree, "task_tree")
+        
+        # Handle selection
+        if selected_node:
+            node_id = selected_node.get("id")
+            node_type = selected_node.get("type")
+            node_data = selected_node.get("data", {})
+            
+            # Store selection in controller
+            controller.view_state.selected_node = node_id
+            
+            # Update selected task or task manager based on node type
+            if node_type == "task":
+                controller.view_state.selected_task = node_data.get("id")
+            elif node_type == "tasksmanager":
+                controller.view_state.selected_task_manager = node_data.get("id")
+            
+            # Save session state after node selection
+            view = TaskHierarchyView()
+            view.save_session()
+    
+    # Render details for selected node
+    with col2:
+        if controller.view_state.selected_node:
+            selected_id = str(controller.view_state.selected_node)
+            
+            # Find the selected node in the tree
+            found_node = task_tree.find_child(controller.view_state.selected_node)
+            
+            if found_node:
+                if found_node.type == "task":
+                    # Render task details including handover information
+                    render_task_details(controller, found_node.data.get("id"))
+                elif found_node.type == "tasksmanager":
+                    # Render task manager details
+                    tm_id = found_node.data.get("id")
+                    tm = controller.persistence_model.tasksmanagers.read(tm_id)
+                    
+                    if tm:
+                        st.subheader(f"Task Manager: {tm.name}")
+                        st.write(f"**ID:** {tm.id}")
+                        st.write(f"**Model:** {tm.model or 'Not specified'}")
+                        st.write(f"**Description:** {tm.description or 'No description'}")
+            else:
+                st.info("Select a task or task manager to view details.")
+        else:
+            st.info("Select a task or task manager to view details.")
+
 async def render_task_hierarchy_view():
     """Render the task hierarchy view."""
     try:
+        # Initialize active tab if not set (do this first to prevent the error)
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = 0
+            
         # Initialize view and session state
         view = TaskHierarchyView()
         
@@ -276,7 +390,7 @@ async def render_task_hierarchy_view():
             if hasattr(st.session_state.task_controller, 'global_persistence'):
                 # Always use global persistence for task tree and management
                 # This ensures we don't mix specialized state with global state
-                if st.session_state.active_tab != 0:  # Not in chat view
+                if st.session_state.get('active_tab', 0) != 0:  # Not in chat view
                     print("🔄 Ensuring controller uses global persistence for non-chat operations")
                     st.session_state.task_controller.persistence_model = st.session_state.task_controller.global_persistence
             
@@ -370,6 +484,14 @@ async def render_task_hierarchy_view():
                 
                 st.session_state.active_tab = 0
                 st.rerun()
+        with col2:
+            if st.button("🌳", help="Switch to tree view", key="main_tab_tree"):
+                # When switching to non-chat view, ensure we're using global persistence
+                if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "global_persistence"):
+                    st.session_state.task_controller.persistence_model = st.session_state.task_controller.global_persistence
+                
+                st.session_state.active_tab = 3
+                st.rerun()
         with col3:
             if st.button("📊", help="Switch to observability view", key="main_tab_obs"):
                 # When switching to non-chat view, ensure we're using global persistence
@@ -387,10 +509,6 @@ async def render_task_hierarchy_view():
                 st.session_state.active_tab = 2
                 st.rerun()
         
-        # Initialize active tab if not set
-        if 'active_tab' not in st.session_state:
-            st.session_state.active_tab = 0
-        
         # Chat View (primary view)
         if st.session_state.active_tab == 0:
             await render_chat_view()
@@ -407,6 +525,10 @@ async def render_task_hierarchy_view():
             You can configure task properties like model, description, and system messages.
             """)
             render_task_management(st.session_state.task_controller)
+            
+        # Tree View
+        elif st.session_state.active_tab == 3:
+            await render_tree_view(st.session_state.task_controller)
         
         # Handle keyboard shortcuts
         st.markdown("""
@@ -421,17 +543,19 @@ async def render_task_hierarchy_view():
             }
             
             // Numbered shortcuts for tabs
-            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key >= '1' && e.key <= '3') {
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key >= '1' && e.key <= '4') {
                 e.preventDefault();
                 let tabIndex;
                 switch(e.key) {
                     case '1': tabIndex = 0; break; // Chat
-                    case '2': tabIndex = 1; break; // Observability
-                    case '3': tabIndex = 2; break; // Task Management
+                    case '2': tabIndex = 3; break; // Tree View
+                    case '3': tabIndex = 1; break; // Observability
+                    case '4': tabIndex = 2; break; // Task Management
                 }
                 
                 const tabButtons = [
                     doc.querySelector('button[data-testid="stButton"][key="main_tab_chat"]'),
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_tree"]'),
                     doc.querySelector('button[data-testid="stButton"][key="main_tab_obs"]'),
                     doc.querySelector('button[data-testid="stButton"][key="main_tab_manage"]')
                 ];

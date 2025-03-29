@@ -20,6 +20,8 @@ from ...controllers.task_runner import TaskRunner
 import streamlit as st
 from uuid import uuid4
 from ..models.tree_node import TreeNode
+from ...plugins.plugin_manager import PluginManager
+from ...plugins.agent_framework_config import AgentFrameworkConfig
 
 class AgenticViewController:
     """Controller for agentic configuration view with specialized state support."""
@@ -33,6 +35,9 @@ class AgenticViewController:
         self.tree_component = TreeSelectComponent(self.handle_node_click)
         self.logger = logging.getLogger(__name__)
         self.task_runner = None  # Will be initialized after local persistence is loaded
+        
+        # Initialize plugin manager
+        self.plugin_manager = PluginManager()
         
     async def initialize(self):
         """Initialize controller with specialized state."""
@@ -97,10 +102,69 @@ class AgenticViewController:
                     print("🔴 No task context found in state file")
             else:
                 print("🔴 Failed to create local persistence model")
+            
+            # Initialize plugin manager and load available plugins
+            print("📥 Loading available plugins...")
+            await self._initialize_plugins()
+            
+            print("✅ Agentic controller initialization complete")
                 
         except Exception as e:
             print(f"Error initializing agentic controller: {str(e)}")
             raise
+
+    async def _initialize_plugins(self):
+        """Initialize and load available plugins."""
+        try:
+            from pathlib import Path
+            
+            # Check for each plugin and load if available
+            plugin_path = Path("src/server/plugins")
+            
+            # Load CrewAI plugin
+            crewai_path = plugin_path / "crewai_plugin.py"
+            if crewai_path.exists():
+                crewai_config = AgentFrameworkConfig(
+                    name="crewai",
+                    version="1.0.0",
+                    description="CrewAI Plugin for orchestrating multi-agent workflows",
+                    settings={"model": "gpt-4o-mini"},
+                    capabilities=["agent_creation", "task_execution", "multi-agent_collaboration"]
+                )
+                success = await self.plugin_manager.load_plugin(str(crewai_path), crewai_config)
+                print(f"CrewAI plugin loaded: {success}")
+            
+            # Load AutoGen plugin if available
+            autogen_path = plugin_path / "autogen_plugin.py"
+            if autogen_path.exists():
+                autogen_config = AgentFrameworkConfig(
+                    name="autogen",
+                    version="1.0.0",
+                    description="Microsoft AutoGen Plugin for conversational agents",
+                    settings={"model": "gpt-4o-mini"},
+                    capabilities=["function_calling", "agent_handoff", "context_variables"]
+                )
+                success = await self.plugin_manager.load_plugin(str(autogen_path), autogen_config)
+                print(f"AutoGen plugin loaded: {success}")
+            
+            # Load SmolAgents plugin if available
+            smolagents_path = plugin_path / "smolagents_plugin.py"
+            if smolagents_path.exists():
+                smolagents_config = AgentFrameworkConfig(
+                    name="smolagents",
+                    version="1.0.0",
+                    description="HuggingFace SmolAgents Plugin for lightweight agents",
+                    settings={"model": "gpt-4o-mini"},
+                    capabilities=["lightweight_agents", "resource_efficient", "quantized_models"]
+                )
+                success = await self.plugin_manager.load_plugin(str(smolagents_path), smolagents_config)
+                print(f"SmolAgents plugin loaded: {success}")
+                
+            print(f"✅ Loaded plugins: {len(self.plugin_manager.list_plugins())}")
+            
+        except Exception as e:
+            print(f"Error initializing plugins: {str(e)}")
+            # Don't raise - allow initialization to continue even if plugins fail
 
     async def get_agent_tree(self) -> Optional[TreeNode]:
         """Get agentic frameworks as tree structure."""

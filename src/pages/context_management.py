@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import asyncio
 from src.server.context.context_ui import ContextManagerUI
-from server.views.components.sidebar.context_mng_sidebar import render_context_mng_sidebar
+from src.server.views.components.sidebar.context_mng_sidebar import render_context_mng_sidebar
 
 # Add project root to Python path
 project_root = str(Path(__file__).parents[2])

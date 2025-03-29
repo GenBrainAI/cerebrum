@@ -66,6 +66,11 @@ class TreeOperationError(Exception):
         self.details = details or {}
         super().__init__(self.message)
 
+# New model for task sequence execution
+class RunTaskSequence(BaseModel):
+    task_ids: List[str]
+    running_extra_params: Optional[Dict[str, Any]] = None
+
 async def get_task_runner():
     """Dependency to get initialized task runner."""
     # Use the global persistence model to maintain consistency
@@ -656,3 +661,52 @@ async def get_tasksmanager_tasks(tasksmanager_id: str):
         print(f"  Type: {type(e)}")
         print(f"  Args: {e.args}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/tasksmanager/{tasksmanager_id}/tasks/run-sequence")
+async def run_task_sequence(
+    tasksmanager_id: str = Path(..., description="ID of the tasksmanager"),
+    run_sequence_body: RunTaskSequence = Body(..., description="Task sequence run information"),
+) -> Dict[str, Any]:
+    """
+    Run a sequence of tasks with output handover between tasks.
+    
+    This endpoint executes multiple tasks in sequence, automatically passing the output
+    of previous tasks to dependent tasks based on their input_from_tasks relationships.
+    """
+    try:
+        # Initialize task runner with context
+        task_runner = TaskRunner(persistence_model)
+        await task_runner.initialize()
+        
+        # Validate that all task IDs exist and belong to the specified tasksmanager
+        for task_id in run_sequence_body.task_ids:
+            task = persistence_model.tasks.read(task_id)
+            if not task:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, 
+                    detail=f"Task with ID {task_id} not found"
+                )
+            if task.tasksmanager_id != tasksmanager_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Task {task_id} does not belong to tasksmanager {tasksmanager_id}"
+                )
+        
+        # Run the task sequence
+        results = await task_runner.run_task_sequence(
+            tasksmanager_id=tasksmanager_id,
+            task_ids=run_sequence_body.task_ids,
+            running_extra_params=run_sequence_body.running_extra_params
+        )
+        
+        return {
+            "status": "success",
+            "results": results
+        }
+        
+    except ValueError as e:
+        logging.error(f"Validation error in run_task_sequence: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logging.error(f"Error running task sequence: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))

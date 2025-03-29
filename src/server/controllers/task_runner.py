@@ -152,6 +152,75 @@ class TaskRunner:
             logger.error(error_msg)
             raise RuntimeError(error_msg)
 
+    def set_persistence_model(self, persistence_model: PersistenceModelBase):
+        """Set a new persistence model for the task runner.
+        
+        This method allows switching the persistence model used by the task runner
+        and ensures all dependent components are updated accordingly.
+        
+        Args:
+            persistence_model: The new persistence model to use
+        """
+        try:
+            logger.info(f"Switching task runner to use a different persistence model: {type(persistence_model).__name__}")
+            
+            # Store the old persistence model in case we need to rollback
+            old_persistence = self.persistence_model
+            
+            # Update the main persistence model
+            self.persistence_model = persistence_model
+            
+            # Update the context provider with the new persistence model
+            if hasattr(self, 'context_provider') and self.context_provider:
+                logger.info("Updating context provider with new persistence model")
+                self.context_provider.persistence_model = persistence_model
+            
+            # Update tools operator if it exists
+            if hasattr(self, 'tools_operator') and self.tools_operator:
+                logger.info("Updating tools operator with new persistence model")
+                self.tools_operator.persistence_model = persistence_model
+            
+            # Update any other components that might depend on the persistence model
+            # For plugins
+            if hasattr(self, 'plugin_manager') and self.plugin_manager:
+                logger.info("Notifying plugin manager of persistence model change")
+                # If there's a way to update plugins, do it here
+                if hasattr(self.plugin_manager, 'set_persistence_model'):
+                    self.plugin_manager.set_persistence_model(persistence_model)
+            
+            # For CrewAI executor if present
+            if hasattr(self, 'crewai_executor') and self.crewai_executor:
+                logger.info("Updating CrewAI executor with new persistence model")
+                if hasattr(self.crewai_executor, 'set_persistence_model'):
+                    self.crewai_executor.set_persistence_model(persistence_model)
+            
+            # For Tree Flow executor if present
+            if hasattr(self, 'tree_flow_executor') and self.tree_flow_executor:
+                logger.info("Updating Tree Flow executor with new persistence model")
+                if hasattr(self.tree_flow_executor, 'set_persistence_model'):
+                    self.tree_flow_executor.set_persistence_model(persistence_model)
+            
+            logger.info("Successfully switched task runner to new persistence model")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error switching persistence model: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Try to rollback if possible
+            if 'old_persistence' in locals():
+                try:
+                    logger.warning("Attempting to rollback to previous persistence model")
+                    self.persistence_model = old_persistence
+                    if hasattr(self, 'context_provider') and self.context_provider:
+                        self.context_provider.persistence_model = old_persistence
+                    logger.info("Rollback successful")
+                except:
+                    logger.error("Rollback failed - task runner may be in an inconsistent state")
+            
+            return False
+
     async def _update_task_status(self, task: Task, status: str, error: Optional[str] = None):
         """Update task status and error message."""
         try:
@@ -766,6 +835,125 @@ class TaskRunner:
             current_context["previous_response"] = response
             
         return responses
+
+    async def run_task_sequence(
+        self,
+        tasksmanager_id: str,
+        task_ids: List[str],
+        initial_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Run a sequence of tasks with handover between them.
+        
+        Args:
+            tasksmanager_id: ID of the task manager
+            task_ids: List of task IDs to execute in sequence
+            initial_context: Optional initial context to provide to the first task
+            
+        Returns:
+            Dictionary mapping task IDs to their results
+        """
+        logger.info(f"\n🔄 Running task sequence with {len(task_ids)} tasks")
+        
+        # Initialize results and task outputs storage
+        results = {}
+        task_outputs = {}
+        
+        # Initialize context from input
+        context = initial_context.copy() if initial_context else {}
+        
+        # Execute tasks in sequence
+        for task_id in task_ids:
+            try:
+                # Get task
+                task = self.persistence_model.tasks.read(task_id)
+                if not task:
+                    raise ValueError(f"Task {task_id} not found")
+                    
+                logger.info(f"📋 Processing task: {task.name} (ID: {task_id})")
+                
+                # Check if this task takes input from previous tasks
+                if hasattr(task, 'input_from_tasks') and task.input_from_tasks:
+                    # Gather inputs from dependency tasks
+                    task_inputs = {}
+                    for input_task_id in task.input_from_tasks:
+                        if input_task_id in task_outputs:
+                            logger.info(f"  ↳ Using output from task {input_task_id}")
+                            task_inputs[input_task_id] = task_outputs[input_task_id]
+                        else:
+                            logger.warning(f"  ⚠️ Input task {input_task_id} not in outputs, skipping")
+                    
+                    # Add inputs to task's input_data
+                    if not hasattr(task, 'input_data') or task.input_data is None:
+                        task.input_data = {}
+                    
+                    # Add previous task outputs to input_data
+                    if task_inputs:
+                        task.input_data["previous_task_outputs"] = task_inputs
+                        logger.info(f"  ↳ Added {len(task_inputs)} inputs to task input_data")
+                        
+                        # Update task in persistence model
+                        self.persistence_model.tasks.update(task_id, task)
+                
+                # Prepare context for this specific task execution
+                task_context = context.copy()
+                if hasattr(task, 'input_data') and task.input_data:
+                    # Add task's input_data to context
+                    task_context.update(task.input_data)
+                
+                # Run the task
+                logger.info(f"🚀 Executing task: {task.name}")
+                result = await self.run_task(
+                    tasksmanager_id=tasksmanager_id,
+                    task_id=task_id,
+                    running_extra_params=task_context
+                )
+                
+                # Store result
+                results[task_id] = result
+                
+                # Extract the actual result content
+                result_content = result
+                if isinstance(result, dict) and "response" in result:
+                    result_content = result["response"]
+                
+                # Update task's output_data
+                if not hasattr(task, 'output_data') or task.output_data is None:
+                    task.output_data = {}
+                    
+                task.output_data["result"] = result_content
+                task.output_data["timestamp"] = datetime.now().isoformat()
+                
+                # Store output for potential dependent tasks
+                task_outputs[task_id] = result_content
+                
+                # Update task in persistence model
+                task.status = "completed"
+                self.persistence_model.tasks.update(task_id, task)
+                
+                logger.info(f"✅ Task {task.name} completed successfully")
+                
+            except Exception as e:
+                error_msg = f"Error executing task {task_id}: {str(e)}"
+                logger.error(f"❌ {error_msg}")
+                
+                # Update task status to failed
+                try:
+                    task = self.persistence_model.tasks.read(task_id)
+                    if task:
+                        task.status = "failed"
+                        task.error = error_msg
+                        self.persistence_model.tasks.update(task_id, task)
+                except Exception as update_err:
+                    logger.error(f"Failed to update task status: {str(update_err)}")
+                
+                # Store error in results
+                results[task_id] = {"error": error_msg, "status": "failed"}
+                
+                # Continue with next task or break depending on requirements
+                # Here we continue with the next task, but this could be configurable
+        
+        return results
 
     def wrap_task(self, task: Task) -> TaskExecutor:
         """Wrap a Task model in a TaskExecutor."""

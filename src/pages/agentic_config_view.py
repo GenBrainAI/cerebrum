@@ -1,14 +1,14 @@
 import streamlit as st
 import asyncio
-from server.views.controllers.agentic_view_controller import AgenticViewController
-from server.persistence.persistence_model_factory import PersistenceModelFactory
-from server.views.components.header import render_header
-from server.views.components.sidebar.agentic_config_sidebar import render_agentic_config_sidebar
-from server.views.base_view import BaseView
-from server.views.models.view_types import ViewType
+from src.server.views.controllers.agentic_view_controller import AgenticViewController
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.views.components.header import render_header
+from src.server.views.components.sidebar.agentic_config_sidebar import render_agentic_config_sidebar
+from src.server.views.base_view import BaseView
+from src.server.views.models.view_types import ViewType
 from typing import Dict, Any
-from server.models.message import Message
-from server.controllers.task_runner import TaskRunner
+from src.server.models.message import Message
+from src.server.controllers.task_runner import TaskRunner
 
 class AgenticConfigView(BaseView):
     def __init__(self):
@@ -27,7 +27,8 @@ class AgenticConfigView(BaseView):
         data.update({
             'chat_history': st.session_state.agentic_controller.view_state.chat_history
             if 'agentic_controller' in st.session_state else [],
-            'view_mode': st.session_state.get('view_mode', 'chat')
+            'view_mode': st.session_state.get('view_mode', 'chat'),
+            'active_tab': st.session_state.get('active_tab', 0)
         })
         return data
         
@@ -40,6 +41,7 @@ class AgenticConfigView(BaseView):
         print(f"  Length: {len(chat_history)}")
         
         st.session_state.view_mode = session_data.get('view_mode', 'chat')
+        st.session_state.active_tab = session_data.get('active_tab', 0)
         
         if 'agentic_controller' in st.session_state:
             st.session_state.agentic_controller.view_state.chat_history = chat_history
@@ -192,6 +194,51 @@ def render_observability_view():
 async def render_agentic_config_view():
     """Render the agentic configuration view."""
     try:
+        # Add custom CSS for plugin explorer
+        st.markdown("""
+        <style>
+        .plugin-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background-color: #f9f9f9;
+        }
+
+        .plugin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .active-badge {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .inactive-badge {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .capabilities-list li {
+            margin-bottom: 5px;
+        }
+
+        .stTabs [data-baseweb="tab-panel"] {
+            padding-top: 1rem;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
         # Initialize view and session state
         view = AgenticConfigView()
         
@@ -221,65 +268,45 @@ async def render_agentic_config_view():
         # Render sidebar
         await render_agentic_config_sidebar()
         
-        # Add view mode toggle
-        col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
-        with col1:
-            if st.button("💬", help="Switch to chat view"):
-                st.session_state.active_tab = 0
-                st.rerun()
-        with col3:
-            if st.button("📊", help="Switch to observability view"):
-                st.session_state.active_tab = 1
-                st.rerun()
+        # Create tabs for different views
+        tab1, tab2, tab3 = st.tabs(["💬 Chat", "🧩 Plugin Explorer", "📊 Observability"])
         
-        # Initialize active tab if not set
-        if 'active_tab' not in st.session_state:
-            st.session_state.active_tab = 0
-            
         # Chat View
-        if st.session_state.active_tab == 0:
+        with tab1:
             st.subheader("Agentic Framework Chat")
+            render_chat_view()
+        
+        # Plugin Explorer View
+        with tab2:
+            from src.server.views.components.plugin_explorer_component import PluginExplorerComponent
             
-            # Display messages
-            for msg in st.session_state.agentic_controller.view_state.chat_history:
-                if isinstance(msg, Message):
-                    role = msg.role
-                    content = msg.content
-                elif isinstance(msg, dict):
-                    role = msg["role"]
-                    content = msg["content"]
-                else:
-                    role = getattr(msg, 'role', 'user')
-                    content = str(msg)
-                
-                with st.chat_message(role):
-                    st.write(content)
-            
-            # Chat input
-            if prompt := st.chat_input("Type your message..."):
-                with st.chat_message("user"):
-                    st.write(prompt)
-                
-                await st.session_state.agentic_controller.handle_chat(prompt)
-                
-                # Save session after each message
-                view.save_session()
-                
-                st.rerun()
+            if 'agentic_controller' in st.session_state and hasattr(st.session_state.agentic_controller, 'plugin_manager'):
+                plugin_explorer = PluginExplorerComponent(st.session_state.agentic_controller.plugin_manager)
+                plugin_explorer.render()
+            else:
+                st.warning("Plugin manager not initialized")
         
         # Observability View
-        else:
+        with tab3:
             st.subheader("Agentic Framework Observability")
             render_observability_view()
             
+        # Save session after view is rendered
+        view.save_session()
+        
     except Exception as e:
         st.error(f"Error rendering agentic config view: {str(e)}")
         print(f"Error in render_agentic_config_view: {str(e)}")
         raise
 
 def main():
-    """Main entry point for agentic config view."""
-    st.set_page_config(page_title="Agentic Framework", layout="wide")
+    """Main function to run the view."""
+    st.set_page_config(
+        page_title="Agentic Framework",
+        page_icon="🧠",
+        layout="wide"
+    )
+    
     asyncio.run(render_agentic_config_view())
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import streamlit as st
 from pathlib import Path
 import json
 from datetime import datetime
-from server.views.models.view_types import ViewType
+from src.server.views.models.view_types import ViewType
 
 class BaseView:
     def __init__(self, view_type: ViewType):

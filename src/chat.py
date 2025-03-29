@@ -8,16 +8,16 @@ from typing import List, Dict
 from datetime import datetime
 from pathlib import Path
 
-# Fix import paths - remove 'src.' prefix since we're running from the project root
-from server.persistence.persistence_model_factory import PersistenceModelFactory
-from server.controllers.task_runner import TaskRunner
-from server.models.message import Message
-from server.models.tasks_manager import TasksManager
-from server.models.task import Task
-from server.controllers.persistence_controller import load_from_storage, save_to_storage
-from server.models.persistence_models import StorageLocation, StorageType
-from server.persistence.persistence_model import PersistenceModelBase 
-from server.views.models.view_types import ViewType
+# Fix import paths
+from src.server.persistence.persistence_model_factory import PersistenceModelFactory
+from src.server.controllers.task_runner import TaskRunner
+from src.server.models.message import Message
+from src.server.models.tasks_manager import TasksManager
+from src.server.models.task import Task
+from src.server.controllers.persistence_controller import load_from_storage, save_to_storage
+from src.server.models.persistence_models import StorageLocation, StorageType
+from src.server.persistence.persistence_model import PersistenceModelBase 
+from src.server.views.models.view_types import ViewType
 
 
 def get_project_root() -> Path:
@@ -181,7 +181,7 @@ def load_state(state_path: Optional[str] = None):
                                     for config_id, config_data in raw_data.items():
                                         print(f"  Config ID: {config_id}")
                                         # Create CrewAIConfig objects properly
-                                        from server.models.agent import CrewAIConfig
+                                        from src.server.models.agent import CrewAIConfig
                                         persistence_model.crewai_config.create(CrewAIConfig(**config_data))
                                 else:
                                     # For other collections, use collection method
@@ -1074,7 +1074,7 @@ def render_chat_management_sidebar():
 
 async def render_main_chat():
     """Render the main chat interface with context information."""
-    from server.models.task import Task  # Add this import at the top
+    from src.server.models.task import Task  # Add this import at the top
     
     print("\n🔄 Starting render_main_chat")
     persistence_model = st.session_state.persistence_model
