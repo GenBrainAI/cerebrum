@@ -31,6 +31,12 @@ def get_state_dir() -> Path:
     state_dir.mkdir(exist_ok=True)
     return state_dir
 
+def ensure_notebook_directory() -> Path:
+    """Ensure the notebooks directory exists and return its path."""
+    notebook_dir = get_project_root() / "notebooks"
+    notebook_dir.mkdir(exist_ok=True)
+    return notebook_dir
+
 def save_current_state(state_name: str) -> str:
     """Save the current state.
     
@@ -1552,9 +1558,17 @@ def cleanup_session_files():
                 print(f"Error removing session file {file}: {e}")
 
 def initialize_state():
-    """Initialize application state from saved state if available."""
-    print("\n🔄 Initializing application state")
+    """Initialize Cerebrum state and session management."""
+    print(f"\n🔄 Initializing Cerebrum state...")
     
+    # Make sure required directories exist
+    get_state_dir()
+    ensure_notebook_directory()
+    
+    # Ensure session state is initialized
+    if 'initialized' not in st.session_state:
+        initialize_session_state()
+        
     # Check if state is already initialized to prevent redundant operations
     if 'state_initialized' in st.session_state and st.session_state.state_initialized:
         print("✅ State already initialized")

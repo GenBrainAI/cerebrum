@@ -9,6 +9,9 @@ from src.server.views.models.view_types import ViewType
 from typing import Dict, Any
 from src.server.models.message import Message
 from src.server.controllers.task_runner import TaskRunner
+import subprocess
+import os
+from pathlib import Path
 
 class AgenticConfigView(BaseView):
     def __init__(self):
@@ -269,7 +272,7 @@ async def render_agentic_config_view():
         await render_agentic_config_sidebar()
         
         # Create tabs for different views
-        tab1, tab2, tab3 = st.tabs(["💬 Chat", "🧩 Plugin Explorer", "📊 Observability"])
+        tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat", "🧩 Plugin Explorer", "📓 Notebooks", "📊 Observability"])
         
         # Chat View
         with tab1:
@@ -286,8 +289,239 @@ async def render_agentic_config_view():
             else:
                 st.warning("Plugin manager not initialized")
         
-        # Observability View
+        # Notebook View - new
         with tab3:
+            st.subheader("Jupyter Notebooks")
+            
+            from src.server.views.components.notebook_viewer_component import NotebookViewerComponent
+            from pathlib import Path
+            import json
+            import os
+            
+            notebook_viewer = NotebookViewerComponent()
+            
+            # Ensure notebooks directory exists
+            notebook_dir = Path("notebooks")
+            if not notebook_dir.exists():
+                notebook_dir.mkdir(parents=True)
+            
+            # Define predefined demonstration notebooks
+            predefined_notebooks = {
+                "Plugin Handover Demo": "notebooks/plugin_handover_demo.ipynb",
+                "Task Tree Example": "notebooks/task_tree_example.ipynb",
+                "Multi-Agent Collaboration": "notebooks/multi_agent_collaboration.ipynb"
+            }
+            
+            # Create a tab section with edit and create options
+            browse_tab, create_tab = st.tabs(["Edit Notebook", "Create Notebook"])
+            
+            # Tab 1: Edit Notebooks (combined predefined and custom)
+            with browse_tab:
+                # Find all available notebooks
+                available_notebooks = list(notebook_dir.glob("*.ipynb"))
+                weather_example = Path("notebooks/weather-example.ipynb")
+                
+                if weather_example.exists() and weather_example not in available_notebooks:
+                    available_notebooks.append(weather_example)
+                
+                if not available_notebooks:
+                    st.info("No notebooks found in the notebooks directory. Please create or upload a notebook.")
+                else:
+                    # Create a dictionary mapping display names to file paths
+                    notebook_options = {}
+                    
+                    # Add predefined notebooks first with special markers
+                    for name, path in predefined_notebooks.items():
+                        if Path(path).exists():
+                            notebook_options[f"📘 {name} (Demo)"] = str(Path(path).resolve())
+                    
+                    # Add all other notebooks
+                    for notebook_path in available_notebooks:
+                        path_str = str(notebook_path.resolve())  # Use resolved absolute path
+                        # Skip if already added as predefined
+                        if path_str not in notebook_options.values():
+                            display_name = notebook_path.stem.replace("_", " ").title()
+                            notebook_options[f"📔 {display_name}"] = path_str
+                    
+                    # Let the user select a notebook
+                    selected_notebook = st.selectbox(
+                        "Select a notebook to view:", 
+                        list(notebook_options.keys()),
+                        key="notebook_selector"
+                    )
+                    
+                    selected_path = notebook_options[selected_notebook]
+                    # Verify the file exists before proceeding
+                    if not Path(selected_path).exists():
+                        st.error(f"Cannot find notebook at path: {selected_path}")
+                        st.info("The notebook file may have been moved or deleted. Please refresh the page and try again.")
+                    else:
+                        # Show edit options
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            st.write("Actions:")
+                            # Add button to launch in Jupyter if possible
+                            if st.button("🚀 Open in Jupyter", help="Open this notebook in Jupyter if available"):
+                                jupyter_url = f"http://localhost:8888/notebooks/{selected_path}"
+                                st.markdown(f"[Click here to open in Jupyter]({jupyter_url})", unsafe_allow_html=True)
+                                st.info(f"If Jupyter is running, you can open the notebook at: {jupyter_url}")
+                            
+                            # Add button to execute the notebook
+                            if st.button("▶️ Execute Notebook", help="Execute the notebook and update outputs"):
+                                with st.spinner("Executing notebook..."):
+                                    try:
+                                        result = subprocess.run(
+                                            [
+                                                "jupyter", "nbconvert", 
+                                                "--to", "notebook", 
+                                                "--execute",
+                                                "--inplace",
+                                                selected_path
+                                            ], 
+                                            capture_output=True, 
+                                            text=True
+                                        )
+                                        if result.returncode == 0:
+                                            st.success("Notebook executed successfully!")
+                                        else:
+                                            st.error(f"Error executing notebook: {result.stderr}")
+                                    except Exception as e:
+                                        st.error(f"Failed to execute notebook: {str(e)}")
+                            
+                            # Add download button
+                            try:
+                                with open(selected_path, "rb") as file:
+                                    st.download_button(
+                                        label="⬇️ Download Notebook",
+                                        data=file,
+                                        file_name=os.path.basename(selected_path),
+                                        mime="application/x-ipynb+json"
+                                    )
+                            except Exception as e:
+                                st.error(f"Failed to prepare download: {str(e)}")
+                        
+                        with col2:
+                            # Render the selected notebook
+                            st.write(f"### {selected_notebook.split(' (Demo)')[0]}")
+                            st.info(f"Loading notebook from: {selected_path}")
+                            notebook_viewer.render(selected_path)
+                    
+                    # Add a file uploader for notebook files
+                    st.divider()
+                    st.subheader("Upload Notebook")
+                    uploaded_file = st.file_uploader("Upload a notebook file", type=["ipynb"])
+                    if uploaded_file is not None:
+                        # Save the uploaded file
+                        save_path = notebook_dir / uploaded_file.name
+                        with open(save_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        
+                        st.success(f"Notebook uploaded successfully: {uploaded_file.name}")
+                        
+                        # Option to view the uploaded notebook
+                        if st.button("View Uploaded Notebook"):
+                            st.write(f"### {uploaded_file.name}")
+                            notebook_viewer.render(str(save_path.resolve()))
+            
+            # Tab 2: Create Notebook
+            with create_tab:
+                st.subheader("Create a New Notebook")
+                
+                # Basic notebook creation form
+                new_notebook_name = st.text_input("Notebook Name", key="new_notebook_name")
+                notebook_type = st.selectbox(
+                    "Notebook Type", 
+                    ["Empty Notebook", "Plugin Handover Template", "Task Tree Template", "Multi-Agent Collaboration Template"],
+                    key="notebook_type"
+                )
+                
+                if st.button("Create Notebook"):
+                    if not new_notebook_name:
+                        st.error("Please enter a notebook name")
+                    else:
+                        # Create filename from the provided name
+                        filename = new_notebook_name.lower().replace(" ", "_")
+                        if not filename.endswith(".ipynb"):
+                            filename += ".ipynb"
+                        
+                        new_notebook_path = notebook_dir / filename
+                        
+                        # Check if the file already exists
+                        if new_notebook_path.exists():
+                            st.error(f"A notebook with the name '{filename}' already exists.")
+                        else:
+                            # Create basic notebook structure based on selected type
+                            if notebook_type == "Empty Notebook":
+                                notebook_content = {
+                                    "cells": [
+                                        {
+                                            "cell_type": "markdown",
+                                            "metadata": {},
+                                            "source": [f"# {new_notebook_name}\n\nCreated with Cerebrum notebook creator."]
+                                        },
+                                        {
+                                            "cell_type": "code",
+                                            "execution_count": None,
+                                            "metadata": {},
+                                            "source": ["# Your code here"],
+                                            "outputs": []
+                                        }
+                                    ],
+                                    "metadata": {
+                                        "kernelspec": {
+                                            "display_name": "Python 3",
+                                            "language": "python",
+                                            "name": "python3"
+                                        }
+                                    },
+                                    "nbformat": 4,
+                                    "nbformat_minor": 4
+                                }
+                            else:
+                                # Determine which template to use based on selection
+                                if notebook_type == "Plugin Handover Template":
+                                    template_key = "Plugin Handover Demo"
+                                elif notebook_type == "Task Tree Template":
+                                    template_key = "Task Tree Example"
+                                else:  # Multi-Agent Collaboration Template
+                                    template_key = "Multi-Agent Collaboration"
+                                
+                                # Get the content from the predefined demo if it exists
+                                template_path = predefined_notebooks[template_key]
+                                if Path(template_path).exists():
+                                    with open(template_path, 'r') as f:
+                                        notebook_content = json.load(f)
+                                        
+                                    # Update the title to reflect the new notebook name
+                                    if notebook_content["cells"][0]["cell_type"] == "markdown":
+                                        notebook_content["cells"][0]["source"] = [f"# {new_notebook_name}\n\nBased on the {notebook_type}."]
+                                else:
+                                    st.error(f"Template '{template_key}' not available. Please ensure demo notebooks exist.")
+                                    notebook_content = None
+                            
+                            # Save the new notebook
+                            if notebook_content:
+                                with open(new_notebook_path, 'w') as f:
+                                    json.dump(notebook_content, f, indent=2)
+                                
+                                st.success(f"Notebook '{filename}' created successfully!")
+                                
+                                # Button to view the new notebook
+                                col1, col2 = st.columns([1, 1])
+                                with col1:
+                                    if st.button("View New Notebook"):
+                                        st.write(f"### {new_notebook_name}")
+                                        notebook_viewer.render(str(new_notebook_path))
+                                with col2:
+                                    jupyter_url = f"http://localhost:8888/notebooks/{new_notebook_path}"
+                                    st.markdown(f"[Open in Jupyter]({jupyter_url})", unsafe_allow_html=True)
+
+            # Add refresh button at the bottom
+            if st.button("Refresh Notebooks"):
+                st.rerun()
+        
+        # Observability View
+        with tab4:
             st.subheader("Agentic Framework Observability")
             render_observability_view()
             

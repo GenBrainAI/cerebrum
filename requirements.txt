@@ -63,3 +63,9 @@ asyncio>=3.4.3
 python-dotenv>=1.0.0
 matplotlib
 plotly
+# Notebook Viewer Component Dependencies
+streamlit-jupyter>=0.2.1
+jupyterlab>=3.0.0
+nbconvert>=6.0.0
+ipykernel>=6.0.0
+networkx>=2.7.0
