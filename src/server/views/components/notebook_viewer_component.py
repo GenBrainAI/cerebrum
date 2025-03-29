@@ -129,7 +129,8 @@ class NotebookViewerComponent:
         
         # Alternative: Provide a direct link to open in local Jupyter instance
         st.write("### Open in Local Jupyter")
-        jupyter_url = f"http://localhost:8888/notebooks{notebook_path}"
+        st.info("Make sure to run `jupyter notebook` in the project directory for this link to work")
+        jupyter_url = f"http://localhost:8888/notebooks/{os.path.basename(notebook_path)}"
         st.markdown(f"[Open Notebook in Local Jupyter]({jupyter_url})")
         
         # Add download button for the notebook

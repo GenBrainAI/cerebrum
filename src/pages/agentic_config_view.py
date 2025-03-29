@@ -333,7 +333,7 @@ async def render_agentic_config_view():
                     # Add predefined notebooks first with special markers
                     for name, path in predefined_notebooks.items():
                         if Path(path).exists():
-                            notebook_options[f"📘 {name} (Demo)"] = str(Path(path).resolve())
+                            notebook_options[f"📘 {name}"] = str(Path(path).resolve())
                     
                     # Add all other notebooks
                     for notebook_path in available_notebooks:
@@ -362,9 +362,10 @@ async def render_agentic_config_view():
                             st.write("Actions:")
                             # Add button to launch in Jupyter if possible
                             if st.button("🚀 Open in Jupyter", help="Open this notebook in Jupyter if available"):
-                                jupyter_url = f"http://localhost:8888/notebooks/{selected_path}"
+                                jupyter_url = f"http://localhost:8888/notebooks/{os.path.basename(selected_path)}"
                                 st.markdown(f"[Click here to open in Jupyter]({jupyter_url})", unsafe_allow_html=True)
                                 st.info(f"If Jupyter is running, you can open the notebook at: {jupyter_url}")
+                                st.info("Note: Run `jupyter notebook` in the project directory to enable this link")
                             
                             # Add button to execute the notebook
                             if st.button("▶️ Execute Notebook", help="Execute the notebook and update outputs"):
@@ -402,7 +403,7 @@ async def render_agentic_config_view():
                         
                         with col2:
                             # Render the selected notebook
-                            st.write(f"### {selected_notebook.split(' (Demo)')[0]}")
+                            st.write(f"### {selected_notebook}")
                             st.info(f"Loading notebook from: {selected_path}")
                             notebook_viewer.render(selected_path)
                     
@@ -457,14 +458,24 @@ async def render_agentic_config_view():
                                         {
                                             "cell_type": "markdown",
                                             "metadata": {},
-                                            "source": [f"# {new_notebook_name}\n\nCreated with Cerebrum notebook creator."]
+                                            "source": [f"# {new_notebook_name}\n\nThis is a sample notebook created with Cerebrum. Use this notebook to explore data, create visualizations, or run experiments."]
+                                        },
+                                        {
+                                            "cell_type": "markdown",
+                                            "metadata": {},
+                                            "source": ["## Hello World Example\n\nBelow is a simple Python code cell that prints 'Hello World!'."]
                                         },
                                         {
                                             "cell_type": "code",
-                                            "execution_count": None,
+                                            "execution_count": null,
                                             "metadata": {},
-                                            "source": ["# Your code here"],
+                                            "source": ["# A simple Hello World example\nprint('Hello World!')\n\n# You can add more code here\n# For example:\nimport numpy as np\nimport matplotlib.pyplot as plt"],
                                             "outputs": []
+                                        },
+                                        {
+                                            "cell_type": "markdown",
+                                            "metadata": {},
+                                            "source": ["## Next Steps\n\nYou can add more cells using the '+' button in the Jupyter interface.\nExperiment with different code examples and markdown documentation."]
                                         }
                                     ],
                                     "metadata": {
@@ -472,10 +483,22 @@ async def render_agentic_config_view():
                                             "display_name": "Python 3",
                                             "language": "python",
                                             "name": "python3"
+                                        },
+                                        "language_info": {
+                                            "codemirror_mode": {
+                                                "name": "ipython",
+                                                "version": 3
+                                            },
+                                            "file_extension": ".py",
+                                            "mimetype": "text/x-python",
+                                            "name": "python",
+                                            "nbconvert_exporter": "python",
+                                            "pygments_lexer": "ipython3",
+                                            "version": "3.8.10"
                                         }
                                     },
                                     "nbformat": 4,
-                                    "nbformat_minor": 4
+                                    "nbformat_minor": 5
                                 }
                             else:
                                 # Determine which template to use based on selection
@@ -513,8 +536,9 @@ async def render_agentic_config_view():
                                         st.write(f"### {new_notebook_name}")
                                         notebook_viewer.render(str(new_notebook_path))
                                 with col2:
-                                    jupyter_url = f"http://localhost:8888/notebooks/{new_notebook_path}"
+                                    jupyter_url = f"http://localhost:8888/notebooks/{os.path.basename(new_notebook_path)}"
                                     st.markdown(f"[Open in Jupyter]({jupyter_url})", unsafe_allow_html=True)
+                                    st.info("Run `jupyter notebook` in the project directory to use this link")
 
             # Add refresh button at the bottom
             if st.button("Refresh Notebooks"):
