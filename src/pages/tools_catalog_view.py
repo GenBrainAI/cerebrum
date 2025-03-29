@@ -10,6 +10,7 @@ from typing import Dict, Any
 from server.models.message import Message
 from server.controllers.task_runner import TaskRunner
 from server.views.components.task_tool_relationship import render_task_tool_relationship
+from pathlib import Path
 
 class ToolsCatalogView(BaseView):
     def __init__(self):
@@ -202,6 +203,53 @@ async def render_tools_catalog_view():
         # Initialize persistence model if not in session state
         if 'persistence_model' not in st.session_state:
             st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+            
+            # Only load state if not loaded before
+            if 'default_state_loaded' not in st.session_state or not st.session_state.default_state_loaded:
+                # Load the last used state if available (reuse logic from chat.py)
+                from src.chat import get_last_used_state, get_state_dir, load_state
+                
+                # Try to load the last used state
+                metadata = get_last_used_state()
+                if metadata.get("last_used_state"):
+                    state_name = metadata["last_used_state"]
+                    if not state_name.endswith('.json'):
+                        state_file_name = f"{state_name}.json"
+                    else:
+                        state_file_name = state_name
+                    
+                    state_path = str(get_state_dir() / state_file_name)
+                    print(f"\n📥 Loading last used state from metadata: {state_path}")
+                    
+                    if Path(state_path).exists():
+                        # Load the state into the persistence model
+                        try:
+                            load_state(state_path)
+                            print(f"✅ Successfully loaded state from {state_path}")
+                            
+                            # Mark state as loaded to prevent redundant loading
+                            st.session_state.default_state_loaded = True
+                            
+                            # Debug: Check if tasks were loaded properly
+                            try:
+                                task_count = len(st.session_state.persistence_model.tasks.list())
+                                print(f"📊 After loading state, found {task_count} tasks in persistence model")
+                                
+                                if task_count > 0:
+                                    print("📋 Task details:")
+                                    for task in st.session_state.persistence_model.tasks.list():
+                                        print(f"  - {task.id}: {task.name} - Manager ID: {task.tasksmanager_id}")
+                                
+                                tm_count = len(st.session_state.persistence_model.tasksmanagers.list())
+                                print(f"📊 After loading state, found {tm_count} task managers in persistence model")
+                            except Exception as e:
+                                print(f"❌ Error checking tasks after state load: {str(e)}")
+                        except Exception as e:
+                            print(f"❌ Error loading state: {str(e)}")
+                    else:
+                        print(f"⚠️ Last used state file not found: {state_path}")
+            else:
+                print(f"✅ State already loaded, skipping load operation")
         
         # Ensure state_location is properly initialized
         if 'state_location' not in st.session_state or not st.session_state.state_location:
