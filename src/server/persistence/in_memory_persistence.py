@@ -82,4 +82,31 @@ class InMemoryPersistenceModel(PersistenceModelBase):
     def task_flows(self) -> TaskFlowCrud:
         return self._task_flows
 
+    def collection_exists(self, collection_name: str) -> bool:
+        """Check if a collection exists by name."""
+        return collection_name in self.collections
+        
+    def collection(self, collection_name: str) -> InMemoryCrud:
+        """Get a collection by name. Creates it if it doesn't exist."""
+        if collection_name not in self.collections:
+            self.collections[collection_name] = InMemoryCrud()
+        return self.collections[collection_name]
+        
+    def create_collection(self, collection_name: str) -> InMemoryCrud:
+        """Create a new collection."""
+        self.collections[collection_name] = InMemoryCrud()
+        return self.collections[collection_name]
+        
+    def reset(self):
+        """Reset all data in the persistence model."""
+        self._toolsets = ToolsetCrud()
+        self._tools = ToolCrud()
+        self._tasksmanagers = TasksManagerCrud()
+        self._tasks = TaskCrud()
+        self._messages = MessageCrud()
+        self._crewai_config = CrewAIConfigCrud()
+        self._curried_proxies = CurriedProxyCrud()
+        self._task_flows = TaskFlowCrud()
+        self.collections = {}
+
 

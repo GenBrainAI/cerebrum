@@ -1,0 +1,110 @@
+/* Task Tree CSS Styles */
+
+.task-node {
+    border-radius: 5px;
+    padding: 10px;
+    margin: 5px;
+    border: 1px solid #ccc;
+}
+
+.task-node-crewai {
+    background-color: rgba(76, 175, 80, 0.2);
+    border-left: 5px solid #4CAF50;
+}
+
+.task-node-autogen {
+    background-color: rgba(33, 150, 243, 0.2);
+    border-left: 5px solid #2196F3;
+}
+
+.task-node-smolagents {
+    background-color: rgba(255, 152, 0, 0.2);
+    border-left: 5px solid #FF9800;
+}
+
+.task-node-default {
+    background-color: rgba(158, 158, 158, 0.2);
+    border-left: 5px solid #9E9E9E;
+}
+
+.task-flow-arrow {
+    color: #2196F3;
+    font-weight: bold;
+}
+
+.execution-step {
+    background-color: rgba(33, 33, 33, 0.05);
+    padding: 10px;
+    border-radius: 3px;
+    margin: 5px 0;
+}
+
+.execution-parallel {
+    display: flex;
+    gap: 10px;
+}
+
+/* Plugin Integration Styles */
+.plugin-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    margin-right: 5px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+
+.plugin-badge-crewai {
+    background-color: rgba(76, 175, 80, 0.2);
+    border: 1px solid #4CAF50;
+    color: #2E7D32;
+}
+
+.plugin-badge-autogen {
+    background-color: rgba(33, 150, 243, 0.2);
+    border: 1px solid #2196F3;
+    color: #0D47A1;
+}
+
+.plugin-badge-smolagents {
+    background-color: rgba(255, 152, 0, 0.2);
+    border: 1px solid #FF9800;
+    color: #E65100;
+}
+
+/* Data Flow Visualization */
+.data-flow-container {
+    margin: 15px 0;
+    padding: 10px;
+    border: 1px dashed #ccc;
+    border-radius: 5px;
+}
+
+.data-flow-item {
+    display: flex;
+    align-items: center;
+    margin: 5px 0;
+}
+
+.data-flow-from {
+    flex: 1;
+    text-align: right;
+    padding-right: 10px;
+}
+
+.data-flow-arrow {
+    padding: 0 10px;
+    color: #2196F3;
+    font-weight: bold;
+}
+
+.data-flow-to {
+    flex: 1;
+    padding-left: 10px;
+}
+
+.data-flow-type {
+    font-size: 0.8em;
+    color: #757575;
+    margin-top: 2px;
+} 

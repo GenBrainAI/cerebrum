@@ -109,9 +109,43 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
         return item
 
     def update(self, item_id: str, item: T) -> T:
-        if item_id in self.storage:
-            self.storage[item_id] = item
-        return item
+        """Update an item in the storage or create it if it doesn't exist.
+        
+        Args:
+            item_id: The ID of the item to update
+            item: The updated item
+            
+        Returns:
+            The updated item if successful, None otherwise
+        """
+        try:
+            # Make sure item_id is a string
+            str_item_id = str(item_id)
+            
+            # Check if the item exists
+            if str_item_id not in self.storage:
+                print(f"⚠️ Warning: Item {str_item_id} not found in {self._model_class.__name__} storage. Creating new.")
+                # Create the item instead
+                return self.create(item)
+            
+            # Set the updated_at timestamp if the attribute exists
+            if hasattr(item, 'updated_at'):
+                from datetime import datetime
+                try:
+                    item.updated_at = datetime.now()
+                except Exception as e:
+                    print(f"❌ Error setting updated_at timestamp: {str(e)}")
+            
+            # Update the item in storage
+            self.storage[str_item_id] = item
+            print(f"✅ Updated {self._model_class.__name__} item {str_item_id}")
+            
+            return item
+        except Exception as e:
+            print(f"❌ Error updating {self._model_class.__name__} item {item_id}: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return None
 
     def delete(self, item_id: str) -> None:
         self.storage.pop(item_id, None)
@@ -154,16 +188,24 @@ class TaskCrud(InMemoryCrud[Task]):
         return valid_items
 
     def read(self, item_id: str) -> Task:
-        """Override read to ensure proper Task instance is returned."""
+        """Override read to ensure proper Task instance is returned with normalized messages."""
         item = super().read(item_id)
         if item is None:
             return None
             
         if isinstance(item, dict):
             try:
-                return Task.parse_obj(item)
+                item = Task.parse_obj(item)
             except Exception as e:
+                print(f"Error parsing Task from dict: {str(e)}")
                 return item
+        
+        # Ensure messages are normalized
+        if isinstance(item, Task):
+            try:
+                item.normalize_messages()
+            except Exception as e:
+                print(f"Error normalizing messages for Task {item_id}: {str(e)}")
                 
         return item
 

@@ -1,0 +1,1 @@
+import json; f=open("state/weather.json", "r"); data=json.load(f); f.close(); tasks=json.loads(data["tasks"]); [task.update({"framework": "standard"}) for task_id, task in tasks.items() if task.get("framework") == "crewai"]; data["tasks"]=json.dumps(tasks); f=open("state/weather.json", "w"); json.dump(data, f); f.close(); print("State file updated successfully")

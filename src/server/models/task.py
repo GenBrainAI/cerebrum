@@ -62,37 +62,115 @@ class ChatSession(BaseModel):
         return [msg.dict() for msg in self.messages]
 
 class Task(BaseModel):
-    """Task model with chat session and message support"""
-    id: Optional[str] = Field(default=None)
-    name: Optional[str] = Field(default=None)
-    tasksmanager_id: Optional[str] = Field(default=None)
+    """Task model.
+    
+    Attributes:
+        id: Unique identifier for the task
+        name: Name of the task
+        tasksmanager_id: ID of the task manager
+        description: Description of the task
+        status: Current status of the task
+        error: Error message if any
+        messages: List of messages for the task
+        chat_sessions: Dictionary of chat sessions
+        toolsets: List of toolset IDs
+        curried_tools: List of curried tool IDs
+        curried_proxy_id: ID of the curried proxy
+        crewai_config_id: ID of the CrewAI config
+        autogen_config_id: ID of the Autogen config
+        tree_flow_id: ID of the tree flow
+        agent_role: Role of the agent
+        framework: Framework to use
+        model: Model to use
+        created_at: When the task was created
+        updated_at: When the task was last updated
+        config: Configuration for the task
+        use_context: Whether to use context
+        inherit_manager_context: Whether to inherit context from manager
+        contexts: List of contexts
+        execution_logs: List of execution logs
+        input_data: Input data for the task
+        input_from_tasks: List of task IDs to take input from
+        output_to_tasks: List of task IDs to send output to
+        output_data: Output data from the task
+        result: Result of the task
+        last_response: Last response from the task
+        data: Additional data for the task (used for handover)
+    """
+    
+    id: str = Field(default=None)
+    name: str = Field(default=None)
+    tasksmanager_id: str = Field(default=None)
     description: Optional[str] = Field(default=None)
-    status: str = Field(default="pending", description="Current status of the task (pending, running, completed, failed)")
-    error: Optional[str] = Field(default=None, description="Error message if task failed")
-    messages: Optional[List[Message]] = Field(default_factory=list)
-    chat_sessions: Dict[str, List[Dict[str, Any]]] = Field(default_factory=dict)
-    toolsets: Optional[List[str]] = Field(default_factory=list)
-    curried_tools: Optional[List[str]] = Field(default_factory=list)
+    status: Optional[str] = Field(default="pending")
+    error: Optional[str] = Field(default=None)
+    messages: Optional[List[Union[Dict[str, Any], Message]]] = Field(default=[])
+    chat_sessions: Optional[Dict[str, List[Dict[str, Any]]]] = Field(default={})
+    toolsets: Optional[List[str]] = Field(default=[])
+    curried_tools: Optional[List[str]] = Field(default=[])
     curried_proxy_id: Optional[str] = Field(default=None)
     crewai_config_id: Optional[str] = Field(default=None)
     autogen_config_id: Optional[str] = Field(default=None)
-    tree_flow_id: Optional[str] = Field(default=None, description="ID of the task tree flow associated with this task")
-    agent_role: Optional[str] = Field(default=None, description="Role of the agent assigned to this task")
-    framework: Optional[str] = Field(default="crewai", description="Framework to use for task execution (e.g. crewai, autogen)")
-    model: Optional[str] = Field(default=None, description="Model to use for task execution")
+    tree_flow_id: Optional[str] = Field(default=None)
+    agent_role: Optional[str] = Field(default=None)
+    framework: Optional[str] = Field(default="crewai")
+    model: Optional[str] = Field(default=None)
     created_at: Optional[datetime] = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = Field(default_factory=datetime.now)
-    config: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    use_context: bool = Field(default=True)
-    inherit_manager_context: bool = Field(default=True)
-    contexts: List[Dict] = Field(default_factory=list, description="Context references for the task")
-    execution_logs: Optional[List[Dict[str, Any]]] = Field(default_factory=list, description="Logs from task execution")
-    input_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Input data for task execution")
-    result: Optional[str] = Field(default=None, description="Result of task execution")
-    last_response: Optional[str] = Field(default=None, description="Last response from the task execution")
-    input_from_tasks: List[str] = Field(default_factory=list, description="IDs of tasks that provide input to this task")
-    output_to_tasks: List[str] = Field(default_factory=list, description="IDs of tasks that receive output from this task")
-    output_data: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Output data from task execution for handover")
+    config: Optional[Dict[str, Any]] = Field(default={})
+    use_context: Optional[bool] = Field(default=True)
+    inherit_manager_context: Optional[bool] = Field(default=False)
+    contexts: Optional[List[Dict[str, Any]]] = Field(default=[])
+    execution_logs: Optional[List[Dict[str, Any]]] = Field(default=[])
+    input_data: Optional[Dict[str, Any]] = Field(default={})
+    result: Optional[Any] = Field(default=None)
+    last_response: Optional[Any] = Field(default=None)
+    input_from_tasks: Optional[List[str]] = Field(default=[])
+    output_to_tasks: Optional[List[str]] = Field(default=[])
+    output_data: Optional[Dict[str, Any]] = Field(default={})
+    data: Optional[Dict[str, Any]] = Field(default={})
+    
+    def __init__(self, **data: Any):
+        """Initialize a Task object with automatic message normalization."""
+        super().__init__(**data)
+        # Ensure all messages are normalized on initialization
+        self.normalize_messages()
+    
+    def normalize_messages(self) -> None:
+        """
+        Ensure all messages in the task are proper Message objects.
+        This fixes issues with dict messages causing errors during task updates.
+        """
+        if self.messages is None:
+            self.messages = []
+            return
+            
+        normalized_messages = []
+        for msg in self.messages:
+            if isinstance(msg, dict):
+                try:
+                    # Convert dict to Message object
+                    normalized_messages.append(Message(**msg))
+                except Exception as e:
+                    # If conversion fails, create a basic system message as fallback
+                    print(f"Error normalizing message, creating fallback: {str(e)}")
+                    normalized_messages.append(Message(
+                        role="system", 
+                        content=msg.get('content', "No content") if isinstance(msg, dict) else "Invalid message"
+                    ))
+            elif isinstance(msg, Message):
+                # Already a Message object
+                normalized_messages.append(msg)
+            else:
+                # Unsupported type, create fallback
+                print(f"Unsupported message type: {type(msg)}, creating fallback")
+                normalized_messages.append(Message(
+                    role="system",
+                    content="Invalid message format"
+                ))
+                
+        # Replace messages with normalized version
+        self.messages = normalized_messages
 
     def create_session(self, name: Optional[str] = None) -> str:
         """Create a new chat session"""
@@ -168,6 +246,7 @@ class Task(BaseModel):
         return self.chat_sessions or {}
 
     class Config:
+        allow_population_by_field_name = True
         arbitrary_types_allowed = True
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None,

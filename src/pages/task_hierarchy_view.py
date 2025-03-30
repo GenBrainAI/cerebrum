@@ -10,15 +10,18 @@ from src.server.views.components.sidebar.task_hierarchy_sidebar import render_ta
 from src.server.views.components.task_handover_component import TaskHandoverComponent
 from src.server.views.components.task_tree_handover_component import TaskTreeHandoverComponent
 from src.server.views.components.handover_info_component import HandoverInfoComponent
+from src.server.views.components.task_management_component import render_task_management
 from src.server.views.base_view import BaseView
 from src.server.views.models.view_types import ViewType
 from typing import Dict, Any
 from src.server.models.message import Message
 from datetime import datetime, timedelta
 from src.server.controllers.task_runner import TaskRunner
-from src.server.views.components.task_management_component import render_task_management
 from src.chat import get_last_used_state, get_state_dir, load_state
 from pathlib import Path
+from src.server.views.components.task_tree_visualization_component import TaskTreeVisualizationComponent
+from src.server.views.components.task_tree_demo_component import TaskTreeDemoComponent
+import time
 
 class TaskHierarchyView(BaseView):
     def __init__(self):
@@ -98,16 +101,82 @@ class TaskHierarchyView(BaseView):
         if "active_tab" in session_data:
             st.session_state.active_tab = session_data["active_tab"]
     
+    # Add an alias method to handle code that expects restore_session
+    def restore_session(self):
+        """Alias for load_session to maintain backward compatibility.
+        Some code may expect this method to exist, so we provide it as an alias to load_session.
+        """
+        print("📝 Calling restore_session (alias for load_session)")
+        return self.load_session()
+    
     def clear_session(self):
         """Clear chat history and other session state"""
+        print("\n🗑️ TaskHierarchyView: Clearing session")
+        
         if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
+            # Get the current task information before clearing
+            task_status = st.session_state.task_controller.view_state.task_status
+            current_task_id = task_status.get("task_id")
+            
+            # Clear view state and UI state
             st.session_state.task_controller.view_state.chat_history = []
             st.session_state.task_controller.view_state.selected_node = None
             st.session_state.task_controller.view_state.expanded_nodes = []
+            
+            # If a task is loaded, clear its chat sessions
+            if current_task_id and task_status.get("loaded", False):
+                try:
+                    print(f"🔍 Clearing ALL sessions for task {current_task_id}")
+                    
+                    # Get the task from the persistence model
+                    persistence_model = st.session_state.task_controller.persistence_model
+                    task = persistence_model.tasks.read(current_task_id)
+                    
+                    if task and hasattr(task, 'chat_sessions'):
+                        # Create a new empty session 
+                        new_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        
+                        # COMPLETELY CLEAR all chat sessions
+                        existing_session_count = len(task.chat_sessions) if task.chat_sessions else 0
+                        print(f"🧹 Removing {existing_session_count} existing chat sessions")
+                        
+                        # Replace with a single empty session
+                        task.chat_sessions = {new_session_id: []}
+                        
+                        # Find and clear any tasks with the same name to ensure full cleanup
+                        task_name = task.name if hasattr(task, 'name') else ""
+                        if task_name:
+                            # Look for similar tasks by name
+                            all_tasks = persistence_model.tasks.list()
+                            for other_task in all_tasks:
+                                if other_task.id != current_task_id and hasattr(other_task, 'name') and other_task.name == task_name:
+                                    print(f"🧹 Also clearing chat sessions for similar task: {other_task.id}")
+                                    if hasattr(other_task, 'chat_sessions'):
+                                        other_task.chat_sessions = {}
+                                        persistence_model.tasks.update(other_task.id, other_task)
+                        
+                        # Update the task in the persistence model
+                        persistence_model.tasks.update(current_task_id, task)
+                        print(f"✅ Cleared ALL sessions and created single new empty session {new_session_id}")
+                        
+                        # Update task_status to indicate we've made changes
+                        task_status["session_id"] = new_session_id
+                        st.session_state.task_controller.view_state.task_status = task_status
+                    else:
+                        print(f"⚠️ Task {current_task_id} not found or doesn't have chat_sessions")
+                except Exception as e:
+                    print(f"❌ Error clearing task sessions: {str(e)}")
+                    import traceback
+                    print(traceback.format_exc())
+            
+            # Maintain the task status but clear session-related data
             st.session_state.task_controller.view_state.task_status = {
-                "loaded": False,
-                "tasksmanager_name": "",
-                "task_name": ""
+                "loaded": task_status.get("loaded", False),
+                "task_id": task_status.get("task_id"),
+                "task_name": task_status.get("task_name", ""),
+                "tasksmanager_id": task_status.get("tasksmanager_id"),
+                "tasksmanager_name": task_status.get("tasksmanager_name", ""),
+                "session_id": task_status.get("session_id", "")
             }
             
             # Clear task management specific state
@@ -116,9 +185,19 @@ class TaskHierarchyView(BaseView):
             
             # Reset active tab
             st.session_state.active_tab = 0
+            
+            # Trigger state save to ensure changes are persisted
+            if hasattr(st.session_state.task_controller, 'trigger_state_save'):
+                st.session_state.task_controller.trigger_state_save()
+            
+            print("✅ Successfully cleared task hierarchy session")
+        else:
+            print("⚠️ Task controller or view state not available")
 
     def save_session(self):
         """Save the current view session."""
+        print("\n💾 TaskHierarchyView: Saving session")
+        
         # First, ensure task_status is properly set
         if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "view_state"):
             task_status = st.session_state.task_controller.view_state.task_status
@@ -137,8 +216,25 @@ class TaskHierarchyView(BaseView):
                         )
                         print(f"📝 Updated task status before saving: {st.session_state.task_controller.view_state.task_status}")
         
-        # Call parent save_session method
+        # Call parent save_session method to save session data
         super().save_session()
+        
+        # Also save the state file to persist changes
+        if hasattr(st.session_state, "task_controller"):
+            try:
+                # Trigger state save to persist changes
+                if hasattr(st.session_state.task_controller, 'trigger_state_save'):
+                    st.session_state.task_controller.trigger_state_save()
+                    print("✅ Triggered state save to persist changes")
+                
+                # Update the save status in session state
+                st.session_state.save_status = "saved"
+                st.session_state.last_save_time = time.time()
+                print(f"✅ Updated save status: {st.session_state.save_status}, time: {st.session_state.last_save_time}")
+            except Exception as e:
+                print(f"❌ Error triggering state save: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
 
 def render_task_details(controller, task_id):
     """Render details for the selected task."""
@@ -227,8 +323,8 @@ async def render_chat_view():
         elif role == "assistant":
             st.chat_message("assistant").write(content)
     
-    # Chat input
-    if prompt := st.chat_input("Enter your message"):
+    # Chat input with unique key
+    if prompt := st.chat_input("Enter your message", key="task_hierarchy_chat_input"):
         # Add user message to chat history
         st.chat_message("user").write(prompt)
         
@@ -288,75 +384,54 @@ def render_observability_view():
 
 async def render_tree_view(controller):
     """Render the task tree with handover relationships"""
-    st.subheader("Task Hierarchy Tree")
-    
-    # Display info about task hierarchy
-    st.info("This view shows the hierarchy of task managers and tasks. "
-           "The tree now visualizes handover relationships between tasks.")
-
-    # Get task tree with handover relationships
-    task_tree = await controller.get_task_tree_with_handover()
-    
-    # Initialize tree component with handover visualization
-    if "tree_component" not in dir(controller) or not isinstance(controller.tree_component, TaskTreeHandoverComponent):
-        controller.tree_component = TaskTreeHandoverComponent(controller.handle_node_click)
-    
-    # Render tree with relationships
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        # Render tree with handover relationships
-        selected_node = controller.tree_component.render(task_tree, "task_tree")
-        
-        # Handle selection
-        if selected_node:
-            node_id = selected_node.get("id")
-            node_type = selected_node.get("type")
-            node_data = selected_node.get("data", {})
-            
-            # Store selection in controller
-            controller.view_state.selected_node = node_id
-            
-            # Update selected task or task manager based on node type
-            if node_type == "task":
-                controller.view_state.selected_task = node_data.get("id")
-            elif node_type == "tasksmanager":
-                controller.view_state.selected_task_manager = node_data.get("id")
-            
-            # Save session state after node selection
-            view = TaskHierarchyView()
-            view.save_session()
-    
-    # Render details for selected node
-    with col2:
-        if controller.view_state.selected_node:
-            selected_id = str(controller.view_state.selected_node)
-            
-            # Find the selected node in the tree
-            found_node = task_tree.find_child(controller.view_state.selected_node)
-            
-            if found_node:
-                if found_node.type == "task":
-                    # Render task details including handover information
-                    render_task_details(controller, found_node.data.get("id"))
-                elif found_node.type == "tasksmanager":
-                    # Render task manager details
-                    tm_id = found_node.data.get("id")
-                    tm = controller.persistence_model.tasksmanagers.read(tm_id)
-                    
-                    if tm:
-                        st.subheader(f"Task Manager: {tm.name}")
-                        st.write(f"**ID:** {tm.id}")
-                        st.write(f"**Model:** {tm.model or 'Not specified'}")
-                        st.write(f"**Description:** {tm.description or 'No description'}")
-            else:
-                st.info("Select a task or task manager to view details.")
-        else:
-            st.info("Select a task or task manager to view details.")
+    # Simply call the task_hierarchy_view_handle method
+    # We've modified the controller to handle async internally
+    controller.task_hierarchy_view_handle()
 
 async def render_task_hierarchy_view():
-    """Render the task hierarchy view."""
+    """Render the task hierarchy view"""
     try:
-        # Initialize active tab if not set (do this first to prevent the error)
+        # Initialize view
+        view = TaskHierarchyView()
+        
+        # Initialize session state if needed
+        if "task_controller" not in st.session_state:
+            # Initialize controller and view state
+            try:
+                persistence_model = PersistenceModelFactory.persistence_model("inmemory")
+                st.session_state.task_controller = TaskHierarchyController(persistence_model)
+                
+                # Make sure chat view (tab 0) is selected by default
+                if "active_tab" not in st.session_state:
+                    st.session_state.active_tab = 0
+                    
+                # Initialize controller
+                await st.session_state.task_controller.initialize()
+                print(f"🚀 Task controller initialized")
+                
+                # Restore session state if available
+                view.restore_session()
+                print(f"🔄 Session state restored")
+                
+                # Properly setup task status after restore
+                if not st.session_state.task_controller.view_state.task_status.get("loaded", False):
+                    # Try to find a task manager and task to set as active
+                    task_managers = st.session_state.task_controller.get_task_managers()
+                    if task_managers:
+                        tasks = st.session_state.task_controller.get_tasks(task_managers[0].id)
+                        if tasks:
+                            print(f"🔄 Setting active task from global state")
+                            st.session_state.task_controller.view_state.set_active_task(
+                                task_id=tasks[0].id,
+                                task_name=tasks[0].name,
+                                manager_id=task_managers[0].id,
+                                manager_name=task_managers[0].name
+                            )
+            except Exception as e:
+                print(f"Error initializing controller: {str(e)}")
+                st.error(f"Error initializing task controller: {str(e)}")
+                
+        # Initialize active tab if not set - ALWAYS default to chat view (tab 0)
         if 'active_tab' not in st.session_state:
             st.session_state.active_tab = 0
             
@@ -431,6 +506,10 @@ async def render_task_hierarchy_view():
             # Load saved session state
             print("🔄 Loading saved session state")
             view.load_session()
+            
+            # After loading session, ensure active_tab defaults to 0 (chat) if still not set
+            if 'active_tab' not in st.session_state:
+                st.session_state.active_tab = 0
         else:
             print("🔄 Using existing task controller")
             # Ensure controller is using global persistence for UI operations
@@ -503,9 +582,26 @@ async def render_task_hierarchy_view():
         print("🔄 Rendering sidebar")
         await render_task_hierarchy_sidebar()
         
+        # Add CSS for active tab highlighting
+        st.markdown("""
+        <style>
+        .active-tab {
+            background-color: rgba(70, 130, 180, 0.3);
+            border-radius: 5px;
+            padding: 2px 0px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Ensure active_tab is set to a valid value
+        current_tab = st.session_state.get('active_tab', 0)
+        
         # Add navigation tabs with icons, aligned like in tools catalog view
         col1, col2, col3, col4 = st.columns([0.4, 0.2, 0.2, 0.2])
         with col1:
+            # Add active-tab class if this is the current tab
+            tab_class = "active-tab" if current_tab == 0 else ""
+            st.markdown(f'<div class="{tab_class}">', unsafe_allow_html=True)
             if st.button("💬", help="Switch to chat view", key="main_tab_chat"):
                 # When switching to chat view, ensure we're using the specialized state task if available
                 if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "local_persistence") and st.session_state.task_controller.local_persistence:
@@ -531,7 +627,11 @@ async def render_task_hierarchy_view():
                 
                 st.session_state.active_tab = 0
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+            
         with col2:
+            tab_class = "active-tab" if current_tab == 3 else ""
+            st.markdown(f'<div class="{tab_class}">', unsafe_allow_html=True)
             if st.button("🌳", help="Switch to tree view", key="main_tab_tree"):
                 # When switching to non-chat view, ensure we're using global persistence
                 if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "global_persistence"):
@@ -539,7 +639,11 @@ async def render_task_hierarchy_view():
                 
                 st.session_state.active_tab = 3
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+            
         with col3:
+            tab_class = "active-tab" if current_tab == 1 else ""
+            st.markdown(f'<div class="{tab_class}">', unsafe_allow_html=True)
             if st.button("📊", help="Switch to observability view", key="main_tab_obs"):
                 # When switching to non-chat view, ensure we're using global persistence
                 if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "global_persistence"):
@@ -547,7 +651,11 @@ async def render_task_hierarchy_view():
                 
                 st.session_state.active_tab = 1
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+            
         with col4:
+            tab_class = "active-tab" if current_tab == 2 else ""
+            st.markdown(f'<div class="{tab_class}">', unsafe_allow_html=True)
             if st.button("⚙️", help="Switch to task management view", key="main_tab_manage"):
                 # When switching to non-chat view, ensure we're using global persistence
                 if hasattr(st.session_state, "task_controller") and hasattr(st.session_state.task_controller, "global_persistence"):
@@ -555,6 +663,7 @@ async def render_task_hierarchy_view():
                 
                 st.session_state.active_tab = 2
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
         
         # Chat View (primary view)
         if st.session_state.active_tab == 0:

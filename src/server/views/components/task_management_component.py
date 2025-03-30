@@ -210,17 +210,33 @@ class TaskManagementComponent:
         st.plotly_chart(fig, use_container_width=True)
         
     def _render_management_view(self, task_managers: List[TasksManager], tasks: List[Task]):
-        """Render management interface for task managers and tasks."""
-        col1, col2 = st.columns(2)
+        """Render the management view with task managers and tasks."""
+        # Select task manager
+        selected_tm = st.selectbox(
+            "Select Task Manager",
+            options=[tm.id for tm in task_managers],
+            format_func=lambda x: next((tm.name for tm in task_managers if tm.id == x), "Unknown")
+        )
         
-        with col1:
-            st.subheader("Task Managers")
-            self._render_task_managers_management(task_managers)
+        if selected_tm:
+            # Get selected task manager
+            selected_tm_obj = next((tm for tm in task_managers if tm.id == selected_tm), None)
             
-        with col2:
-            st.subheader("Tasks")
-            self._render_tasks_management(task_managers, tasks)
+            # Create tabs for task managers, tasks, and sequences
+            mgr_tab, task_tab, seq_tab = st.tabs(["Task Managers", "Tasks", "Sequences"])
             
+            with mgr_tab:
+                # Render task managers management
+                self._render_task_managers_management(task_managers)
+                
+            with task_tab:
+                # Render tasks management
+                self._render_tasks_management(task_managers, tasks)
+                
+            with seq_tab:
+                # Render sequences management
+                self._render_sequences_management(selected_tm_obj)
+                
     def _render_task_managers_management(self, task_managers: List[TasksManager]):
         """Render task managers management section."""
         # Task manager selection
@@ -331,6 +347,38 @@ class TaskManagementComponent:
             
             system_msg = st.text_area("System Message", value=system_message, height=250)
             
+            # After the description field, add handover options
+            st.write("### Task Handover Settings")
+            enable_handover = st.checkbox(
+                "Enable Task Handover", 
+                value=task_manager.enable_handover if task_manager else False,
+                help="When enabled, tasks will run in the specified order with outputs from one task feeding into the next."
+            )
+            
+            # Only show task order selection if we're editing an existing task manager
+            task_order = []
+            if task_manager:
+                # Get all tasks for this manager
+                tasks = self.controller.get_tasks_for_tasksmanager(task_manager.id)
+                if tasks:
+                    # Create options for the multiselect
+                    task_options = {task.id: task.name for task in tasks}
+                    
+                    # Get current task order
+                    default_selection = task_manager.task_order if hasattr(task_manager, 'task_order') else []
+                    
+                    # Show a multiselect for ordering tasks
+                    st.write("Select tasks and arrange them in execution order:")
+                    task_order = st.multiselect(
+                        "Task Execution Order",
+                        options=list(task_options.keys()),
+                        default=default_selection,
+                        format_func=lambda x: task_options.get(x, x),
+                        help="Tasks will be executed in this order with outputs passed as inputs to the next task."
+                    )
+                else:
+                    st.info("Create tasks first, then set their execution order.")
+            
             col1, col2 = st.columns(2)
             with col1:
                 submitted = st.form_submit_button("Update Task Manager")
@@ -341,16 +389,18 @@ class TaskManagementComponent:
                 # Clean model value
                 model_value = model if model else None
                 
-                # Update task manager
-                result = self.controller.update_task_manager(
-                    task_manager_id=task_manager.id,
+                # Update existing task manager
+                tasksmanager_id = self.controller.update_tasksmanager(
+                    tasksmanager_id=task_manager.id,
                     name=name,
                     description=description,
                     model=model_value,
-                    system_message=system_msg
+                    system_message=system_msg,
+                    enable_handover=enable_handover,
+                    task_order=task_order
                 )
                 
-                if result:
+                if tasksmanager_id:
                     st.success(f"Task Manager '{name}' updated successfully!")
                     st.rerun()
                 else:
@@ -492,7 +542,10 @@ class TaskManagementComponent:
                     st.success(f"Task '{name}' updated successfully!")
                     st.rerun()
                 else:
-                    st.error("Failed to update task.")
+                    st.error(f"Failed to update task '{name}'. Please check the application logs for more details.")
+                    # Try to get error details from session state if available
+                    if hasattr(st, 'session_state') and hasattr(st.session_state, 'last_error'):
+                        st.error(f"Error details: {st.session_state.last_error}")
                     
             if delete_button:
                 # Confirm deletion
@@ -506,6 +559,21 @@ class TaskManagementComponent:
                         st.error("Failed to delete task.")
                 else:
                     st.warning("Please confirm deletion by checking the box above.")
+
+    def _render_sequences_management(self, tasksmanager: TasksManager):
+        """Render the sequences management view for a task manager."""
+        if not tasksmanager:
+            st.warning("Please select a task manager to manage sequences.")
+            return
+        
+        st.write(f"### Sequences for: {tasksmanager.name}")
+        
+        # Import task sequence component
+        from .task_sequence_component import TaskSequenceComponent
+        
+        # Create and render the component
+        sequence_component = TaskSequenceComponent(self.controller)
+        sequence_component.render(tasksmanager.id)
 
 def render_task_management(controller: TaskHierarchyController):
     """Render the task management component."""

@@ -42,6 +42,8 @@ from ...controllers.persistence_controller import save_to_storage
 from src.chat import get_state_dir
 import asyncio
 import time
+from ..components.task_tree_visualization_component import TaskTreeVisualizationComponent
+from ..components.task_tree_demo_component import TaskTreeDemoComponent
 
 class TaskHierarchyController:
     """Controller for task hierarchy view with task management capabilities."""
@@ -273,8 +275,37 @@ class TaskHierarchyController:
             created_task = self.global_persistence.tasks.create(task)
             print(f"🔄 Created task {created_task.name} in global persistence")
             
-            # Auto-save state after change
+            # Auto-save state after change - try both strategies
             self.trigger_save_state()
+            
+            # Ensure it's saved with direct approach as well
+            self._fallback_synchronous_save()
+            
+            # Directly update the metadata.json to point to this state
+            try:
+                from pathlib import Path
+                import json
+                from datetime import datetime
+                
+                state_dir = Path(__file__).parent.parent.parent.parent.parent / "state"
+                metadata_path = state_dir / "metadata.json"
+                
+                metadata = {}
+                if metadata_path.exists():
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                
+                metadata["last_used_state"] = "task_hierarchy_state"
+                metadata["last_updated"] = datetime.now().isoformat()
+                metadata["last_task_id"] = created_task.id
+                metadata["last_tm_id"] = tasksmanager_id
+                
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                
+                self.logger.info(f"Updated metadata to track new task {created_task.id}")
+            except Exception as e:
+                self.logger.error(f"Error updating metadata after task creation: {str(e)}")
             
             return created_task
         except Exception as e:
@@ -289,15 +320,33 @@ class TaskHierarchyController:
         try:
             self.logger.info(f"Updating task {task_id} with name={name}, tasksmanager_id={tasksmanager_id}, model={model}")
             
+            import streamlit as st
+            if hasattr(st, 'session_state'):
+                # Clear any previous errors
+                st.session_state.last_error = None
+            
             # Get existing task from global persistence
             task = self.global_persistence.tasks.read(task_id)
             if not task:
-                self.logger.error(f"Task not found in global persistence: {task_id}")
+                error_msg = f"Task not found in global persistence: {task_id}"
+                self.logger.error(error_msg)
+                if hasattr(st, 'session_state'):
+                    st.session_state.last_error = error_msg
                 return None
                 
             # Log the task before updates
             self.logger.info(f"Original task: {task.name}, manager_id: {task.tasksmanager_id}")
-                
+            
+            # Validate that the task manager exists if changing it
+            if tasksmanager_id and tasksmanager_id != task.tasksmanager_id:
+                task_manager = self.global_persistence.tasksmanagers.read(tasksmanager_id)
+                if not task_manager:
+                    error_msg = f"Task manager {tasksmanager_id} not found when updating task"
+                    self.logger.error(error_msg)
+                    if hasattr(st, 'session_state'):
+                        st.session_state.last_error = error_msg
+                    return None
+                    
             # Update fields if provided
             if name:
                 task.name = name
@@ -313,6 +362,7 @@ class TaskHierarchyController:
             # Update system message if provided
             if system_message is not None:
                 # Find existing system message or create new one
+                from ...models.message import Message
                 system_messages = [msg for msg in task.messages if msg.role == "system"]
                 if system_messages:
                     self.logger.info(f"Updating existing system message for task {task_id}")
@@ -320,22 +370,82 @@ class TaskHierarchyController:
                 else:
                     self.logger.info(f"Creating new system message for task {task_id}")
                     task.messages.append(Message(role="system", content=system_message))
+            
+            # Ensure all messages are properly normalized
+            self.logger.info(f"Normalizing messages for task {task_id}")
+            try:
+                # Call the normalization method to ensure all messages are proper Message objects
+                task.normalize_messages()
+                self.logger.info(f"Successfully normalized {len(task.messages)} messages")
+            except Exception as norm_error:
+                error_msg = f"Error normalizing messages: {str(norm_error)}"
+                self.logger.error(error_msg)
+                if hasattr(st, 'session_state'):
+                    st.session_state.last_error = error_msg
+                return None
+                
+            # Validate task before saving
+            try:
+                # Check if the task has the correct attribute types
+                if not isinstance(task.name, str):
+                    error_msg = f"Task name must be a string, got {type(task.name)}"
+                    self.logger.error(error_msg)
+                    if hasattr(st, 'session_state'):
+                        st.session_state.last_error = error_msg
+                    return None
+                
+                # More validation as needed
+                self.logger.info("Task validated successfully")
+            except Exception as validation_error:
+                error_msg = f"Task validation error: {str(validation_error)}"
+                self.logger.error(error_msg)
+                if hasattr(st, 'session_state'):
+                    st.session_state.last_error = error_msg
+                return None
                     
             # Update in global persistence
-            self.logger.info(f"Saving updated task to global persistence")
-            updated_task = self.global_persistence.tasks.update(task_id, task)
-            print(f"🔄 Updated task {updated_task.name} in global persistence")
-            
-            # Log the updated task
-            self.logger.info(f"Task updated: {updated_task.name}, manager_id: {updated_task.tasksmanager_id}")
-            
-            # Auto-save state after change
-            self.logger.info("Triggering state save after task update")
-            self.trigger_save_state()
-            
-            return updated_task
+            try:
+                self.logger.info(f"Saving updated task to global persistence")
+                updated_task = self.global_persistence.tasks.update(task_id, task)
+                
+                if not updated_task:
+                    error_msg = "Task update returned None from persistence layer"
+                    self.logger.error(error_msg)
+                    if hasattr(st, 'session_state'):
+                        st.session_state.last_error = error_msg
+                    return None
+                    
+                print(f"🔄 Updated task {updated_task.name} in global persistence")
+                
+                # Log the updated task
+                self.logger.info(f"Task updated: {updated_task.name}, manager_id: {updated_task.tasksmanager_id}")
+                
+                # Auto-save state after change
+                self.logger.info("Triggering state save after task update")
+                # Save synchronously first to ensure immediate persistence
+                self._fallback_synchronous_save()
+                # Then trigger the async save mechanism
+                self.trigger_save_state()
+                
+                return updated_task
+            except Exception as update_error:
+                error_msg = f"Error updating task in persistence: {str(update_error)}"
+                self.logger.error(error_msg)
+                if hasattr(st, 'session_state'):
+                    st.session_state.last_error = error_msg
+                return None
+                
         except Exception as e:
-            self.logger.error(f"Error updating task: {str(e)}")
+            error_msg = f"Error updating task: {str(e)}"
+            self.logger.error(error_msg)
+            import traceback
+            self.logger.error(traceback.format_exc())
+            
+            # Store error in session state if available
+            import streamlit as st
+            if hasattr(st, 'session_state'):
+                st.session_state.last_error = error_msg
+                
             return None
             
     def delete_task(self, task_id: str) -> bool:
@@ -355,42 +465,283 @@ class TaskHierarchyController:
             
     async def run_task_sequence(self, tasksmanager_id: str, task_ids: List[str], 
                               running_extra_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Run a sequence of tasks with output handover between tasks.
+        """Run a sequence of tasks with handover of outputs between them."""
+        try:
+            # Initialize task runner if needed
+            if not self.task_runner:
+                self.task_runner = TaskRunner(self.global_persistence)
+                # Set this controller as the task runner's controller
+                self.task_runner._controller = self
+                await self.task_runner.initialize()
+                
+            # Run the task sequence
+            result = await self.task_runner.run_task_sequence(
+                tasksmanager_id=tasksmanager_id,
+                task_ids=task_ids,
+                initial_context=running_extra_params
+            )
+            
+            return result
+        except Exception as e:
+            self.logger.error(f"Error running task sequence: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {"error": str(e)}
+            
+    async def run_task_sequence_by_id(self, tasksmanager_id: str, sequence_id: str, initial_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run a task sequence by its ID.
         
         Args:
             tasksmanager_id: ID of the task manager
-            task_ids: List of task IDs to execute in sequence
-            running_extra_params: Optional parameters to pass to the first task
+            sequence_id: ID of the sequence to run
+            initial_context: Optional initial context containing messages and user input
             
         Returns:
-            Dict containing results for each task
+            Task sequence execution results
         """
         try:
             # Initialize task runner if needed
             if not self.task_runner:
                 self.task_runner = TaskRunner(self.global_persistence)
+                # Set this controller as the task runner's controller
+                self.task_runner._controller = self
                 await self.task_runner.initialize()
             
-            # Run task sequence
-            results = await self.task_runner.run_task_sequence(
+            # Log message context being passed
+            if initial_context and 'messages' in initial_context:
+                msg_count = len(initial_context['messages'])
+                self.logger.info(f"Passing {msg_count} messages to task sequence execution")
+                if 'user_query' in initial_context:
+                    self.logger.info(f"User query: {initial_context['user_query'][:50]}...")
+                
+            # Run the task sequence with context
+            result = await self.task_runner.run_task_sequence_by_id(
                 tasksmanager_id=tasksmanager_id,
-                task_ids=task_ids,
-                running_extra_params=running_extra_params
+                sequence_id=sequence_id,
+                initial_context=initial_context
             )
             
-            return results
+            return result
         except Exception as e:
-            self.logger.error(f"Error executing task sequence: {str(e)}")
+            self.logger.error(f"Error running task sequence by ID: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return {"error": str(e)}
+    
+    async def create_task_sequence(self, tasksmanager_id: str, name: str, description: str, task_ids: List[str]) -> str:
+        """Create a new task sequence.
+        
+        Args:
+            tasksmanager_id: ID of the task manager
+            name: Name of the sequence
+            description: Description of the sequence
+            task_ids: List of task IDs in the sequence
+            
+        Returns:
+            ID of the created sequence
+        """
+        try:
+            # Get TasksManager
+            tasksmanager = self.global_persistence.tasksmanagers.read(tasksmanager_id)
+            if not tasksmanager:
+                raise ValueError(f"TasksManager not found: {tasksmanager_id}")
+            
+            # Import TaskSequence
+            from ...models.tasks_manager import TaskSequence
+            
+            # Create sequence
+            sequence = TaskSequence(
+                name=name,
+                description=description,
+                task_ids=task_ids
+            )
+            
+            # Add to TasksManager
+            sequence_id = tasksmanager.add_sequence(sequence)
+            
+            # Update TasksManager
+            self.global_persistence.tasksmanagers.update(tasksmanager_id, tasksmanager)
+            
+            # Trigger state save
+            self.trigger_save_state()
+            
+            # Also ensure it's saved with direct approach
+            self._fallback_synchronous_save()
+            
+            # Directly update the metadata.json to track this sequence
+            try:
+                from pathlib import Path
+                import json
+                from datetime import datetime
+                
+                state_dir = Path(__file__).parent.parent.parent.parent.parent / "state"
+                metadata_path = state_dir / "metadata.json"
+                
+                metadata = {}
+                if metadata_path.exists():
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                
+                metadata["last_used_state"] = "task_hierarchy_state"
+                metadata["last_updated"] = datetime.now().isoformat()
+                metadata["last_tm_id"] = tasksmanager_id
+                
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                
+                self.logger.info(f"Updated metadata after creating sequence {sequence_id}")
+            except Exception as e:
+                self.logger.error(f"Error updating metadata after sequence creation: {str(e)}")
+            
+            self.logger.info(f"Created task sequence '{name}' with ID {sequence_id}")
+            return sequence_id
+        except Exception as e:
+            self.logger.error(f"Error creating task sequence: {str(e)}")
             import traceback
             self.logger.error(traceback.format_exc())
             raise
     
+    async def update_task_sequence(self, tasksmanager_id: str, sequence_id: str, 
+                               name: Optional[str] = None, description: Optional[str] = None, 
+                               task_ids: Optional[List[str]] = None) -> bool:
+        """Update an existing task sequence.
+        
+        Args:
+            tasksmanager_id: ID of the task manager
+            sequence_id: ID of the sequence to update
+            name: New name for the sequence
+            description: New description for the sequence
+            task_ids: New list of task IDs for the sequence
+            
+        Returns:
+            True if the sequence was updated, False otherwise
+        """
+        try:
+            # Get TasksManager
+            tasksmanager = self.global_persistence.tasksmanagers.read(tasksmanager_id)
+            if not tasksmanager:
+                raise ValueError(f"TasksManager not found: {tasksmanager_id}")
+            
+            # Get existing sequence
+            sequence = tasksmanager.get_sequence(sequence_id)
+            if not sequence:
+                raise ValueError(f"Task sequence not found: {sequence_id}")
+            
+            # Update fields
+            if name is not None:
+                sequence.name = name
+            if description is not None:
+                sequence.description = description
+            if task_ids is not None:
+                sequence.task_ids = task_ids
+            
+            sequence.updated_at = datetime.now()
+            
+            # Update in TasksManager
+            success = tasksmanager.update_sequence(sequence_id, sequence)
+            
+            # Update TasksManager
+            self.global_persistence.tasksmanagers.update(tasksmanager_id, tasksmanager)
+            
+            # Trigger state save
+            self.trigger_save_state()
+            
+            self.logger.info(f"Updated task sequence {sequence_id}")
+            return success
+        except Exception as e:
+            self.logger.error(f"Error updating task sequence: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            raise
+    
+    async def delete_task_sequence(self, tasksmanager_id: str, sequence_id: str) -> bool:
+        """Delete a task sequence.
+        
+        Args:
+            tasksmanager_id: ID of the task manager
+            sequence_id: ID of the sequence to delete
+            
+        Returns:
+            True if the sequence was deleted, False otherwise
+        """
+        try:
+            # Get TasksManager
+            tasksmanager = self.global_persistence.tasksmanagers.read(tasksmanager_id)
+            if not tasksmanager:
+                raise ValueError(f"TasksManager not found: {tasksmanager_id}")
+            
+            # Remove sequence
+            success = tasksmanager.remove_sequence(sequence_id)
+            
+            # Update TasksManager
+            if success:
+                self.global_persistence.tasksmanagers.update(tasksmanager_id, tasksmanager)
+                
+                # Trigger state save
+                self.trigger_save_state()
+            
+            self.logger.info(f"Deleted task sequence {sequence_id}: {success}")
+            return success
+        except Exception as e:
+            self.logger.error(f"Error deleting task sequence: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            raise
+    
+    async def get_task_sequences(self, tasksmanager_id: str) -> List[Dict[str, Any]]:
+        """Get all task sequences for a TasksManager.
+        
+        Args:
+            tasksmanager_id: ID of the task manager
+            
+        Returns:
+            List of task sequences as dictionaries
+        """
+        try:
+            # Get TasksManager
+            tasksmanager = self.global_persistence.tasksmanagers.read(tasksmanager_id)
+            if not tasksmanager:
+                raise ValueError(f"TasksManager not found: {tasksmanager_id}")
+            
+            # Get sequences
+            sequences = tasksmanager.get_sequences()
+            
+            # Convert to dicts for the view
+            return [
+                {
+                    "id": seq.id,
+                    "name": seq.name,
+                    "description": seq.description,
+                    "task_ids": seq.task_ids,
+                    "created_at": seq.created_at,
+                    "updated_at": seq.updated_at,
+                    "enabled": seq.enabled,
+                    "task_count": len(seq.task_ids)
+                }
+                for seq in sequences
+            ]
+        except Exception as e:
+            self.logger.error(f"Error getting task sequences: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return []
+
     def get_system_message(self, obj: Any) -> Optional[str]:
         """Extract system message from a task or task manager."""
         if not obj or not hasattr(obj, 'messages'):
             return None
             
-        system_messages = [msg.content for msg in obj.messages if msg.role == "system"]
+        system_messages = []
+        for msg in obj.messages:
+            # Handle both Message objects and dictionaries
+            if isinstance(msg, dict):
+                if msg.get('role') == "system":
+                    system_messages.append(msg.get('content', ''))
+            else:
+                # Assume it's a Message-like object with role and content attributes
+                if hasattr(msg, 'role') and msg.role == "system" and hasattr(msg, 'content'):
+                    system_messages.append(msg.content)
+                    
         return system_messages[0] if system_messages else None
 
     async def initialize(self):
@@ -717,10 +1068,15 @@ class TaskHierarchyController:
             if loop.is_running():
                 # If we're already in an async context, create a task
                 self.logger.info("Event loop is running, creating async task to save state")
-                save_task = asyncio.create_task(self.save_state())
-                save_task.add_done_callback(
-                    lambda t: self.logger.info(f"Save state task completed with result: {t.result() if not t.exception() else 'Error: ' + str(t.exception())}")
-                )
+                try:
+                    save_task = asyncio.create_task(self.save_state())
+                    save_task.add_done_callback(
+                        lambda t: self.logger.info(f"Save state task completed with result: {t.result() if not t.exception() else 'Error: ' + str(t.exception())}")
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error creating save task: {str(e)}", exc_info=True)
+                    # Fall back to synchronous save
+                    self._fallback_synchronous_save()
             else:
                 # Otherwise run a new event loop
                 self.logger.info("No event loop running, creating new event loop for state save")
@@ -732,8 +1088,72 @@ class TaskHierarchyController:
                     self.logger.info(f"Completed state save in new event loop with result: {result}")
                 except Exception as e:
                     self.logger.error(f"Error in save loop: {str(e)}", exc_info=True)
+                    # Fall back to synchronous save
+                    self._fallback_synchronous_save()
         except Exception as e:
             self.logger.error(f"Error triggering save state: {str(e)}", exc_info=True)
+            # Last resort: try direct file save
+            self._fallback_synchronous_save()
+            
+    def _fallback_synchronous_save(self):
+        """Fallback method for saving state synchronously when async fails."""
+        try:
+            self.logger.info("Attempting fallback synchronous state save...")
+            import os
+            from src.server.controllers.persistence_controller import save_to_storage
+            from src.server.models.persistence_models import StorageLocation, StorageType
+            from pathlib import Path
+            
+            # Get state directory
+            state_dir = Path(__file__).parent.parent.parent.parent.parent / "state"
+            state_dir.mkdir(exist_ok=True)
+            
+            # Create storage location
+            location = StorageLocation(
+                type=StorageType.file,
+                location=str(state_dir),
+                state_name="task_hierarchy_state"
+            )
+            
+            # Direct synchronous save
+            result = save_to_storage(self.global_persistence, location)
+            self.logger.info(f"Fallback synchronous save completed: {result}")
+            
+            # Update metadata.json to point to this state file
+            try:
+                metadata_path = state_dir / "metadata.json"
+                import json
+                metadata = {}
+                if metadata_path.exists():
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                
+                metadata["last_used_state"] = "task_hierarchy_state"
+                from datetime import datetime
+                metadata["last_updated"] = datetime.now().isoformat()
+                
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                    
+                self.logger.info("Updated metadata.json to point to task_hierarchy_state")
+            except Exception as e:
+                self.logger.error(f"Error updating metadata: {str(e)}")
+                
+            # Update session state if in Streamlit context
+            try:
+                import streamlit as st
+                if hasattr(st, "session_state"):
+                    st.session_state.save_status = "saved"
+                    import time
+                    st.session_state.last_save_time = time.time()
+                    self.logger.info("Updated Streamlit session state with save status")
+            except Exception as e:
+                self.logger.error(f"Error updating session state: {str(e)}")
+                
+            return result
+        except Exception as e:
+            self.logger.error(f"Error in fallback synchronous save: {str(e)}", exc_info=True)
+            return None
 
     # Add this method after the get_task_tree method
     async def get_task_tree_with_handover(self):
@@ -835,3 +1255,246 @@ class TaskHierarchyController:
             import traceback
             self.logger.error(f"Stack trace: {traceback.format_exc()}")
             return None
+
+    def task_hierarchy_view_handle(self):
+        """Handle the task hierarchy view and add demo tab."""
+        # Add tabs for hierarchy and demo
+        tabs = st.tabs(["Task Hierarchy", "Task Tree Demo"])
+        
+        with tabs[0]:
+            # Existing hierarchy view 
+            self.render_task_hierarchy()
+        
+        with tabs[1]:
+            # Add demo component
+            demo_component = TaskTreeDemoComponent(self)
+            demo_component.render()
+            
+    async def get_tree_data(self):
+        """Async helper to get tree data without causing event loop conflicts."""
+        try:
+            return await self.get_task_tree_with_handover()
+        except Exception as e:
+            self.logger.error(f"Error getting task tree: {str(e)}")
+            return None
+
+    def render_task_hierarchy(self):
+        """Render the task hierarchy with visualization support for task trees."""
+        # Create columns for the view
+        col1, col2 = st.columns([1, 3])
+
+        # Column 1: Task Hierarchy Tree
+        with col1:
+            st.write("### Task Hierarchy")
+            
+            # Get the tree data using a safer approach
+            try:
+                # Try to use a non-blocking approach first
+                if hasattr(self, '_tree_data_cache'):
+                    tree = self._tree_data_cache
+                else:
+                    # Fall back to a synchronous approach for the first load
+                    # This is less ideal but avoids the asyncio conflicts
+                    tree = self._get_task_tree_synchronously()
+                    # Cache the result to avoid repeated calls
+                    self._tree_data_cache = tree
+                    
+                if tree:
+                    self.tree_component.render(tree)
+                else:
+                    st.error("Could not load task hierarchy")
+            except Exception as e:
+                st.error(f"Error loading task hierarchy: {str(e)}")
+                st.info("Please refresh the page if tree doesn't display correctly")
+
+        # Column 2: Selected Task/Manager Details or Task Tree Visualization
+        with col2:
+            # Check if this is a task tree state
+            tree_id = None
+            try:
+                # Safely check if collection_exists method is available
+                if hasattr(self.global_persistence, 'collection_exists') and self.global_persistence.collection_exists("task_trees"):
+                    for tree_item_id in self.global_persistence.collection("task_trees").list():
+                        tree_metadata = self.global_persistence.collection("task_trees").read(tree_item_id)
+                        tree_id = tree_item_id
+                        break
+            except Exception as e:
+                self.logger.error(f"Error checking task tree collections: {str(e)}")
+                # Continue gracefully without tree visualization
+            
+            # If tree_id is found, show visualization
+            if tree_id:
+                st.write("### Task Tree Visualization")
+                viz_component = TaskTreeVisualizationComponent(self.global_persistence)
+                viz_component.render(tree_id)
+            elif self.view_state.selected_node:
+                # Handle selected node display
+                node_id = self.view_state.selected_node
+                # Show task or manager details depending on selected node
+                # This is existing functionality that should remain
+                pass
+            else:
+                st.write("### Task Management")
+                st.write("Select a task or manager from the tree to view details.")
+                
+    def _get_task_tree_synchronously(self):
+        """Non-async version of get_task_tree_with_handover to avoid event loop issues."""
+        # This is a simplified version that doesn't require async/await
+        try:
+            # Get all tasks
+            tasks = list(self.persistence_model.tasks.list())
+            
+            # Create root node
+            from ..models.tree_node import TreeNode
+            from uuid import UUID
+            
+            root = TreeNode(
+                id=UUID('00000000-0000-0000-0000-000000000000'),
+                name="Task Hierarchy",
+                type="root",
+                children=[]
+            )
+            
+            # Build a dictionary of tasks by ID for quick lookup
+            tasks_by_id = {str(task.id): task for task in tasks}
+            
+            # Group tasks by task manager ID
+            tasks_by_manager = {}
+            for task in tasks:
+                manager_id = str(task.tasksmanager_id)
+                if manager_id not in tasks_by_manager:
+                    tasks_by_manager[manager_id] = []
+                tasks_by_manager[manager_id].append(task)
+            
+            # Get all task managers
+            task_managers = list(self.persistence_model.tasksmanagers.list())
+            
+            # Create manager nodes
+            for manager in task_managers:
+                try:
+                    manager_id_str = str(manager.id)
+                    manager_node = TreeNode(
+                        id=UUID(manager_id_str),
+                        name=manager.name,
+                        type="tasksmanager",
+                        data={"id": manager_id_str, "model": manager.model},
+                        children=[]
+                    )
+                    
+                    # Add tasks for this manager
+                    manager_tasks = tasks_by_manager.get(manager_id_str, [])
+                    for task in manager_tasks:
+                        task_id_str = str(task.id)
+                        task_node = TreeNode(
+                            id=UUID(task_id_str),
+                            name=task.name,
+                            type="task",
+                            data={
+                                "id": task_id_str, 
+                                "model": getattr(task, "model", None),
+                                "tasksmanager_id": manager_id_str,
+                                "plugin": getattr(task, "plugin", "default"),
+                                "input_from": getattr(task, "input_from_tasks", [])
+                            },
+                            children=[]
+                        )
+                        manager_node.children.append(task_node)
+                    
+                    root.children.append(manager_node)
+                except Exception as e:
+                    self.logger.error(f"Error processing manager {getattr(manager, 'id', 'unknown')}: {str(e)}")
+                    continue
+            
+            return root
+            
+        except Exception as e:
+            self.logger.error(f"Error building task tree: {str(e)}")
+            # Return an empty root node instead of an empty list
+            from ..models.tree_node import TreeNode
+            from uuid import UUID
+            return TreeNode(
+                id=UUID('00000000-0000-0000-0000-000000000000'),
+                name="Task Hierarchy",
+                type="root",
+                children=[]
+            )
+
+    def load_state(self, state_file: str) -> str:
+        """Load the specified state file."""
+        try:
+            state_path = Path(state_file)
+            if not state_path.exists():
+                return f"State file not found: {state_file}"
+            
+            state_loader = StateLoader()
+            loaded_state = state_loader.load_state_from_file(str(state_path))
+            
+            if not loaded_state:
+                return f"Failed to load state from {state_file}"
+            
+            # Reset the global persistence model
+            self.global_persistence.reset()
+            
+            # Load the state into global persistence
+            state_loader.restore_state_to_model(self.global_persistence, loaded_state)
+            
+            # Update view state with context from loaded state
+            if "context_state" in loaded_state:
+                context = loaded_state["context_state"]
+                if "current_tasksmanager_id" in context:
+                    self.view_state.current_tasksmanager_id = context["current_tasksmanager_id"]
+                if "current_task_id" in context:
+                    self.view_state.current_task_id = context["current_task_id"]
+            
+            return f"Successfully loaded state from {state_file}"
+        except Exception as e:
+            self.logger.error(f"Error loading state: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return f"Error loading state: {str(e)}"
+
+    def update_tasksmanager(self, tasksmanager_id: str, **kwargs) -> str:
+        """Update a task manager."""
+        # Get the existing task manager
+        tasksmanager = self.global_persistence.tasksmanagers.read(tasksmanager_id)
+        if not tasksmanager:
+            raise ValueError(f"TasksManager with ID {tasksmanager_id} not found")
+        
+        # Extract handover settings
+        enable_handover = kwargs.pop('enable_handover', None)
+        task_order = kwargs.pop('task_order', None)
+        
+        # Update standard fields
+        for key, value in kwargs.items():
+            if hasattr(tasksmanager, key):
+                setattr(tasksmanager, key, value)
+        
+        # Update handover settings if provided
+        if enable_handover is not None:
+            tasksmanager.set_handover_enabled(enable_handover)
+        
+        if task_order is not None:
+            tasksmanager.set_task_order(task_order)
+        
+        # Update timestamp
+        tasksmanager.updated_at = datetime.now()
+        
+        # Update in persistence
+        self.global_persistence.tasksmanagers.update(tasksmanager_id, tasksmanager)
+        
+        # Trigger state save
+        self.trigger_save_state()
+        
+        return tasksmanager_id
+
+    def get_tasks_for_tasksmanager(self, tasksmanager_id: str) -> List[Task]:
+        """Get all tasks for a specific task manager.
+        
+        Args:
+            tasksmanager_id: ID of the task manager to get tasks for
+            
+        Returns:
+            List of tasks associated with the specified task manager
+        """
+        tasks = self.get_tasks()
+        return [task for task in tasks if task.tasksmanager_id == tasksmanager_id]

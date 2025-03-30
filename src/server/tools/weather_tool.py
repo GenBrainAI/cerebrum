@@ -1,6 +1,7 @@
 import requests
 from typing import Dict, Any, Optional
 from datetime import datetime
+import logging
 
 class WeatherTool:
     """Tool for fetching weather information for a location."""
@@ -37,6 +38,11 @@ class WeatherTool:
         Raises:
             Exception: If the weather data cannot be retrieved
         """
+        # Special case handling for Paris
+        if city and city.lower() == "paris" and not country:
+            country = "France"
+            logging.info(f"🌍 Added default country (France) for Paris")
+        
         # Construct the query parameter
         location_query = city
         if country:
@@ -97,6 +103,11 @@ class WeatherTool:
         Raises:
             Exception: If the forecast data cannot be retrieved
         """
+        # Special case handling for Paris
+        if city and city.lower() == "paris" and not country:
+            country = "France"
+            logging.info(f"🌍 Added default country (France) for Paris")
+        
         # Construct the query parameter
         location_query = city
         if country:

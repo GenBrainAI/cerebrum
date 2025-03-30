@@ -1,11 +1,40 @@
 from __future__ import annotations
 from datetime import date, datetime
-
+import uuid
 import re
 from typing import Any, Dict, List, Optional
 
 from pydantic import AnyUrl, BaseModel, EmailStr, Field, validator
 from .message import Message
+
+
+class TaskSequence(BaseModel):
+    """Represents an ordered sequence of tasks with handover enabled.
+    
+    Attributes:
+        id: Unique identifier for the sequence
+        name: Name of the sequence
+        description: Description of the sequence
+        task_ids: Ordered list of task IDs in the sequence
+        created_at: When the sequence was created
+        updated_at: When the sequence was last updated
+        enabled: Whether the sequence is enabled
+    """
+    
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    description: Optional[str] = Field(default="")
+    task_ids: List[str] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    enabled: bool = Field(default=True)
+    
+    def __init__(self, **data):
+        """Initialize a task sequence."""
+        super().__init__(**data)
+        if not self.created_at:
+            self.created_at = datetime.now()
+        self.updated_at = datetime.now()
 
 
 class TasksManager(BaseModel):
@@ -39,6 +68,9 @@ class TasksManager(BaseModel):
     toolsets: Optional[List[str]] = Field(alias="toolsets", default=[])
     use_context: bool = Field(default=True)
     contexts: List[Dict] = Field(default_factory=list, description="Context references for the task manager")
+    task_sequences: Dict[str, TaskSequence] = Field(default_factory=dict, description="Task sequences for the task manager")
+    enable_handover: bool = False
+    task_order: List[str] = Field(default_factory=list)
 
     def update_context_config(
         self,
@@ -49,5 +81,95 @@ class TasksManager(BaseModel):
             self.use_context = use_context
             return True
         return False
+    
+    def add_sequence(self, sequence: TaskSequence) -> str:
+        """Add a new task sequence to the manager.
+        
+        Args:
+            sequence: The task sequence to add
+            
+        Returns:
+            The ID of the added sequence
+        """
+        if not hasattr(self, 'task_sequences'):
+            self.task_sequences = {}
+        self.task_sequences[sequence.id] = sequence
+        if hasattr(self, 'updated_at'):
+            self.updated_at = datetime.now()
+        return sequence.id
+    
+    def update_sequence(self, sequence_id: str, sequence: TaskSequence) -> bool:
+        """Update an existing task sequence.
+        
+        Args:
+            sequence_id: The ID of the sequence to update
+            sequence: The updated sequence
+            
+        Returns:
+            True if the sequence was updated, False otherwise
+        """
+        if not hasattr(self, 'task_sequences'):
+            self.task_sequences = {}
+        if sequence_id in self.task_sequences:
+            self.task_sequences[sequence_id] = sequence
+            if hasattr(self, 'updated_at'):
+                self.updated_at = datetime.now()
+            return True
+        return False
+    
+    def remove_sequence(self, sequence_id: str) -> bool:
+        """Remove a task sequence.
+        
+        Args:
+            sequence_id: The ID of the sequence to remove
+            
+        Returns:
+            True if the sequence was removed, False otherwise
+        """
+        if not hasattr(self, 'task_sequences'):
+            return False
+        if sequence_id in self.task_sequences:
+            del self.task_sequences[sequence_id]
+            if hasattr(self, 'updated_at'):
+                self.updated_at = datetime.now()
+            return True
+        return False
+    
+    def get_sequence(self, sequence_id: str) -> Optional[TaskSequence]:
+        """Get a task sequence by ID.
+        
+        Args:
+            sequence_id: The ID of the sequence to get
+            
+        Returns:
+            The task sequence, or None if not found
+        """
+        if not hasattr(self, 'task_sequences'):
+            return None
+        return self.task_sequences.get(sequence_id)
+    
+    def get_sequences(self) -> List[TaskSequence]:
+        """Get all task sequences.
+        
+        Returns:
+            A list of all task sequences
+        """
+        if not hasattr(self, 'task_sequences'):
+            self.task_sequences = {}
+        return list(self.task_sequences.values())
+
+    def set_task_order(self, task_ids: List[str]) -> bool:
+        """Set the order of tasks for handover execution."""
+        # Store the order without validation for now - the validation will happen
+        # at runtime since the tasks may be created later
+        self.task_order = task_ids
+        if hasattr(self, 'updated_at'):
+            self.updated_at = datetime.now()
+        return True
+    
+    def set_handover_enabled(self, enabled: bool) -> None:
+        """Enable or disable task handover."""
+        self.enable_handover = enabled
+        self.updated_at = datetime.now()
 
 TasksManager.update_forward_refs()

@@ -7,6 +7,13 @@ from typing import Optional
 from typing import List, Dict
 from datetime import datetime
 from pathlib import Path
+import traceback
+import sys
+import uuid
+import re
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 # Fix import paths
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
@@ -18,7 +25,7 @@ from src.server.controllers.persistence_controller import load_from_storage, sav
 from src.server.models.persistence_models import StorageLocation, StorageType
 from src.server.persistence.persistence_model import PersistenceModelBase 
 from src.server.views.models.view_types import ViewType
-
+from src.server.views.utils.async_utils import run_async_sync
 
 def get_project_root() -> Path:
     """Get the absolute path to the project root."""
@@ -539,110 +546,37 @@ def select_or_create_chat(chat_name: str, existing_tm_name: Optional[str] = None
 
 
 def initialize_session_state():
-    """Initialize session state variables."""
-    print("\n🔄 Initializing session state")
-    
-    # Track initialization to prevent multiple calls
-    if 'session_initialized' in st.session_state:
-        print("✅ Session already initialized, skipping")
-        
-        # Still increment rerun counter to detect potential loops
-        if 'rerun_count' in st.session_state:
-            st.session_state.rerun_count += 1
-            if st.session_state.rerun_count > 5:  # Threshold of 5 reruns
-                print(f"⚠️ Warning: High rerun count detected ({st.session_state.rerun_count})")
-                # Reset counter after warning
-                st.session_state.rerun_count = 0
-                
-                # Force break potential loops by ensuring selection tracking is synchronized
-                if 'tm_selector' in st.session_state and 'previous_tm_selection' in st.session_state:
-                    if st.session_state.tm_selector != st.session_state.previous_tm_selection:
-                        print(f"🔄 Synchronizing previous_tm_selection to break potential loop")
-                        st.session_state.previous_tm_selection = st.session_state.tm_selector
-                
-                if 'task_selector' in st.session_state and 'previous_task_selection' in st.session_state:
-                    if st.session_state.task_selector != st.session_state.previous_task_selection:
-                        print(f"🔄 Synchronizing previous_task_selection to break potential loop")
-                        st.session_state.previous_task_selection = st.session_state.task_selector
-                
-                # Force synchronization of current IDs with selected values
-                if 'tm_selector' in st.session_state and st.session_state.tm_selector:
-                    # Find the task manager ID for the selected name
-                    persistence_model = st.session_state.persistence_model
-                    tasksmanagers = persistence_model.tasksmanagers.list()
-                    for tm in tasksmanagers:
-                        if tm.name == st.session_state.tm_selector:
-                            print(f"🔄 Forcing current_tasksmanager_id to match selected: {tm.id}")
-                            st.session_state.current_tasksmanager_id = tm.id
-                            break
-                
-                # Also synchronize task selection
-                if 'task_selector' in st.session_state and st.session_state.task_selector:
-                    # Get current TM ID
-                    tm_id = st.session_state.get('current_tasksmanager_id')
-                    if tm_id:
-                        tasks = get_tasks_for_tasksmanager(tm_id)
-                        for task in tasks:
-                            if task.name == st.session_state.task_selector:
-                                print(f"🔄 Forcing current_task_id to match selected: {task.id}")
-                                st.session_state.current_task_id = task.id
-                                break
-        return
-    
-    # Initialize rerun counter
-    st.session_state.rerun_count = 0
-    
-    # Persistence and task runner
-    if 'persistence_model' not in st.session_state:
-        print("\n🆕 Creating new persistence model")
+    """Initialize session state variables if they don't exist."""
+    # Main required state variables
+    if "persistence_model" not in st.session_state:
         st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-        print("✅ Stored new persistence model in session state")
     
-    if 'task_runner' not in st.session_state:
+    if "task_runner" not in st.session_state:
         st.session_state.task_runner = TaskRunner(st.session_state.persistence_model)
+        # Schedule async initialization using our helper
+        run_async_sync(st.session_state.task_runner.initialize())
     
-    # Initialize basic session state
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
-    if 'current_tasksmanager_id' not in st.session_state:
+    # Task and conversation management
+    if "current_tasksmanager_id" not in st.session_state:
         st.session_state.current_tasksmanager_id = None
-    if 'current_task_id' not in st.session_state:
+    
+    if "current_task_id" not in st.session_state:
         st.session_state.current_task_id = None
-    if 'current_session_id' not in st.session_state:
+    
+    # Add support for sequences
+    if "current_sequence_id" not in st.session_state:
+        st.session_state.current_sequence_id = None
+    
+    if "current_session_id" not in st.session_state:
         st.session_state.current_session_id = None
-    if 'chat_title' not in st.session_state:
-        st.session_state.chat_title = "New Chat"
-    if 'creating_new_chat' not in st.session_state:
-        st.session_state.creating_new_chat = False
-    if 'current_view' not in st.session_state:
+    
+    # Add current_view initialization
+    if "current_view" not in st.session_state:
         st.session_state.current_view = None
-    if 'default_state_loaded' not in st.session_state:
-        st.session_state.default_state_loaded = False
-    if 'state_location' not in st.session_state:
-        st.session_state.state_location = None
-    if 'previous_tm_selection' not in st.session_state:
-        st.session_state.previous_tm_selection = None
-    if 'previous_task_selection' not in st.session_state:
-        st.session_state.previous_task_selection = None
-    
-    # State management variables
-    if 'selected_state_file' not in st.session_state:
-        st.session_state.selected_state_file = ""
-    if 'state_loaded' not in st.session_state:
-        st.session_state.state_loaded = False
-    if 'state_initialized' not in st.session_state:
-        st.session_state.state_initialized = False
-    if 'state_error_message' not in st.session_state:
-        st.session_state.state_error_message = None
-    if 'state_success_message' not in st.session_state:
-        st.session_state.state_success_message = None
-    if 'pending_state_load' not in st.session_state:
-        st.session_state.pending_state_load = None
-    if 'current_state_files' not in st.session_state:
-        st.session_state.current_state_files = None
-    
-    # Mark as initialized
-    st.session_state.session_initialized = True
+        
+    # Messages management
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
 def get_task_system_messages(task_id: str) -> List[Dict]:
     """Get system messages for a specific task"""
@@ -710,67 +644,40 @@ def get_chat_sessions(task_id: str) -> Dict[str, List[Dict]]:
     return {}
 
 def on_tm_select():
-    """Callback when TaskManager selection changes"""
-    # Store previous selection
-    previous_tm = st.session_state.get('previous_tm_selection')
-    current_tm = st.session_state.tm_selector
-    
-    print(f"\n🔍 DEBUG - on_tm_select callback:")
-    print(f"  Previous TM selection: {previous_tm}")
-    print(f"  Current TM selection: {current_tm}")
-    
-    # Only process if the selection has actually changed
-    if previous_tm != current_tm:
-        print(f"  TaskManager selection changed from {previous_tm} to {current_tm}")
-        # Update previous selection before processing to prevent loops
-        st.session_state.previous_tm_selection = current_tm
+    """Handle change in TaskManager selection."""
+    # ... existing code ...
+    # If tasksmanager changed, reset task selection and messages
+    if st.session_state.tm_selector != st.session_state.get('previous_tm_selection', None):
+        print(f"🔄 TaskManager changed from '{st.session_state.get('previous_tm_selection')}' to '{st.session_state.tm_selector}'")
+        st.session_state.previous_tm_selection = st.session_state.tm_selector
         
-        if current_tm == "+ New Chat":
-            print(f"  Creating new chat")
-            st.session_state.creating_new_chat = True
-            st.session_state.messages = []
-            st.session_state.current_session_id = None
-        else:
-            print(f"  Selecting existing chat")
-            st.session_state.creating_new_chat = False
-            
-            # Get the task manager ID from the name
-            persistence_model = st.session_state.persistence_model
-            tasksmanagers = persistence_model.tasksmanagers.list()
-            selected_tm_id = None
-            
+        # Get the selected TM id
+        try:
+            tasksmanagers = get_available_tasksmanagers()
             for tm in tasksmanagers:
-                if tm.name == current_tm:
-                    selected_tm_id = tm.id
-                    break
-            
-            if selected_tm_id:
-                print(f"  Found TM ID: {selected_tm_id}")
-                
-                # Only update if the ID has changed to prevent unnecessary reruns
-                if st.session_state.get('current_tasksmanager_id') != selected_tm_id:
-                    print(f"  Updating current_tasksmanager_id from {st.session_state.get('current_tasksmanager_id')} to {selected_tm_id}")
-                    st.session_state.current_tasksmanager_id = selected_tm_id
+                if tm.name == st.session_state.tm_selector:
+                    st.session_state.current_tasksmanager_id = tm.id
                     
-                    # Reset previous task selection to prevent rerun loops
-                    st.session_state.previous_task_selection = None
+                    # Reset task selection
+                    st.session_state.current_task_id = None
+                    # Reset sequence ID when changing task manager
+                    st.session_state.current_sequence_id = None
+                    st.session_state.messages = []
                     
-                    # Get the first task for this TM
-                    tasks = get_tasks_for_tasksmanager(selected_tm_id)
+                    # Try to select first task if available
+                    tasks = get_tasks_for_tasksmanager(tm.id)
                     if tasks:
                         first_task = tasks[0]
-                        print(f"  Setting first task: {first_task.name} (ID: {first_task.id})")
                         st.session_state.current_task_id = first_task.id
                         
-                        # Create new session for selected task
-                        print(f"  Creating new session for task: {first_task.id}")
+                        # Create new session for this task
                         session_id = create_new_session(first_task.id)
                         st.session_state.current_session_id = session_id
-                        st.session_state.messages = []
-                else:
-                    print(f"  TM ID already set to {selected_tm_id}, skipping update")
-    else:
-        print(f"  No change in TaskManager selection, skipping processing")
+                    break
+        except Exception as e:
+            st.error(f"Error selecting TaskManager: {str(e)}")
+            print(f"❌ Error in on_tm_select: {e}")
+    # ... existing code ...
 
 def get_available_tasksmanagers():
     """Get list of available TasksManagers sorted by creation date"""
@@ -803,38 +710,150 @@ def get_tasks_for_tasksmanager(tasksmanager_id: str):
         st.error(f"Error fetching tasks: {str(e)}")
         return []
 
-async def process_message(prompt: str, 
-                        tasksmanager_id: str, 
-                        task_id: str, 
-                        messages: list):
-    """Process a user message and get AI response"""
-    # Use session state persistence model and task runner
-    persistence_model = st.session_state.persistence_model
-    task_runner = st.session_state.task_runner
-    
-    # Create new message for the prompt
-    new_message = Message(
-        role="user",
-        content=prompt,
-        file_ids=None,
-        created_at=None,
-        updated_at=None
-    )
-    task = persistence_model.tasks.read(task_id)
-    task.messages.append(new_message)
-    persistence_model.tasks.update(task_id, task)    
+async def process_message(task_id: str, prompt: str) -> str:
+    """Process user message and get AI response."""
     try:
-        response = await task_runner.run_task(
-            tasksmanager_id=tasksmanager_id,
+        # Clear any previous assistant message that might be pending before adding the new user message
+        if st.session_state.messages and len(st.session_state.messages) > 0:
+            last_msg = st.session_state.messages[-1]
+            if isinstance(last_msg, dict) and last_msg.get('role') == 'assistant' and not last_msg.get('content'):
+                st.session_state.messages.pop()
+            elif hasattr(last_msg, 'role') and last_msg.role == 'assistant' and not last_msg.content:
+                st.session_state.messages.pop()
+        
+        # Get task runner from session state
+        task_runner = st.session_state.task_runner
+        
+        # Prepare message context - do this ONCE at the top
+        message_context = {'messages': st.session_state.messages, 'user_input': prompt, 'user_query': prompt}
+        
+        # Create messages to save (excluding system messages) - define once and reuse
+        messages_to_save = []
+        for msg in st.session_state.messages:
+            if isinstance(msg, Message) and msg.role != 'system':
+                messages_to_save.append(msg)
+            elif isinstance(msg, dict) and msg.get('role') != 'system':
+                messages_to_save.append(Message(**msg))
+        
+        # Check for sequences in the tasksmanager
+        try:
+            # Get task manager ID
+            tm_id = st.session_state.current_tasksmanager_id
+            tasksmanager = st.session_state.persistence_model.tasksmanagers.read(tm_id)
+            
+            # Look for sequences where this task is a member
+            sequence_id = None
+            sequence = None
+            
+            # Check task_sequences dictionary
+            if hasattr(tasksmanager, 'task_sequences') and tasksmanager.task_sequences:
+                for seq_id, seq in tasksmanager.task_sequences.items():
+                    if task_id in seq.task_ids:
+                        sequence_id = seq_id
+                        sequence = seq
+                        print(f"✅ Found sequence: {seq.name} for task ID {task_id}")
+                        break
+                
+                if sequence and task_id in sequence.task_ids:
+                    print(f"✅ Task {task_id} is in sequence {sequence.name}")
+                    
+                    # Add the prompt to the task's input data
+                    for i, tid in enumerate(sequence.task_ids):
+                        if tid == task_id:
+                            # Set input for this task
+                            task = st.session_state.persistence_model.tasks.read(tid)
+                            # Ensure task has data attribute
+                            if not hasattr(task, 'data'):
+                                task.data = {}
+                            task.data["user_input"] = prompt
+                            st.session_state.persistence_model.tasks.update(tid, task)
+                    
+                    # Run the whole sequence with message context
+                    with st.spinner("Running task sequence..."):
+                        print(f"🚀 Running task sequence: {sequence.name} with TaskManager ID {tm_id}")
+                        print(f"📨 Passing {len(message_context['messages'])} messages to sequence")
+                        
+                        sequence_result = await task_runner.run_task_sequence_by_id(
+                            tasksmanager_id=tm_id,
+                            sequence_id=sequence_id,
+                            initial_context=message_context
+                        )
+                    
+                    print(f"✅ Sequence executed with result: {sequence_result}")
+                    
+                    # Extract the response from the result
+                    if "response" in sequence_result and sequence_result["response"]:
+                        content = sequence_result["response"]
+                    elif "results" in sequence_result:
+                        # Try to get the result of the last task in the sequence
+                        last_task_id = sequence.task_ids[-1]
+                        if last_task_id in sequence_result["results"]:
+                            last_result = sequence_result["results"][last_task_id]
+                            if isinstance(last_result, dict) and "response" in last_result:
+                                content = last_result["response"]
+                            else:
+                                content = str(last_result)
+                        else:
+                            content = f"Sequence executed, but no result found for last task {last_task_id}"
+                    else:
+                        content = str(sequence_result)
+                    
+                    # Add sequence result as assistant message
+                    assistant_message = Message(
+                        role="assistant",
+                        content=content,
+                        file_ids=None,
+                        created_at=None,
+                        updated_at=None
+                    )
+                    messages_to_save.append(assistant_message)
+                    
+                    # Save to persistence model
+                    save_chat_messages(task_id, messages_to_save)
+                    
+                    return content
+            
+        except Exception as e:
+            print(f"❌ Error checking for sequences: {e}")
+            print(traceback.format_exc())
+            # Continue with normal task execution if error occurs
+        
+        # Standard task execution - using the same message context
+        print(f"📨 Running standard task with {len(message_context['messages'])} messages")
+        result = await task_runner.run_task(
+            tasksmanager_id=st.session_state.current_tasksmanager_id,
             task_id=task_id,
-            running_extra_params={}
+            running_extra_params=message_context
         )
         
-        if isinstance(response, dict) and 'response' in response:
-            return response['response']
-        return str(response)
+        # Extract content from result if it's a dictionary
+        content = result
+        if isinstance(result, dict):
+            if 'response' in result:
+                content = result['response']
+            else:
+                # Try to convert dict to string for safety
+                content = str(result)
+        
+        # Add assistant response
+        assistant_message = Message(
+            role="assistant",
+            content=content or "No response generated.",
+            file_ids=None,
+            created_at=None,
+            updated_at=None
+        )
+        messages_to_save.append(assistant_message)
+        
+        # Save to persistence model
+        save_chat_messages(task_id, messages_to_save)
+        
+        # Return the content string, not the original result which might be a dict
+        return content or "No response generated."
     except Exception as e:
-        raise Exception(f"Error processing request: {str(e)}")
+        print(f"Error processing message: {str(e)}")
+        print(traceback.format_exc())
+        return f"Error: {str(e)}"
 
 def get_logo_path() -> str:
     """Get the path to the logo file."""
@@ -1011,6 +1030,108 @@ def render_chat_management_sidebar():
             # Get tasks for the selected TM
             tasks = get_tasks_for_tasksmanager(selected_tm_id)
             
+            # Check if TaskManager has sequences defined
+            try:
+                # Get the TasksManager to check for sequences
+                tasksmanager = persistence_model.tasksmanagers.read(selected_tm_id)
+                has_sequences = hasattr(tasksmanager, 'task_sequences') and tasksmanager.task_sequences
+                
+                if has_sequences:
+                    # Show sequence selector instead of task selector
+                    sequences = list(tasksmanager.task_sequences.values())
+                    if sequences:
+                        sequence_options = {seq.name: seq.id for seq in sequences}
+                        
+                        st.write("**Task Sequence Detected**")
+                        st.info("This Task Manager has sequences defined. When run, tasks will execute in sequence with handover between them.")
+                        
+                        # Sequence selection
+                        selected_sequence = st.selectbox(
+                            "Select Sequence",
+                            options=list(sequence_options.keys()),
+                            key="sequence_selector"
+                        )
+                        
+                        if selected_sequence:
+                            selected_sequence_id = sequence_options[selected_sequence]
+                            sequence = tasksmanager.task_sequences.get(selected_sequence_id)
+                            
+                            if sequence and sequence.task_ids:
+                                # Show tasks in sequence
+                                st.write("**Tasks in sequence:**")
+                                for i, task_id in enumerate(sequence.task_ids):
+                                    task = persistence_model.tasks.read(task_id)
+                                    if task:
+                                        st.write(f"{i+1}. {task.name}")
+                                
+                                # Store sequence info in session state
+                                st.session_state.current_sequence_id = selected_sequence_id
+                                
+                                # Use the first task in sequence for the chat interface
+                                first_task_id = sequence.task_ids[0]
+                                
+                                # Only update if the task ID has changed
+                                if st.session_state.get('current_task_id') != first_task_id:
+                                    st.session_state.current_task_id = first_task_id
+                                    # Create new session
+                                    session_id = create_new_session(first_task_id)
+                                    st.session_state.current_session_id = session_id
+                                
+                                # Add a run sequence button
+                                if st.button("Run Sequence", key="run_sequence_btn"):
+                                    st.info("Running sequence...")
+                                    task_runner = st.session_state.task_runner
+                                    
+                                    # Run the sequence in an async-friendly way
+                                    async def run_sequence():
+                                        try:
+                                            # Create context with messages
+                                            initial_context = {
+                                                'messages': st.session_state.messages,
+                                                'user_query': "Run sequence" # Default user query for sequence runs
+                                            }
+                                            
+                                            print(f"📨 Passing {len(st.session_state.messages)} messages to sequence execution")
+                                            
+                                            result = await task_runner.run_task_sequence_by_id(
+                                                tasksmanager_id=selected_tm_id,
+                                                sequence_id=selected_sequence_id,
+                                                initial_context=initial_context
+                                            )
+                                            return result
+                                        except Exception as e:
+                                            return {"error": str(e)}
+                                    
+                                    # Run the sequence
+                                    sequence_result = run_async_sync(run_sequence())
+                                    
+                                    # Show results
+                                    if "error" in sequence_result:
+                                        st.error(f"Error running sequence: {sequence_result['error']}")
+                                    else:
+                                        st.success("Sequence executed successfully!")
+                                        # Add sequence result to chat
+                                        result_message = Message(
+                                            role="assistant",
+                                            content=f"Sequence execution completed. Results:\n\n```json\n{json.dumps(sequence_result, indent=2)}\n```"
+                                        )
+                                        
+                                        # Ensure messages list exists
+                                        if st.session_state.messages is None:
+                                            st.session_state.messages = []
+                                        
+                                        # Add message to session state
+                                        st.session_state.messages.append(result_message)
+                                        
+                                        # Save chat messages
+                                        save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+                    
+                    # Skip the individual task selection
+                    return
+            except Exception as e:
+                print(f"❌ Error checking for sequences: {e}")
+                # Continue with normal task selection if error occurs
+            
             if tasks:
                 # Create task name to ID mapping
                 task_name_to_id = {task.name: task.id for task in tasks}
@@ -1068,6 +1189,8 @@ def render_chat_management_sidebar():
                             print(f"  Task selection changed from {current_task_id} to {selected_task_id}")
                             # Update session state
                             st.session_state.current_task_id = selected_task_id
+                            # Reset sequence ID when manually selecting a task
+                            st.session_state.current_sequence_id = None
                             st.session_state.messages = []
                             
                             # Create new session
@@ -1164,8 +1287,8 @@ async def render_main_chat():
                 # Use write for better markdown rendering
                 st.write(msg.content)
 
-    # Chat input
-    if prompt := st.chat_input("Type your message..."):
+    # Chat input with unique key
+    if prompt := st.chat_input("Type your message...", key="main_chat_input"):
         # Add user message to display
         with st.chat_message("user"):
             st.write(prompt)
@@ -1191,57 +1314,13 @@ async def render_main_chat():
             message_placeholder = st.empty()
             
             try:
-                # Prepare the messages for processing
-                current_messages = []
+                # Process the message with the new function signature
+                response_text = await process_message(st.session_state.current_task_id, prompt)
                 
-                # Add system messages first
-                if current_task:
-                    current_messages.extend(current_task.get_system_messages())
-                
-                # Add session messages
-                for msg in st.session_state.messages:
-                    if isinstance(msg, Message):
-                        current_messages.append(msg)
-                    elif isinstance(msg, dict):
-                        current_messages.append(Message(**msg))
-                    else:
-                        current_messages.append(Message(
-                            role=getattr(msg, 'role', 'user'),
-                            content=str(msg),
-                            file_ids=getattr(msg, 'file_ids', None),
-                            created_at=getattr(msg, 'created_at', None),
-                            updated_at=getattr(msg, 'updated_at', None)
-                        ))
-
-                # Use session state task runner with await
-                full_response = await st.session_state.task_runner.run_task(
-                    tasksmanager_id=st.session_state.current_tasksmanager_id,
-                    task_id=st.session_state.current_task_id,
-                    running_extra_params={'messages': current_messages}
-                )
-
-                # Process response
-                if isinstance(full_response, dict) and 'response' in full_response:
-                    response_text = full_response['response']
-                else:
-                    response_text = str(full_response)
-                
-                # Display the full response with proper formatting
+                # Display the response
                 message_placeholder.write(response_text)
-
-                # Add assistant response and save state
-                assistant_message = Message(
-                    role="assistant",
-                    content=response_text,
-                    file_ids=None,
-                    created_at=None,
-                    updated_at=None
-                )
-                st.session_state.messages.append(assistant_message)
-
-                # Save messages to both task and session
-                save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
                 
+                # Add assistant response to messages - already done in process_message
                 # Save to local session file
                 if 'browser_session_id' in st.session_state:
                     save_local_session(st.session_state.browser_session_id)
@@ -1252,6 +1331,8 @@ async def render_main_chat():
 
             except Exception as e:
                 st.error(f"Error processing request: {str(e)}")
+                print(f"Error in chat processing: {str(e)}")
+                print(traceback.format_exc())
 
 async def render_main_content():
     """Render the main content area based on selected view."""
@@ -1487,21 +1568,73 @@ def cleanup_old_sessions(max_age_days: int = 7):
 
 def clear_session_state():
     """Clear the current session state."""
-    if st.session_state.current_task_id and st.session_state.messages:
-        # Save current messages before clearing
-        save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
-    
-    # Clean up session files
-    cleanup_session_files()
-    
-    st.session_state.messages = []
-    st.session_state.current_session_id = None
-    st.session_state.current_tasksmanager_id = None
-    st.session_state.current_task_id = None
-    
-    # Save the empty session state to persist the changes
-    save_local_session()
-    print("\n🗑️ Cleared main chat session")
+    try:
+        print("\n🗑️ Clearing main chat session")
+        
+        # Get current task and session information before clearing
+        task_id = st.session_state.get('current_task_id')
+        session_id = st.session_state.get('current_session_id')
+        
+        if task_id and session_id:
+            print(f"🔍 Clearing ALL sessions for task {task_id}")
+            
+            # Get the task from the persistence model
+            persistence_model = st.session_state.persistence_model
+            task = persistence_model.tasks.read(task_id)
+            
+            if task and hasattr(task, 'chat_sessions'):
+                # Count existing sessions
+                existing_session_count = len(task.chat_sessions) if task.chat_sessions else 0
+                print(f"🧹 Removing {existing_session_count} existing chat sessions")
+                
+                # Create a new empty session
+                new_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                
+                # COMPLETELY CLEAR all chat sessions and replace with a single empty session
+                task.chat_sessions = {new_session_id: []}
+                
+                # Update the task in the persistence model
+                persistence_model.tasks.update(task_id, task)
+                
+                # Find and clear any tasks with the same name to ensure full cleanup
+                task_name = task.name if hasattr(task, 'name') else ""
+                if task_name:
+                    # Look for similar tasks by name
+                    all_tasks = persistence_model.tasks.list()
+                    for other_task in all_tasks:
+                        if other_task.id != task_id and hasattr(other_task, 'name') and other_task.name == task_name:
+                            print(f"🧹 Also clearing chat sessions for similar task: {other_task.id}")
+                            if hasattr(other_task, 'chat_sessions'):
+                                other_task.chat_sessions = {}
+                                persistence_model.tasks.update(other_task.id, other_task)
+                
+                # Update session state to use the new session
+                st.session_state.current_session_id = new_session_id
+                st.session_state.messages = []
+                
+                print(f"✅ Cleared ALL sessions and created new empty session {new_session_id}")
+            else:
+                print(f"⚠️ Task {task_id} not found or doesn't have chat_sessions")
+        
+        # Clean up session files
+        cleanup_session_files()
+        
+        # Clear messages list
+        st.session_state.messages = []
+        
+        # Save the empty session state to persist the changes
+        save_local_session()
+        
+        # Trigger a state save to persistently store the cleared session
+        if hasattr(st.session_state, 'task_runner') and st.session_state.task_runner:
+            if hasattr(st.session_state.task_runner, 'trigger_state_save'):
+                st.session_state.task_runner.trigger_state_save()
+            
+        print("✅ Successfully cleared chat session")
+    except Exception as e:
+        print(f"❌ Error clearing session state: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
 
 def save_chat_messages(task_id: str, messages: List[Message]):
     """Save chat messages to task's current session."""

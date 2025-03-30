@@ -27,11 +27,19 @@ class AgenticConfigView(BaseView):
             print(f"  Length: {len(chat_history)}")
             print(f"  Content: {chat_history}")
         
+        # Ensure active_tab is valid
+        active_tab = st.session_state.get('active_tab', 0)
+        if not isinstance(active_tab, int) or active_tab < 0 or active_tab > 3:
+            active_tab = 0  # Default to chat if invalid
+            st.session_state.active_tab = active_tab
+        
+        print(f"📝 Saving active_tab: {active_tab}")
+        
         data.update({
             'chat_history': st.session_state.agentic_controller.view_state.chat_history
             if 'agentic_controller' in st.session_state else [],
             'view_mode': st.session_state.get('view_mode', 'chat'),
-            'active_tab': st.session_state.get('active_tab', 0)
+            'active_tab': active_tab
         })
         return data
         
@@ -43,8 +51,18 @@ class AgenticConfigView(BaseView):
         print(f"\n📖 Restoring chat history:")
         print(f"  Length: {len(chat_history)}")
         
-        st.session_state.view_mode = session_data.get('view_mode', 'chat')
-        st.session_state.active_tab = session_data.get('active_tab', 0)
+        active_tab = session_data.get('active_tab', 0)
+        view_mode = session_data.get('view_mode', 'chat')
+        
+        print(f"📖 Restoring active tab: {active_tab}")
+        
+        # Ensure active_tab is valid
+        if not isinstance(active_tab, int) or active_tab < 0 or active_tab > 3:
+            active_tab = 0  # Default to chat if invalid
+        
+        # Set session state values
+        st.session_state.view_mode = view_mode
+        st.session_state.active_tab = active_tab
         
         if 'agentic_controller' in st.session_state:
             st.session_state.agentic_controller.view_state.chat_history = chat_history
@@ -55,14 +73,25 @@ class AgenticConfigView(BaseView):
             # Clear chat history
             st.session_state.agentic_controller.view_state.chat_history = []
             
+            # Reset active tab to Chat
+            st.session_state.active_tab = 0
+            
             # Save empty session
             self.save_session()
             
             print("\n🗑️ Cleared agentic config session")
+            print("🔄 Reset to Chat tab")
 
 def render_chat_view():
     """Render the chat interface."""
-    # Display messages
+    st.subheader("💬 Agentic Framework Chat")
+    
+    # Check if controller is initialized
+    if 'agentic_controller' not in st.session_state:
+        st.warning("Agentic controller not initialized.")
+        return
+        
+    # Display messages using standard chat components
     for msg in st.session_state.agentic_controller.view_state.chat_history:
         if isinstance(msg, Message):
             role = msg.role
@@ -74,16 +103,22 @@ def render_chat_view():
             role = getattr(msg, 'role', 'user')
             content = str(msg)
         
-        with st.chat_message(role):
-            st.write(content)
+        st.chat_message(role).write(content)
     
-    # Chat input
-    if prompt := st.chat_input("Type your message..."):
-        with st.chat_message("user"):
-            st.write(prompt)
+    # Chat input with unique key
+    if prompt := st.chat_input("Type your message...", key="agentic_config_chat_input"):
+        # Add user message to chat history
+        st.chat_message("user").write(prompt)
         
-        asyncio.run(st.session_state.agentic_controller.handle_chat(prompt))
-        st.rerun()
+        # Process the message
+        try:
+            # Use asyncio.run to handle the async function
+            asyncio.run(st.session_state.agentic_controller.handle_chat(prompt))
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error processing message: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
 
 def render_observability_view():
     """Render the observability interface."""
@@ -236,8 +271,15 @@ async def render_agentic_config_view():
             margin-bottom: 5px;
         }
 
-        .stTabs [data-baseweb="tab-panel"] {
-            padding-top: 1rem;
+        .button-tab {
+            width: 100%;
+            text-align: center;
+            padding: 0.5rem 0;
+            border-radius: 0.5rem;
+        }
+
+        .button-tab:hover {
+            background-color: rgba(128, 128, 128, 0.1);
         }
         </style>
         """, unsafe_allow_html=True)
@@ -248,7 +290,7 @@ async def render_agentic_config_view():
         # Initialize persistence model if not in session state
         if 'persistence_model' not in st.session_state:
             st.session_state.persistence_model = PersistenceModelFactory.persistence_model("inmemory")
-        
+            
         # Initialize agentic controller if not in session state
         if 'agentic_controller' not in st.session_state:
             st.session_state.agentic_controller = AgenticViewController(st.session_state.persistence_model)
@@ -257,305 +299,153 @@ async def render_agentic_config_view():
             # Load saved session state
             view.load_session()
         
+        # Initialize active tab if not in session state or ensure it's valid
+        if 'active_tab' not in st.session_state:
+            st.session_state.active_tab = 0  # Default to chat
+        elif not isinstance(st.session_state.active_tab, int) or st.session_state.active_tab < 0 or st.session_state.active_tab > 3:
+            # Reset to chat if active_tab is invalid
+            st.session_state.active_tab = 0
+        
         # Render header
-        render_header("Agentic Framework")
+        render_header("Agentic Configuration")
         
         # Add reset button in sidebar
         with st.sidebar:
-            col1, col2 = st.columns([0.1, 0.9])
+            col1, col2 = st.columns([0.3, 0.7])
             with col1:
-                if st.button("🔄", help="Reset chat history"):
+                if st.button("🔄", help="Reset session and clear chat history"):
                     view.clear_session()
+                    st.session_state.active_tab = 0  # Reset to chat tab
                     st.rerun()
         
-        # Render sidebar
+        # Render sidebar - use async function
         await render_agentic_config_sidebar()
         
-        # Create tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs(["💬 Chat", "🧩 Plugin Explorer", "📓 Notebooks", "📊 Observability"])
+        # Add navigation tabs with icons, similar to task hierarchy view
+        col1, col2, col3, col4 = st.columns([0.25, 0.25, 0.25, 0.25])
+        with col1:
+            if st.button("💬 Chat", help="Switch to chat view", key="main_tab_chat", use_container_width=True):
+                st.session_state.active_tab = 0
+                st.rerun()
+        with col2:
+            if st.button("🧩 Plugins", help="Switch to plugin explorer", key="main_tab_plugins", use_container_width=True):
+                st.session_state.active_tab = 1
+                st.rerun()
+        with col3:
+            if st.button("📓 Notebooks", help="Switch to notebooks view", key="main_tab_notebooks", use_container_width=True):
+                st.session_state.active_tab = 2
+                st.rerun()
+        with col4:
+            if st.button("📊 Observability", help="Switch to observability view", key="main_tab_obs", use_container_width=True):
+                st.session_state.active_tab = 3
+                st.rerun()
+                
+        # Highlight active tab with a custom style
+        active_tab_style = """
+        <style>
+        div[data-testid="column"]:nth-child({}) button {{
+            background-color: rgba(0, 104, 201, 0.1);
+            border-color: #0068c9;
+            border-style: solid;
+            border-width: 1px;
+        }}
+        </style>
+        """.format(st.session_state.active_tab + 1)
+        st.markdown(active_tab_style, unsafe_allow_html=True)
         
-        # Chat View
-        with tab1:
-            st.subheader("Agentic Framework Chat")
+        st.write("---")  # Add separator
+
+        # Chat View (default)
+        if st.session_state.active_tab == 0:
             render_chat_view()
-        
+            
         # Plugin Explorer View
-        with tab2:
+        elif st.session_state.active_tab == 1:
             from src.server.views.components.plugin_explorer_component import PluginExplorerComponent
             
-            if 'agentic_controller' in st.session_state and hasattr(st.session_state.agentic_controller, 'plugin_manager'):
-                plugin_explorer = PluginExplorerComponent(st.session_state.agentic_controller.plugin_manager)
-                plugin_explorer.render()
-            else:
-                st.warning("Plugin manager not initialized")
-        
-        # Notebook View - new
-        with tab3:
-            st.subheader("Jupyter Notebooks")
+            # Render plugin explorer
+            plugin_explorer = PluginExplorerComponent(st.session_state.agentic_controller.plugin_manager)
+            plugin_explorer.render()
             
-            from src.server.views.components.notebook_viewer_component import NotebookViewerComponent
-            from pathlib import Path
-            import json
-            import os
+        # Notebooks View
+        elif st.session_state.active_tab == 2:
+            st.subheader("Notebooks")
             
-            notebook_viewer = NotebookViewerComponent()
+            # Add notebook tabs
+            demo_tab, browse_tab, create_tab = st.tabs(["Demo Notebooks", "Browse Notebooks", "Create Notebook"])
             
-            # Ensure notebooks directory exists
-            notebook_dir = Path("notebooks")
-            if not notebook_dir.exists():
-                notebook_dir.mkdir(parents=True)
-            
-            # Define predefined demonstration notebooks
-            predefined_notebooks = {
-                "Plugin Handover Demo": "notebooks/plugin_handover_demo.ipynb",
-                "Task Tree Example": "notebooks/task_tree_example.ipynb",
-                "Multi-Agent Collaboration": "notebooks/multi_agent_collaboration.ipynb"
-            }
-            
-            # Create a tab section with edit and create options
-            browse_tab, create_tab = st.tabs(["Edit Notebook", "Create Notebook"])
-            
-            # Tab 1: Edit Notebooks (combined predefined and custom)
-            with browse_tab:
-                # Find all available notebooks
-                available_notebooks = list(notebook_dir.glob("*.ipynb"))
-                weather_example = Path("notebooks/weather-example.ipynb")
+            with demo_tab:
+                st.write("## Demo Notebooks")
+                st.markdown("""
+                Select a demo notebook to explore Cerebrum's capabilities:
+                """)
                 
-                if weather_example.exists() and weather_example not in available_notebooks:
-                    available_notebooks.append(weather_example)
+                notebook_options = {
+                    "Plugin Handover Demo": "notebooks/plugin_handover_demo.ipynb",
+                    "Task Tree Example": "notebooks/task_tree_example.ipynb",
+                    "Weather Example": "notebooks/weather-example.ipynb"
+                }
                 
-                if not available_notebooks:
-                    st.info("No notebooks found in the notebooks directory. Please create or upload a notebook.")
-                else:
-                    # Create a dictionary mapping display names to file paths
-                    notebook_options = {}
-                    
-                    # Add predefined notebooks first with special markers
-                    for name, path in predefined_notebooks.items():
-                        if Path(path).exists():
-                            notebook_options[f"📘 {name}"] = str(Path(path).resolve())
-                    
-                    # Add all other notebooks
-                    for notebook_path in available_notebooks:
-                        path_str = str(notebook_path.resolve())  # Use resolved absolute path
-                        # Skip if already added as predefined
-                        if path_str not in notebook_options.values():
-                            display_name = notebook_path.stem.replace("_", " ").title()
-                            notebook_options[f"📔 {display_name}"] = path_str
-                    
-                    # Let the user select a notebook
-                    selected_notebook = st.selectbox(
-                        "Select a notebook to view:", 
-                        list(notebook_options.keys()),
-                        key="notebook_selector"
-                    )
-                    
-                    selected_path = notebook_options[selected_notebook]
-                    # Verify the file exists before proceeding
-                    if not Path(selected_path).exists():
-                        st.error(f"Cannot find notebook at path: {selected_path}")
-                        st.info("The notebook file may have been moved or deleted. Please refresh the page and try again.")
-                    else:
-                        # Show edit options
-                        col1, col2 = st.columns([1, 3])
-                        with col1:
-                            st.write("Actions:")
-                            # Add button to launch in Jupyter if possible
-                            if st.button("🚀 Open in Jupyter", help="Open this notebook in Jupyter if available"):
-                                jupyter_url = f"http://localhost:8888/notebooks/{os.path.basename(selected_path)}"
-                                st.markdown(f"[Click here to open in Jupyter]({jupyter_url})", unsafe_allow_html=True)
-                                st.info(f"If Jupyter is running, you can open the notebook at: {jupyter_url}")
-                                st.info("Note: Run `jupyter notebook` in the project directory to enable this link")
-                            
-                            # Add button to execute the notebook
-                            if st.button("▶️ Execute Notebook", help="Execute the notebook and update outputs"):
-                                with st.spinner("Executing notebook..."):
-                                    try:
-                                        result = subprocess.run(
-                                            [
-                                                "jupyter", "nbconvert", 
-                                                "--to", "notebook", 
-                                                "--execute",
-                                                "--inplace",
-                                                selected_path
-                                            ], 
-                                            capture_output=True, 
-                                            text=True
-                                        )
-                                        if result.returncode == 0:
-                                            st.success("Notebook executed successfully!")
-                                        else:
-                                            st.error(f"Error executing notebook: {result.stderr}")
-                                    except Exception as e:
-                                        st.error(f"Failed to execute notebook: {str(e)}")
-                            
-                            # Add download button
-                            try:
-                                with open(selected_path, "rb") as file:
-                                    st.download_button(
-                                        label="⬇️ Download Notebook",
-                                        data=file,
-                                        file_name=os.path.basename(selected_path),
-                                        mime="application/x-ipynb+json"
-                                    )
-                            except Exception as e:
-                                st.error(f"Failed to prepare download: {str(e)}")
-                        
-                        with col2:
-                            # Render the selected notebook
-                            st.write(f"### {selected_notebook}")
-                            st.info(f"Loading notebook from: {selected_path}")
-                            notebook_viewer.render(selected_path)
-                    
-                    # Add a file uploader for notebook files
-                    st.divider()
-                    st.subheader("Upload Notebook")
-                    uploaded_file = st.file_uploader("Upload a notebook file", type=["ipynb"])
-                    if uploaded_file is not None:
-                        # Save the uploaded file
-                        save_path = notebook_dir / uploaded_file.name
-                        with open(save_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        
-                        st.success(f"Notebook uploaded successfully: {uploaded_file.name}")
-                        
-                        # Option to view the uploaded notebook
-                        if st.button("View Uploaded Notebook"):
-                            st.write(f"### {uploaded_file.name}")
-                            notebook_viewer.render(str(save_path.resolve()))
-            
-            # Tab 2: Create Notebook
-            with create_tab:
-                st.subheader("Create a New Notebook")
-                
-                # Basic notebook creation form
-                new_notebook_name = st.text_input("Notebook Name", key="new_notebook_name")
-                notebook_type = st.selectbox(
-                    "Notebook Type", 
-                    ["Empty Notebook", "Plugin Handover Template", "Task Tree Template", "Multi-Agent Collaboration Template"],
-                    key="notebook_type"
+                selected_notebook = st.selectbox(
+                    "Select a demo notebook:", 
+                    list(notebook_options.keys())
                 )
                 
-                if st.button("Create Notebook"):
-                    if not new_notebook_name:
-                        st.error("Please enter a notebook name")
-                    else:
-                        # Create filename from the provided name
-                        filename = new_notebook_name.lower().replace(" ", "_")
-                        if not filename.endswith(".ipynb"):
-                            filename += ".ipynb"
-                        
-                        new_notebook_path = notebook_dir / filename
-                        
-                        # Check if the file already exists
-                        if new_notebook_path.exists():
-                            st.error(f"A notebook with the name '{filename}' already exists.")
-                        else:
-                            # Create basic notebook structure based on selected type
-                            if notebook_type == "Empty Notebook":
-                                notebook_content = {
-                                    "cells": [
-                                        {
-                                            "cell_type": "markdown",
-                                            "metadata": {},
-                                            "source": [f"# {new_notebook_name}\n\nThis is a sample notebook created with Cerebrum. Use this notebook to explore data, create visualizations, or run experiments."]
-                                        },
-                                        {
-                                            "cell_type": "markdown",
-                                            "metadata": {},
-                                            "source": ["## Hello World Example\n\nBelow is a simple Python code cell that prints 'Hello World!'."]
-                                        },
-                                        {
-                                            "cell_type": "code",
-                                            "execution_count": null,
-                                            "metadata": {},
-                                            "source": ["# A simple Hello World example\nprint('Hello World!')\n\n# You can add more code here\n# For example:\nimport numpy as np\nimport matplotlib.pyplot as plt"],
-                                            "outputs": []
-                                        },
-                                        {
-                                            "cell_type": "markdown",
-                                            "metadata": {},
-                                            "source": ["## Next Steps\n\nYou can add more cells using the '+' button in the Jupyter interface.\nExperiment with different code examples and markdown documentation."]
-                                        }
-                                    ],
-                                    "metadata": {
-                                        "kernelspec": {
-                                            "display_name": "Python 3",
-                                            "language": "python",
-                                            "name": "python3"
-                                        },
-                                        "language_info": {
-                                            "codemirror_mode": {
-                                                "name": "ipython",
-                                                "version": 3
-                                            },
-                                            "file_extension": ".py",
-                                            "mimetype": "text/x-python",
-                                            "name": "python",
-                                            "nbconvert_exporter": "python",
-                                            "pygments_lexer": "ipython3",
-                                            "version": "3.8.10"
-                                        }
-                                    },
-                                    "nbformat": 4,
-                                    "nbformat_minor": 5
-                                }
-                            else:
-                                # Determine which template to use based on selection
-                                if notebook_type == "Plugin Handover Template":
-                                    template_key = "Plugin Handover Demo"
-                                elif notebook_type == "Task Tree Template":
-                                    template_key = "Task Tree Example"
-                                else:  # Multi-Agent Collaboration Template
-                                    template_key = "Multi-Agent Collaboration"
-                                
-                                # Get the content from the predefined demo if it exists
-                                template_path = predefined_notebooks[template_key]
-                                if Path(template_path).exists():
-                                    with open(template_path, 'r') as f:
-                                        notebook_content = json.load(f)
-                                        
-                                    # Update the title to reflect the new notebook name
-                                    if notebook_content["cells"][0]["cell_type"] == "markdown":
-                                        notebook_content["cells"][0]["source"] = [f"# {new_notebook_name}\n\nBased on the {notebook_type}."]
-                                else:
-                                    st.error(f"Template '{template_key}' not available. Please ensure demo notebooks exist.")
-                                    notebook_content = None
-                            
-                            # Save the new notebook
-                            if notebook_content:
-                                with open(new_notebook_path, 'w') as f:
-                                    json.dump(notebook_content, f, indent=2)
-                                
-                                st.success(f"Notebook '{filename}' created successfully!")
-                                
-                                # Button to view the new notebook
-                                col1, col2 = st.columns([1, 1])
-                                with col1:
-                                    if st.button("View New Notebook"):
-                                        st.write(f"### {new_notebook_name}")
-                                        notebook_viewer.render(str(new_notebook_path))
-                                with col2:
-                                    jupyter_url = f"http://localhost:8888/notebooks/{os.path.basename(new_notebook_path)}"
-                                    st.markdown(f"[Open in Jupyter]({jupyter_url})", unsafe_allow_html=True)
-                                    st.info("Run `jupyter notebook` in the project directory to use this link")
-
-            # Add refresh button at the bottom
-            if st.button("Refresh Notebooks"):
-                st.rerun()
-        
+                if selected_notebook:
+                    notebook_path = notebook_options[selected_notebook]
+                    from src.server.views.components.notebook_viewer_component import NotebookViewerComponent
+                    notebook_viewer = NotebookViewerComponent()
+                    notebook_viewer.render(notebook_path)
+                
+            with browse_tab:
+                st.write("## Browse Notebooks")
+                # Implementation for browsing notebooks
+                
+            with create_tab:
+                st.write("## Create Notebook")
+                # Implementation for creating notebooks
+            
         # Observability View
-        with tab4:
-            st.subheader("Agentic Framework Observability")
+        elif st.session_state.active_tab == 3:
             render_observability_view()
             
-        # Save session after view is rendered
-        view.save_session()
+        # Add keyboard shortcuts for tabs
+        st.markdown("""
+        <script>
+        const doc = window.parent.document;
+        doc.addEventListener('keydown', function(e) {
+            // Numbered shortcuts for tabs
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key >= '1' && e.key <= '4') {
+                e.preventDefault();
+                let tabIndex;
+                switch(e.key) {
+                    case '1': tabIndex = 0; break; // Chat
+                    case '2': tabIndex = 1; break; // Plugins
+                    case '3': tabIndex = 2; break; // Notebooks
+                    case '4': tabIndex = 3; break; // Observability
+                }
+                
+                const tabButtons = [
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_chat"]'),
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_plugins"]'),
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_notebooks"]'),
+                    doc.querySelector('button[data-testid="stButton"][key="main_tab_obs"]')
+                ];
+                
+                if (tabButtons[tabIndex]) {
+                    tabButtons[tabIndex].click();
+                }
+            }
+        });
+        </script>
+        """, unsafe_allow_html=True)
         
+        # Save session state after rendering
+        view.save_session()
     except Exception as e:
-        st.error(f"Error rendering agentic config view: {str(e)}")
-        print(f"Error in render_agentic_config_view: {str(e)}")
-        raise
+        st.error(f"Error in agentic config view: {str(e)}")
+        import traceback
+        st.error(traceback.format_exc())
 
 def main():
     """Main function to run the view."""
@@ -564,6 +454,13 @@ def main():
         page_icon="🧠",
         layout="wide"
     )
+    
+    # Initialize active_tab if not in session state
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = 0  # Default to chat
+        print("📝 Setting default active_tab to 0 (Chat)")
+    else:
+        print(f"📝 Current active_tab: {st.session_state.active_tab}")
     
     asyncio.run(render_agentic_config_view())
 

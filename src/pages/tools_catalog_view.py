@@ -59,28 +59,9 @@ class ToolsCatalogView(BaseView):
 
 def render_chat_view():
     """Render the chat interface."""
-    # Display messages
-    for msg in st.session_state.tools_controller.view_state.chat_history:
-        if isinstance(msg, Message):
-            role = msg.role
-            content = msg.content
-        elif isinstance(msg, dict):
-            role = msg["role"]
-            content = msg["content"]
-        else:
-            role = getattr(msg, 'role', 'user')
-            content = str(msg)
-        
-        with st.chat_message(role):
-            st.write(content)
-    
-    # Chat input
-    if prompt := st.chat_input("Type your message..."):
-        with st.chat_message("user"):
-            st.write(prompt)
-        
-        asyncio.run(st.session_state.tools_controller.handle_chat(prompt))
-        st.rerun()
+    # This standalone function is duplicated with the implementation inside render_tools_catalog_view
+    # Remove this function to avoid duplicate chat_input with the same key
+    pass
 
 def render_observability_view():
     """Render the observability interface."""
@@ -331,7 +312,7 @@ async def render_tools_catalog_view():
                     st.write(content)
             
             # Chat input
-            if prompt := st.chat_input("Type your message..."):
+            if prompt := st.chat_input("Type your message...", key="tools_catalog_chat_input"):
                 with st.chat_message("user"):
                     st.write(prompt)
                 
