@@ -215,7 +215,27 @@ Provide helpful, accurate information about the weather forecast relevant to the
                                 logger.info("✅ Updated system message for weather task with location information")
                     
                     # Execute the individual task
-                    logger.info(f"🚀 Executing task: {task.name}")
+                    logger.info(f"\n==== 🚀 EXECUTING TASK: {task.name} (ID: {task_id}) ====")
+                    logger.info(f"---- INPUT CONTEXT FOR TASK {task.name} ----")
+                    
+                    # Log key context elements
+                    if 'user_query' in task_context:
+                        logger.info(f"📝 User Query: {task_context['user_query']}")
+                    if 'messages' in task_context:
+                        logger.info(f"📨 Messages Count: {len(task_context['messages'])}")
+                        for i, msg in enumerate(task_context['messages'][-2:]):  # Log only the last 2 messages for brevity
+                            role = msg.role if hasattr(msg, 'role') else msg.get('role', 'unknown')
+                            content_preview = (msg.content if hasattr(msg, 'content') else msg.get('content', ''))[:100]
+                            logger.info(f"  Message {i}: {role} - {content_preview}...")
+                    if 'previous_outputs' in task_context and task_context['previous_outputs']:
+                        logger.info(f"📤 Previous Outputs Keys: {list(task_context['previous_outputs'].keys())}")
+                    if 'last_output' in task_context:
+                        last_output = task_context['last_output']
+                        preview = str(last_output)[:100] + "..." if len(str(last_output)) > 100 else str(last_output)
+                        logger.info(f"📤 Last Output: {preview}")
+                    
+                    # Execute the task with detailed logging
+                    logger.info(f"---- EXECUTING TASK {task.name} ----")
                     result = await self.task_runner.run_task(
                         tasksmanager_id=tasksmanager_id,
                         task_id=task_id,
@@ -223,11 +243,16 @@ Provide helpful, accurate information about the weather forecast relevant to the
                         inside_sequence=True  # Flag to prevent recursion
                     )
                     
+                    # Log task execution result
+                    logger.info(f"---- OUTPUT FROM TASK {task.name} ----")
+                    result_preview = str(result)[:200] + "..." if len(str(result)) > 200 else str(result)
+                    logger.info(f"📥 Raw Result: {result_preview}")
+                    
                     # Store and process the result
                     task_result = self._process_task_result(task, result, task_outputs)
                     results[task_id] = task_result
                     
-                    # Get the task response to pass to next tasks in sequence
+                    # Check if the task output contains any tool calls or actual content
                     task_response = None
                     if isinstance(task_result, dict) and "response" in task_result:
                         task_response = task_result["response"]
@@ -235,6 +260,24 @@ Provide helpful, accurate information about the weather forecast relevant to the
                         task_response = task_result
                     else:
                         task_response = str(task_result)
+                    
+                    # Extract whether response appears to be a proper response or debugging/planning
+                    is_planning = False
+                    if task_response and (task_response.startswith("#Plan") or 
+                                          task_response.startswith("#Dry Run") or
+                                          task_response.startswith("Plan:") or
+                                          "Dry Run:" in task_response):
+                        is_planning = True
+                        logger.warning(f"⚠️ Task output appears to be planning/debug content rather than actual response")
+                    elif task_response and ("Function Output Example" in task_response or "runs 'weather-get" in task_response):
+                        is_planning = True
+                        logger.warning(f"⚠️ Task output contains function call examples rather than actual result")
+                        
+                    # Log processed result
+                    task_result_preview = str(task_result)[:200] + "..." if len(str(task_result)) > 200 else str(task_result)
+                    logger.info(f"📥 Processed Result: {task_result_preview}")
+                    logger.info(f"📥 Is planning/debug output: {is_planning}")
+                    logger.info(f"==== ✅ COMPLETED TASK: {task.name} ====\n")
                     
                     # Update context with response from this task for next task in sequence
                     if task_response:
@@ -302,11 +345,90 @@ Provide helpful, accurate information about the weather forecast relevant to the
             execution_status["end_time"] = datetime.now().isoformat()
             execution_status["status"] = "completed" if not execution_status["failed_tasks"] else "failed"
             
-            # Build final result
+            # Collect responses from all tasks in the sequence for potential combined output
+            task_responses = {}
+            combined_response = ""
+            
+            # Process and combine task responses
+            try:
+                logger.info(f"🔄 Processing task responses for combined output")
+                # Build a complete response by collecting outputs from all tasks in order
+                for i, task_id in enumerate(task_ids):
+                    if task_id in task_outputs:
+                        task_name = "Unknown"
+                        try:
+                            task = self.persistence_model.tasks.read(task_id)
+                            if task:
+                                task_name = task.name
+                        except:
+                            pass
+                        
+                        task_response = task_outputs[task_id]
+                        task_responses[task_id] = task_response
+                        
+                        # For combined output, handle different response formats
+                        response_text = ""
+                        if isinstance(task_response, dict) and "response" in task_response:
+                            response_text = task_response["response"]
+                        elif isinstance(task_response, str):
+                            response_text = task_response
+                        else:
+                            response_text = str(task_response)
+                        
+                        # Determine if this response is actual content or debugging/planning
+                        is_debugging = (
+                            response_text.startswith("#Plan") or 
+                            response_text.startswith("#Dry Run") or
+                            response_text.startswith("Plan:") or
+                            "Function Output Example" in response_text or
+                            "runs 'weather-get" in response_text or
+                            "Dry Run:" in response_text
+                        )
+                        
+                        # Only add to combined output if we have meaningful content
+                        if response_text and not is_debugging:
+                            logger.info(f"✅ Task {task_name} provided actual content for combined output")
+                            
+                            # For a two-task sequence, prefer the second task's output if it's valid
+                            if i == len(task_ids) - 1 and len(task_ids) <= 2:
+                                # This is the last task in a short sequence, use its output as the complete response
+                                logger.info(f"📝 Using final task response as complete output (replacing any previous output)")
+                                combined_response = response_text
+                            else:
+                                # For longer sequences or non-final tasks, append with a separator
+                                if combined_response:
+                                    combined_response += f"\n\n{response_text}"
+                                else:
+                                    combined_response = response_text
+                        elif response_text and is_debugging:
+                            logger.info(f"⚠️ Task {task_name} provided debugging/planning output - skipping from combined output")
+                            
+                            # If this is the last task and it only provided debugging output, check if we need a fallback
+                            if i == len(task_ids) - 1 and not combined_response:
+                                # As a fallback, look for any actual results in the debugging output
+                                possible_results = []
+                                for line in response_text.split('\n'):
+                                    # Look for lines that might contain actual weather info
+                                    if line.startswith('-') or line.startswith('*') or ':' in line:
+                                        if not any(x in line.lower() for x in ["function output", "parameters", "example", "assistant:", "plan:", "dry run"]):
+                                            possible_results.append(line)
+                                
+                                if possible_results:
+                                    logger.info(f"🔍 Extracted {len(possible_results)} lines of potential results from debugging output")
+                                    combined_response = "\n".join(possible_results)
+                
+                logger.info(f"📝 Combined response length: {len(combined_response) if combined_response else 0}")
+            except Exception as e:
+                logger.error(f"❌ Error combining task responses: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+            
+            # Build final result with both individual responses and combined response
             final_result = {
                 "results": results,
                 "execution_status": execution_status,
-                "response": last_task_response,  # Include the last task response directly
+                "response": combined_response or last_task_response,  # Prefer combined output if available
+                "task_responses": task_responses,  # Include individual task responses
                 "status": execution_status["status"]
             }
             
