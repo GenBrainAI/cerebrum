@@ -221,6 +221,24 @@ class CurriedProxyCrud(InMemoryCrud[CurriedProxy]):
     def __init__(self):
         super().__init__(CurriedProxy)
 
+    def create(self, item: CurriedProxy) -> CurriedProxy:
+        """Override create to handle the special case for CurriedProxy."""
+        # First try to get ID from the item itself
+        item_id = getattr(item, 'id', None)
+        
+        if item_id is None:
+            # Only generate new ID if this is a completely new item
+            item_id = str(uuid4())
+            try:
+                item.id = item_id
+            except Exception:
+                print(f"Failed to set id on new item", item)
+                raise
+            
+        # Store the item with its ID (either existing or new)
+        self.storage[str(item_id)] = item
+        return item
+
     def to_json(self) -> str:
         """
         Convert the storage to JSON using CurriedProxyInfo

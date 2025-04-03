@@ -66,6 +66,17 @@ class ToolsOperator:
 
     async def completion(self, tasksmanager_id, task_id, messages, model, curried_proxy: CurriedProxy) -> str:
         try:
+            # Add debug logging to see messages being sent to the model
+            logging.info(f"===== OPERATOR COMPLETION CALLED =====")
+            logging.info(f"Model: {model}")
+            logging.info(f"Task ID: {task_id}")
+            logging.info(f"Message count: {len(messages)}")
+            for i, msg in enumerate(messages):
+                if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                    logging.info(f"Message [{i}] - {msg.role}: {msg.content[:150]}...")
+                elif isinstance(msg, dict):
+                    logging.info(f"Message [{i}] - {msg.get('role')}: {msg.get('content', '')[:150]}...")
+            
             if self.api_provider == "openai":
                 return await self._openai_completion(model, messages, curried_proxy)
             elif self.api_provider == "anthropic":
@@ -93,8 +104,20 @@ class ToolsOperator:
         
         # Create OpenAI-compatible function names
         if tools:
-            for tool in tools:
+            logging.info(f"===== REGISTERED TOOLS =====")
+            logging.info(f"Available tools count: {len(tools)}")
+            for i, tool in enumerate(tools):
                 original_name = tool['function']['name']
+                
+                # Log available tools for debugging
+                params_summary = {}
+                if 'parameters' in tool['function']:
+                    if 'properties' in tool['function']['parameters']:
+                        params_summary = {k: v.get('type', 'unknown') for k, v in tool['function']['parameters'].get('properties', {}).items()}
+                    
+                logging.info(f"Tool [{i}]: {original_name} - {tool['function'].get('description', '')[:100]}...")
+                logging.info(f"      Parameters: {params_summary}")
+                
                 if '.' in original_name:
                     # Replace periods with hyphens for OpenAI compatibility
                     openai_name = original_name.replace('.', '-')
@@ -102,10 +125,16 @@ class ToolsOperator:
                     self.reverse_function_name_map[openai_name] = original_name
                     # Update the name in the tool
                     tool['function']['name'] = openai_name
+                    logging.info(f"      Renamed for OpenAI: {original_name} -> {openai_name}")
         
         messages = self._messages_to_openai(messages)
 
         while True:
+            logging.info(f"===== SENDING REQUEST TO OPENAI =====")
+            logging.info(f"Model: {model}")
+            logging.info(f"Tool count: {len(tools) if tools else 0}")
+            logging.info(f"Message count: {len(messages)}")
+            
             response = await self.client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -120,50 +149,90 @@ class ToolsOperator:
             if choice.finish_reason in ["stop", "length"]:
                 # Add the final message to the history and return it
                 messages.append({'role': 'assistant', 'content': chat_completion_message})
+                logging.info(f"===== COMPLETION FINISHED: {choice.finish_reason} =====")
+                logging.info(f"Final response: {chat_completion_message[:150]}...")
                 return chat_completion_message
             elif choice.finish_reason == "content_filter":
                 # Handle content filter cases
                 filtered_message = "Content filtered by model: " + chat_completion_message
                 messages.append({'role': 'assistant', 'content': chat_completion_message})
+                logging.info(f"===== CONTENT FILTERED =====")
+                logging.info(f"Filtered message: {filtered_message[:150]}...")
                 return filtered_message
             elif choice.finish_reason == "tool_calls":
                 tool_calls = choice.message.tool_calls
                 messages.append({'role': response.choices[0].message.role, 'tool_calls': tool_calls})
+                
+                # Log tool calls for debugging
+                logging.info(f"===== TOOL CALLS DETECTED =====")
+                logging.info(f"Number of tool calls: {len(tool_calls)}")
+                
                 # Prepare coroutines for all function calls
                 coroutine_list = []
-                tool_calls = choice.message.tool_calls
-                for tool_call in tool_calls:
+                for idx, tool_call in enumerate(tool_calls):
                     # Get the OpenAI-compatible function name
                     openai_function_name = tool_call.function.name
                     # Convert back to original function name if it exists in the mapping
                     original_function_name = self.reverse_function_name_map.get(openai_function_name, openai_function_name)
-                    function_args = json.loads(tool_call.function.arguments)
-                    coroutine = curried_proxy.curried_proxy(original_function_name)(function_args)
-                    coroutine_list.append((tool_call, original_function_name, coroutine))
+                    
+                    try:
+                        function_args = json.loads(tool_call.function.arguments)
+                        # Log tool call details
+                        logging.info(f"Tool Call [{idx+1}]: {original_function_name}")
+                        logging.info(f"  OpenAI name: {openai_function_name}")
+                        logging.info(f"  Parameters: {json.dumps(function_args, indent=2)}")
+                        
+                        coroutine = curried_proxy.curried_proxy(original_function_name)(function_args)
+                        coroutine_list.append((tool_call, original_function_name, coroutine))
+                    except json.JSONDecodeError:
+                        logging.error(f"Error parsing function arguments: {tool_call.function.arguments}")
+                        coroutine_list.append((tool_call, original_function_name, asyncio.sleep(0)))  # Dummy coroutine
 
                 # Run all coroutines concurrently and wait for all responses
                 responses = []
                 for tool_call, original_name, coroutine in coroutine_list:
                     try:
+                        logging.info(f"===== EXECUTING TOOL: {original_name} =====")
+                        start_time = asyncio.get_event_loop().time()
                         result = await coroutine
+                        execution_time = asyncio.get_event_loop().time() - start_time
+                        
+                        # Log tool execution result
+                        result_preview = str(result)[:500] + "..." if len(str(result)) > 500 else str(result)
+                        logging.info(f"Tool execution successful: {original_name}")
+                        logging.info(f"Execution time: {execution_time:.2f} seconds")
+                        logging.info(f"Result: {result_preview}")
+                        
                         responses.append((tool_call, original_name, result))
                     except Exception as e:
                         logging.error(f"Error executing function {original_name}: {str(e)}")
-                        responses.append((tool_call, original_name, {"error": str(e)}))
+                        import traceback
+                        logging.error(traceback.format_exc())
+                        error_response = {"error": str(e)}
+                        logging.info(f"Returning error to model: {error_response}")
+                        responses.append((tool_call, original_name, error_response))
                 
                 # Process each response and add it to messages
-                for tool_call, original_name, function_response in responses:
+                logging.info(f"===== TOOL RESPONSES =====")
+                for idx, (tool_call, original_name, function_response) in enumerate(responses):
                     if isinstance(function_response, dict) or isinstance(function_response, list):
                         response_str = json.dumps(function_response)
                     else:
                         response_str = str(function_response)
 
+                    logging.info(f"Tool Response [{idx+1}]: {original_name}")
+                    response_preview = response_str[:500] + "..." if len(response_str) > 500 else response_str
+                    logging.info(f"  Response: {response_preview}")
+                    
                     messages.append({
                         "role": "tool",
                         "name": tool_call.function.name,  # Keep the OpenAI-compatible name in messages
                         "tool_call_id": tool_call.id,
                         "content": response_str
                     })
+                
+                logging.info(f"===== TOOL EXECUTION COMPLETE =====")
+                logging.info(f"Continuing conversation with {len(messages)} messages")
             else:
                 raise ValueError(f"Unexpected finish reason: {choice.finish_reason}")
 

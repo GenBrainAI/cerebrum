@@ -243,6 +243,24 @@ class TaskRunner:
     def get_task_observability(self, task_id: str) -> Optional[TaskObservabilityManager]:
         """Get the observability manager for a task."""
         return self._active_observability_managers.get(task_id)
+        
+    def get_sequence_observability(self, execution_id: str) -> Optional[Dict[str, Any]]:
+        """Get observability data for a sequence execution.
+        
+        Args:
+            execution_id: ID of the sequence execution
+            
+        Returns:
+            Dictionary with observability data or None if not found
+        """
+        if not self.sequence_controller:
+            return None
+            
+        try:
+            return self.sequence_controller.get_sequence_observability(execution_id)
+        except Exception as e:
+            logger.error(f"Error getting sequence observability: {str(e)}")
+            return None
 
     def _initialize_observability(self, task_id: str) -> TaskObservabilityManager:
         """Initialize observability for a task."""
@@ -500,6 +518,9 @@ class TaskRunner:
     ) -> Dict[str, Any]:
         """Run a standard task."""
         try:
+            # Debug log task information
+            logger.info(f"==== RUNNING STANDARD TASK: {task.name} ====")
+            
             # Get the task manager if not provided
             if not tasksmanager and task.tasksmanager_id:
                 tasksmanager = self.persistence_model.tasksmanagers.read(task.tasksmanager_id)
@@ -509,6 +530,14 @@ class TaskRunner:
             
             # Extract messages from running_extra_params
             messages = running_extra_params.get('messages', [])
+            logger.info(f"Initial message count from running_extra_params: {len(messages)}")
+            
+            # Debug - Examine initial messages
+            for i, msg in enumerate(messages[:3]):  # Show first 3 messages only
+                if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                    logger.info(f"Initial message [{i}] - {msg.role}: {msg.content[:100]}...")
+                elif isinstance(msg, dict):
+                    logger.info(f"Initial message [{i}] - {msg.get('role')}: {msg.get('content', '')[:100]}...")
             
             # Extract query from the last user message if available
             query = None
@@ -580,170 +609,107 @@ class TaskRunner:
             
             # If no messages provided, use the task messages
             if not messages and hasattr(task, 'messages') and task.messages:
-                messages = task.messages
+                messages = task.messages.copy() if hasattr(task.messages, 'copy') else task.messages[:]
+                logger.info(f"Using task messages: {len(messages)} messages found")
             
-            # Prepare the messages with context
-            if contexts:
-                # Use the context provider that's already set on the TaskRunner
-                self.context_provider.persistence_model = self.persistence_model
+            # DEBUG: Log messages before prepare_task_messages
+            logger.info(f"Messages BEFORE prepare_task_messages: {len(messages)}")
+            has_system_message = False
+            for i, msg in enumerate(messages[:3]):  # Show first 3 messages
+                role = msg.role if hasattr(msg, 'role') else msg.get('role', 'unknown')
+                content = msg.content if hasattr(msg, 'content') else msg.get('content', '')
+                logger.info(f"Message before prepare [{i}]: {role} - {content[:100]}...")
+                if role == "system":
+                    has_system_message = True
+            
+            # Check for task messages and add them to the list
+            if hasattr(task, 'messages') and task.messages and len(task.messages) > 0:
+                logger.info(f"Found {len(task.messages)} messages in task {task.name}, adding to messages list")
                 
-                # Add contexts to task
-                for context in contexts:
-                    await self.context_provider.add_context_to_task(
-                        task_id=task.id,
-                        type=context.get('type', 'unknown'),
-                        source_id=context.get('source_id', 'unknown'),
-                        metadata={
-                            'content': context.get('content', ''),
-                            **context.get('metadata', {})
-                        },
-                        priority=context.get('priority', 50)
-                    )
+                # Create new list for combined messages
+                combined_messages = []
+                system_messages = []
+                non_system_messages = []
                 
-                # Prepare messages with context
-                messages = await self.context_provider.prepare_task_messages(task.id, messages)
+                # First separate existing messages into system and non-system
+                for msg in messages:
+                    role = msg.role if hasattr(msg, 'role') else msg.get('role', 'unknown')
+                    if role == "system":
+                        system_messages.append(msg)
+                    else:
+                        non_system_messages.append(msg)
+                
+                # Now process task messages
+                task_system_messages = []
+                task_non_system_messages = []
+                
+                for msg in task.messages:
+                    role = msg.role if hasattr(msg, 'role') else msg.get('role', 'unknown')
+                    content = msg.content if hasattr(msg, 'content') else msg.get('content', '')
+                    logger.info(f"Task message: {role} - {content[:100]}...")
+                    
+                    if role == "system":
+                        task_system_messages.append(msg)
+                    else:
+                        task_non_system_messages.append(msg)
+                
+                # Combine all messages in the right order (system messages first)
+                combined_messages = system_messages + task_system_messages + non_system_messages + task_non_system_messages
+                
+                if combined_messages:
+                    messages = combined_messages
+                    logger.info(f"Combined messages list now has {len(messages)} messages")
+                    has_system_message = has_system_message or len(task_system_messages) > 0
             
-            # Get the model to use
-            model = None
-            if tasksmanager and hasattr(tasksmanager, 'model') and tasksmanager.model:
-                model = tasksmanager.model
-            elif hasattr(task, 'model') and task.model:
-                model = task.model
-            
-            # Get the system prompt
+            # Check for task or manager system prompt if no system message present
             system_prompt = None
-            if hasattr(task, 'system_prompt') and task.system_prompt:
-                system_prompt = task.system_prompt
-            elif tasksmanager and hasattr(tasksmanager, 'system_prompt') and tasksmanager.system_prompt:
-                system_prompt = tasksmanager.system_prompt
+            if not has_system_message:
+                if hasattr(task, 'system_prompt') and task.system_prompt:
+                    system_prompt = task.system_prompt
+                    logger.info(f"Using task system prompt: {system_prompt[:100]}...")
+                elif tasksmanager and hasattr(tasksmanager, 'system_prompt') and tasksmanager.system_prompt:
+                    system_prompt = tasksmanager.system_prompt
+                    logger.info(f"Using tasksmanager system prompt: {system_prompt[:100]}...")
                 
-            # Special handling for weather forecast tasks
-            if hasattr(task, 'name') and ('weather' in task.name.lower() or 'forecast' in task.name.lower()):
-                # Extract city and country from running_extra_params if available
-                city = running_extra_params.get('city')
-                country = running_extra_params.get('country')
-                
-                # Also check in location object
-                if not city and 'location' in running_extra_params and isinstance(running_extra_params['location'], dict):
-                    city = running_extra_params['location'].get('city')
-                    country = running_extra_params['location'].get('country')
-                
-                # Check in user query for Paris specifically
-                if not city and 'user_query' in running_extra_params and 'Paris' in running_extra_params['user_query']:
-                    city = 'Paris'
-                    country = 'France'
-                
-                # If we have location information, add it to the system prompt
-                if city:
-                    logger.info(f"🌍 Adding location to system prompt: {city}, {country or 'Unknown'}")
-                    
-                    # Create a modified system prompt with enhanced instructions
-                    enhanced_prompt = f"""You are a weather forecast assistant. Your task is to check and provide weather forecasts for {city}, {country or ''}.
-
-When responding to the user:
-1. Use these location parameters directly in your API calls:
-   - city: "{city}"
-   - country: "{country or ''}"
-2. Use the weather.get_weather tool to get current weather.
-3. Use the weather.get_forecast tool to get the forecast for the next few days.
-
-DO NOT ask the user to provide this information or to insert values in placeholders.
-DO NOT show placeholder text like <Insert your city here> in your response.
-Instead, use the location information provided above directly in your API calls.
-
-Provide accurate, helpful information about the weather forecast. Focus on temperature, precipitation, and general conditions relevant to the user's query."""
-                    
-                    # Use the enhanced prompt in place of any existing system prompt
-                    system_prompt = enhanced_prompt
-                    logger.info("✅ Enhanced system prompt for weather task with location information")
-            
-            # Add system prompt if available and not already in messages
-            if system_prompt:
-                has_system_message = False
-                for i, msg in enumerate(messages):
-                    if (isinstance(msg, dict) and msg.get('role') == 'system') or \
-                       (hasattr(msg, 'role') and msg.role == 'system'):
-                        has_system_message = True
-                        # Update existing system message for weather tasks
-                        if hasattr(task, 'name') and ('weather' in task.name.lower() or 'forecast' in task.name.lower()):
-                            if isinstance(msg, dict):
-                                msg['content'] = system_prompt
-                            else:
-                                msg.content = system_prompt
-                            logger.info("✅ Updated existing system message for weather task")
-                        break
-                
-                if not has_system_message:
+                # If system prompt found, add it to messages
+                if system_prompt:
+                    from ..models.message import Message
                     system_message = Message(role="system", content=system_prompt)
                     messages = [system_message] + messages
+                    logger.info(f"Added system prompt to messages. New count: {len(messages)}")
             
-            # Get the curried proxy
-            curried_proxy = None
-            if tasksmanager:
-                curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            # Prepare task messages with context
+            messages = await self.context_provider.prepare_task_messages(task.id, messages)
             
-            # Special handling for the forecasst task (id: 4346c1f9-ce40-44bc-8028-0c1ac556a30f)
-            if task.id == '4346c1f9-ce40-44bc-8028-0c1ac556a30f' or (hasattr(task, 'name') and task.name == 'forecasst'):
-                # Extract city and country
-                city = running_extra_params.get('city')
-                country = running_extra_params.get('country')
-                
-                # Check in location object
-                if not city and 'location' in running_extra_params and isinstance(running_extra_params['location'], dict):
-                    city = running_extra_params['location'].get('city')
-                    country = running_extra_params['location'].get('country')
-                
-                # Direct check for Paris in user query
-                if not city and 'user_query' in running_extra_params and 'Paris' in running_extra_params['user_query']:
-                    city = 'Paris'
-                    country = 'France'
-                
-                # Hard-coded solution specifically for this task
-                if not city and running_extra_params.get('previous_task_outputs'):
-                    previous_outputs = running_extra_params.get('previous_task_outputs', {})
-                    for output_id, output_content in previous_outputs.items():
-                        if isinstance(output_content, str) and 'Paris' in output_content:
-                            city = 'Paris'
-                            country = 'France'
-                            logger.info(f"✅ Found Paris in previous task output")
-                            break
-                
-                # If city is found, update the system message in messages
-                if city:
-                    enhanced_instruction = f"""You are a weather forecast assistant for {city}, {country or ''}.
-
-IMPORTANT: Use these specific values in your API calls:
-- city: "{city}"
-- country: "{country or ''}"
-
-Use the weather.get_weather tool to get current weather with these parameters.
-Use the weather.get_forecast tool to get the forecast with these parameters.
-
-DO NOT ask the user to provide location information or to fill in placeholders.
-Simply use the parameters above directly in your API calls."""
-
-                    # Find and update the system message
-                    found_system = False
-                    for i, msg in enumerate(messages):
-                        if isinstance(msg, dict) and msg.get('role') == 'system':
-                            messages[i]['content'] = enhanced_instruction
-                            found_system = True
-                            break
-                        elif hasattr(msg, 'role') and msg.role == 'system':
-                            msg.content = enhanced_instruction
-                            found_system = True
-                            break
-                    
-                    # If no system message found, add one
-                    if not found_system:
-                        from ..models.message import Message
-                        system_msg = Message(role="system", content=enhanced_instruction)
-                        messages = [system_msg] + messages
-                    
-                    logger.info(f"🚨 Applied forecast task fix with city={city}, country={country or 'Unknown'}")
+            # DEBUG: Log messages after prepare_task_messages
+            logger.info(f"Messages AFTER prepare_task_messages: {len(messages)}")
+            for i, msg in enumerate(messages[:3]):  # Show first 3 messages
+                role = msg.role if hasattr(msg, 'role') else msg.get('role', 'unknown')
+                content = msg.content if hasattr(msg, 'content') else msg.get('content', '')
+                logger.info(f"Message after prepare [{i}]: {role} - {content[:100]}...")
             
-            # Run the completion
-            response = await self.completion(
+            # If still no system message, check if we have a system prompt in the task
+            if not any((hasattr(msg, 'role') and msg.role == 'system') or 
+                     (isinstance(msg, dict) and msg.get('role') == 'system') 
+                     for msg in messages):
+                logger.warning("No system message found after prepare_task_messages")
+                
+                # Add default system message if nothing else is available
+                if not system_prompt:
+                    logger.info("Using default system message")
+                    from ..models.message import Message
+                    default_system = Message(
+                        role="system", 
+                        content="You are a helpful assistant. Respond concisely and accurately."
+                    )
+                    messages = [default_system] + messages
+            
+            # Get the curried proxy for tool access
+            curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            
+            # Call the completion method
+            logger.info(f"🤖 Calling completion with model {model} and {len(messages)} messages")
+            output = await self.completion(
                 tasksmanager_id=task.tasksmanager_id,
                 task_id=task.id,
                 messages=messages,
@@ -751,19 +717,18 @@ Simply use the parameters above directly in your API calls."""
                 curried_proxy=curried_proxy
             )
             
-            # Update the task with the response
-            task.last_response = response
-            task.updated_at = datetime.now()
-            self.persistence_model.tasks.update(task.id, task)
-            
             return {
-                "response": response,
-                "task": task.to_dict() if hasattr(task, 'to_dict') else task
+                "task_id": task.id,
+                "response": output,
+                "task_name": task.name,
+                "messages": messages,
+                "model": model
             }
         except Exception as e:
-            logger.error(f"❌ Error running standard task: {str(e)}")
-            logger.exception(e)
-            raise TaskExecutionError(f"Failed to run standard task: {str(e)}")
+            logger.error(f"Error in _run_standard_task: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
 
     def _sanitize_for_crewai(self, data):
         """
@@ -1190,7 +1155,7 @@ Simply use the parameters above directly in your API calls."""
         # Otherwise return the full result structure
         return sequence_result
         
-    async def run_task_sequence_by_id(self, tasksmanager_id: str, sequence_id: str, initial_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def run_task_sequence_by_id(self, tasksmanager_id: str, sequence_id: str, initial_context: Optional[Dict[str, Any]] = None, sequence_execution_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Run a task sequence by its ID.
         Delegates to the TaskSequenceController.
@@ -1199,6 +1164,7 @@ Simply use the parameters above directly in your API calls."""
             tasksmanager_id: ID of the task manager
             sequence_id: ID of the sequence to run
             initial_context: Optional initial context to provide to the first task
+            sequence_execution_id: Optional unique ID to track this sequence execution
             
         Returns:
             Dictionary with results and execution status
@@ -1210,6 +1176,12 @@ Simply use the parameters above directly in your API calls."""
             logger.info(f"Initial context keys provided: {list(initial_context.keys())}")
             if 'messages' in initial_context:
                 logger.info(f"Messages found in initial context: {len(initial_context['messages'])}")
+                # Log actual messages for debugging
+                for i, msg in enumerate(initial_context['messages']):
+                    if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                        logger.info(f"[Initial Context] Message {i}: {msg.role} - {msg.content[:100]}...")
+                    elif isinstance(msg, dict):
+                        logger.info(f"[Initial Context] Message {i}: {msg.get('role')} - {msg.get('content', '')[:100]}...")
         else:
             logger.warning("No initial context provided to run_task_sequence_by_id")
             initial_context = {}
@@ -1219,26 +1191,43 @@ Simply use the parameters above directly in your API calls."""
             for msg in reversed(initial_context['messages']):
                 if isinstance(msg, dict) and msg.get('role') == 'user':
                     initial_context['user_query'] = msg.get('content')
-                    logger.info(f"Extracted user_query from messages")
+                    logger.info(f"Extracted user_query from messages: {initial_context['user_query'][:100]}...")
                     break
                 elif hasattr(msg, 'role') and msg.role == 'user':
                     initial_context['user_query'] = msg.content
-                    logger.info(f"Extracted user_query from messages")
+                    logger.info(f"Extracted user_query from messages: {initial_context['user_query'][:100]}...")
                     break
 
-        sequence_result = await self.sequence_controller.execute_sequence_by_id(
-            tasksmanager_id=tasksmanager_id,
-            sequence_id=sequence_id,
-            initial_context=initial_context
-        )
-        
-        # Return the response directly if it's the final value we need
-        if isinstance(sequence_result, dict) and "response" in sequence_result and sequence_result["response"]:
-            logger.info(f"Task sequence completed, returning final task response directly")
-            return sequence_result["response"]
-        
-        # Otherwise return the full result structure
-        return sequence_result
+        # Add sequence execution ID to context if provided
+        if sequence_execution_id:
+            initial_context['sequence_execution_id'] = sequence_execution_id
+            logger.info(f"Using sequence execution ID: {sequence_execution_id}")
+        else:
+            # Generate an execution ID if not provided
+            sequence_execution_id = f"seq_{uuid.uuid4().hex[:8]}"
+            initial_context['sequence_execution_id'] = sequence_execution_id
+            logger.info(f"Generated new sequence execution ID: {sequence_execution_id}")
+
+        try:
+            sequence_result = await self.sequence_controller.execute_sequence_by_id(
+                tasksmanager_id=tasksmanager_id,
+                sequence_id=sequence_id,
+                initial_context=initial_context,
+                execution_id=sequence_execution_id
+            )
+            
+            # Return the response directly if it's the final value we need
+            if isinstance(sequence_result, dict) and "response" in sequence_result and sequence_result["response"]:
+                logger.info(f"Task sequence completed, returning final task response directly")
+                return sequence_result
+            
+            # Otherwise return the full result structure
+            return sequence_result
+        except Exception as e:
+            logger.error(f"Error executing sequence: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
 
     def wrap_task(self, task: Task) -> TaskExecutor:
         """Wrap a Task model in a TaskExecutor."""

@@ -89,12 +89,12 @@ class InMemoryPersistenceModel(PersistenceModelBase):
     def collection(self, collection_name: str) -> InMemoryCrud:
         """Get a collection by name. Creates it if it doesn't exist."""
         if collection_name not in self.collections:
-            self.collections[collection_name] = InMemoryCrud()
+            self.collections[collection_name] = InMemoryCrud(BaseModel)
         return self.collections[collection_name]
         
     def create_collection(self, collection_name: str) -> InMemoryCrud:
         """Create a new collection."""
-        self.collections[collection_name] = InMemoryCrud()
+        self.collections[collection_name] = InMemoryCrud(BaseModel)
         return self.collections[collection_name]
         
     def reset(self):

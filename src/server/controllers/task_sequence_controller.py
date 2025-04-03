@@ -4,16 +4,105 @@ This module provides a dedicated controller for handling task sequences,
 separating sequence execution logic from individual task execution.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 import logging
 from datetime import datetime
 import uuid
 import asyncio
+import sys
 
 from ..models.task import Task
 from ..models.tasks_manager import TasksManager, TaskSequence
 from ..models.message import Message
 from ..persistence.persistence_model import PersistenceModelBase
+from ..controllers.task_observability import TaskObservabilityManager, ObservabilityLevel
+
+class SequenceObservabilityManager:
+    """Manages observability for a sequence of tasks."""
+    
+    def __init__(self, sequence_id: str, task_ids: List[str]):
+        """Initialize the sequence observability manager."""
+        self.sequence_id = sequence_id
+        self.task_ids = task_ids
+        self.task_observability_managers: Dict[str, TaskObservabilityManager] = {}
+        self.sequence_observability = TaskObservabilityManager(f"sequence_{sequence_id}")
+        self.sequence_observability.start_capture()
+        self.sequence_observability.add_entry(
+            f"Initialized sequence observability for sequence {sequence_id} with {len(task_ids)} tasks",
+            ObservabilityLevel.INFO,
+            metadata={"sequence_id": sequence_id, "task_count": len(task_ids), "event_type": "sequence_init"}
+        )
+        
+    def register_task_observability(self, task_id: str, task_observability: TaskObservabilityManager):
+        """Register a task observability manager for a task in the sequence."""
+        self.task_observability_managers[task_id] = task_observability
+        self.sequence_observability.add_entry(
+            f"Registered observability for task {task_id}",
+            ObservabilityLevel.INFO,
+            metadata={
+                "sequence_id": self.sequence_id, 
+                "task_id": task_id, 
+                "event_type": "task_registration"
+            }
+        )
+        
+    def emit_sequence_event(self, event_type: str, message: str, metadata: Dict[str, Any] = None):
+        """Emit a sequence-level event."""
+        if metadata is None:
+            metadata = {}
+            
+        # Add standard metadata for sequence events
+        metadata.update({
+            "sequence_id": self.sequence_id,
+            "event_type": event_type,
+            "timestamp": datetime.now().isoformat(),
+        })
+        
+        # Log with appropriate level based on event type
+        level = ObservabilityLevel.INFO
+        if "error" in event_type.lower():
+            level = ObservabilityLevel.ERROR
+        elif "warning" in event_type.lower():
+            level = ObservabilityLevel.WARNING
+            
+        self.sequence_observability.add_entry(message, level, metadata)
+        
+    def emit_task_transition(self, from_task_id: Optional[str], to_task_id: str, context_keys: Set[str]):
+        """Emit a task transition event with information about data handover."""
+        message = f"Task transition: {from_task_id or 'start'} -> {to_task_id}"
+        self.sequence_observability.add_entry(
+            message,
+            ObservabilityLevel.INFO,
+            metadata={
+                "sequence_id": self.sequence_id,
+                "from_task_id": from_task_id,
+                "to_task_id": to_task_id,
+                "context_keys": list(context_keys),
+                "event_type": "task_transition"
+            }
+        )
+        
+    def add_execution_stats(self, stats: Dict[str, Any]):
+        """Add execution statistics entry"""
+        self.sequence_observability.add_entry(
+            "Sequence execution statistics updated",
+            ObservabilityLevel.INFO,
+            metadata={"execution_stats": stats, "event_type": "execution_stats"}
+        )
+        
+    def get_all_sequence_entries(self):
+        """Get all sequence observability entries."""
+        return self.sequence_observability.get_all_entries()
+        
+    def close(self):
+        """Stop capturing and free resources."""
+        self.sequence_observability.add_entry(
+            f"Closing sequence observability for sequence {self.sequence_id}",
+            ObservabilityLevel.INFO,
+            metadata={"sequence_id": self.sequence_id, "event_type": "sequence_complete"}
+        )
+        self.sequence_observability.stop_capture()
+        # Don't close task observability managers - they're managed externally
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -39,6 +128,7 @@ class TaskSequenceController:
         self.task_runner = None  # Will be set by the task runner itself
         self._active_sequences = set()  # Track currently active sequences
         self._sequence_results = {}  # Cache recent sequence results
+        self.sequence_observability_managers = {}  # Store sequence observability managers
     
     def set_task_runner(self, task_runner: Any) -> None:
         """Set the task runner reference.
@@ -83,6 +173,15 @@ class TaskSequenceController:
         
         # Mark sequence as active
         self._active_sequences.add(execution_id)
+        
+        # Initialize sequence observability
+        sequence_observability = SequenceObservabilityManager(execution_id, task_ids)
+        self.sequence_observability_managers[execution_id] = sequence_observability
+        sequence_observability.emit_sequence_event(
+            "sequence_start", 
+            f"Starting sequence execution {execution_id} with {len(task_ids)} tasks",
+            {"tasksmanager_id": tasksmanager_id}
+        )
         
         try:
             # Initialize results
@@ -182,8 +281,9 @@ When responding to the user:
 1. Use these location parameters directly in your API calls:
    - city: "{city}"
    - country: "{country or ''}"
-2. Use the weather.get_weather tool with these parameters to get current weather.
-3. Use the weather.get_forecast tool with these parameters to get the forecast.
+2. FIRST, use the weather.get_weather tool with these exact parameters to get current weather.
+3. THEN, use the weather.get_forecast tool with these same parameters and days=3 to get the forecast.
+4. ALWAYS include both current weather AND forecast information in your response.
 
 DO NOT ask the user to provide location information.
 DO NOT display placeholder text like <Insert your city here>.
@@ -213,6 +313,27 @@ Provide helpful, accurate information about the weather forecast relevant to the
                                 # Update task in persistence
                                 self.persistence_model.tasks.update(task_id, task)
                                 logger.info("✅ Updated system message for weather task with location information")
+                    
+                    # Emit task transition event
+                    prev_task_id = task_ids[index-1] if index > 0 else None
+                    context_keys = set(task_context.keys()) if task_context else set()
+                    sequence_observability.emit_task_transition(
+                        from_task_id=prev_task_id,
+                        to_task_id=task_id,
+                        context_keys=context_keys
+                    )
+                    
+                    # Emit task execution start event
+                    sequence_observability.emit_sequence_event(
+                        "task_execution_start",
+                        f"Starting execution of task {task.name} ({index+1}/{len(task_ids)})",
+                        {
+                            "task_id": task_id,
+                            "task_name": task.name,
+                            "task_index": index,
+                            "context_size": len(task_context) if task_context else 0
+                        }
+                    )
                     
                     # Execute the individual task
                     logger.info(f"\n==== 🚀 EXECUTING TASK: {task.name} (ID: {task_id}) ====")
@@ -313,10 +434,36 @@ Provide helpful, accurate information about the weather forecast relevant to the
                     
                     logger.info(f"✅ Task {task.name} completed successfully")
                     
+                    # Emit task completion event
+                    sequence_observability.emit_sequence_event(
+                        "task_execution_complete",
+                        f"Task {task.name} completed successfully",
+                        {
+                            "task_id": task_id,
+                            "task_name": task.name,
+                            "task_index": index,
+                            "output_size": len(task_result) if isinstance(task_result, dict) else len(str(task_result)),
+                            "status": "success"
+                        }
+                    )
+                    
                 except Exception as e:
                     # Handle task execution error
                     error_msg = f"Error executing task {task_id}: {str(e)}"
                     logger.error(f"❌ {error_msg}")
+                    
+                    # Emit task error event
+                    sequence_observability.emit_sequence_event(
+                        "task_execution_error",
+                        error_msg,
+                        {
+                            "task_id": task_id,
+                            "task_name": task.name if 'task' in locals() and hasattr(task, 'name') else "Unknown",
+                            "task_index": index,
+                            "error": str(e),
+                            "status": "failed"
+                        }
+                    )
                     
                     # Update task status to failed
                     try:
@@ -435,6 +582,54 @@ Provide helpful, accurate information about the weather forecast relevant to the
             # Cache the result
             self._sequence_results[execution_id] = final_result
             
+            # Emit sequence completion event with final statistics
+            sequence_observability.emit_sequence_event(
+                "sequence_complete",
+                f"Sequence execution completed with status: {execution_status['status']}",
+                {
+                    "execution_id": execution_id,
+                    "sequence_id": sequence_id,
+                    "status": execution_status["status"],
+                    "task_count": len(task_ids),
+                    "completed_tasks": len(execution_status["completed_tasks"]),
+                    "failed_tasks": len(execution_status["failed_tasks"]),
+                    "execution_time": (datetime.now() - datetime.fromisoformat(execution_status["start_time"])).total_seconds(),
+                    "has_response": bool(combined_response or last_task_response),
+                    "response_length": len(combined_response or last_task_response or "")
+                }
+            )
+            
+            # Add execution stats to the sequence observability
+            try:
+                sequence_observability.add_execution_stats({
+                    "execution_id": execution_id,
+                    "sequence_id": sequence_id,
+                    "task_count": len(task_ids),
+                    "completed_tasks": len(execution_status["completed_tasks"]),
+                    "failed_tasks": len(execution_status["failed_tasks"]),
+                    "execution_status": execution_status["status"],
+                    "execution_time_seconds": (datetime.now() - datetime.fromisoformat(execution_status["start_time"])).total_seconds(),
+                })
+            except Exception as e:
+                logger.error(f"Error adding execution stats to sequence observability: {str(e)}")
+                # Try to add it as a regular event instead
+                try:
+                    sequence_observability.emit_sequence_event(
+                        "execution_stats",
+                        "Sequence execution statistics",
+                        {
+                            "execution_id": execution_id,
+                            "sequence_id": sequence_id,
+                            "task_count": len(task_ids),
+                            "completed_tasks": len(execution_status["completed_tasks"]),
+                            "failed_tasks": len(execution_status["failed_tasks"]),
+                            "execution_status": execution_status["status"],
+                            "execution_time_seconds": (datetime.now() - datetime.fromisoformat(execution_status["start_time"])).total_seconds(),
+                        }
+                    )
+                except Exception as e2:
+                    logger.error(f"Error emitting sequence stats event: {str(e2)}")
+            
             # Try to trigger state save
             if hasattr(self.task_runner, 'trigger_state_save'):
                 self.task_runner.trigger_state_save()
@@ -444,14 +639,23 @@ Provide helpful, accurate information about the weather forecast relevant to the
         finally:
             # Always remove sequence from active set when done
             self._active_sequences.discard(execution_id)
+            
+            # Close the sequence observability manager
+            if 'sequence_observability' in locals():
+                try:
+                    sequence_observability.close()
+                    # Keep it in the dictionary for later reference until explicitly cleaned up
+                except Exception as e:
+                    logger.error(f"Error closing sequence observability: {str(e)}")
     
-    async def execute_sequence_by_id(self, tasksmanager_id: str, sequence_id: str, initial_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def execute_sequence_by_id(self, tasksmanager_id: str, sequence_id: str, initial_context: Optional[Dict[str, Any]] = None, execution_id: Optional[str] = None) -> Dict[str, Any]:
         """Execute a task sequence by its ID.
         
         Args:
             tasksmanager_id: ID of the task manager
             sequence_id: ID of the sequence to execute
             initial_context: Optional initial context for the sequence including messages
+            execution_id: Optional unique ID to track this sequence execution
             
         Returns:
             Dictionary with execution results and status
@@ -473,14 +677,81 @@ Provide helpful, accurate information about the weather forecast relevant to the
             logger.info(f"Context keys provided to sequence: {list(initial_context.keys())}")
             if 'messages' in initial_context:
                 logger.info(f"Messages found in context: {len(initial_context['messages'])}")
+                # Print detailed message info for debugging
+                for i, msg in enumerate(initial_context['messages']):
+                    if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                        logger.info(f"Debug - Message {i}: {msg.role} - {msg.content[:100]}...")
+                    elif isinstance(msg, dict):
+                        logger.info(f"Debug - Message {i}: {msg.get('role')} - {msg.get('content', '')[:100]}...")
+        else:
+            logger.warning("No initial context provided to execute_sequence_by_id")
         
         # Execute the sequence with the provided context
         return await self.execute_sequence(
             tasksmanager_id=tasksmanager_id,
             task_ids=sequence.task_ids,
             initial_context=initial_context,
-            sequence_id=sequence_id
+            sequence_id=execution_id or sequence_id  # Use execution_id if provided
         )
+    
+    def get_sequence_observability(self, execution_id: str) -> Optional[Dict[str, Any]]:
+        """Get observability data for a sequence execution.
+        
+        Args:
+            execution_id: ID of the sequence execution
+            
+        Returns:
+            Dictionary with observability data or None if not found
+        """
+        if execution_id not in self.sequence_observability_managers:
+            return None
+            
+        sequence_observability = self.sequence_observability_managers.get(execution_id)
+        if not sequence_observability:
+            return None
+            
+        return {
+            "sequence_entries": sequence_observability.get_all_sequence_entries(),
+            "execution_id": execution_id,
+            "task_ids": sequence_observability.task_ids
+        }
+    
+    def cleanup_sequence_observability(self, max_age_minutes: int = 60):
+        """Clean up old sequence observability managers to free resources.
+        
+        Args:
+            max_age_minutes: Maximum age in minutes to keep observability data
+        """
+        current_time = datetime.now()
+        ids_to_remove = []
+        
+        for execution_id, observability in self.sequence_observability_managers.items():
+            # Check if it's old enough to clean up
+            entries = observability.get_all_sequence_entries()
+            if not entries:
+                ids_to_remove.append(execution_id)
+                continue
+                
+            # Get timestamp from first entry
+            try:
+                timestamp = datetime.fromisoformat(entries[0]["timestamp"])
+                age_minutes = (current_time - timestamp).total_seconds() / 60
+                
+                if age_minutes > max_age_minutes:
+                    ids_to_remove.append(execution_id)
+            except Exception:
+                # If we can't parse timestamp, assume it's old
+                ids_to_remove.append(execution_id)
+        
+        # Remove old entries
+        for execution_id in ids_to_remove:
+            try:
+                if execution_id in self.sequence_observability_managers:
+                    observability = self.sequence_observability_managers[execution_id]
+                    observability.close()
+                    del self.sequence_observability_managers[execution_id]
+            except Exception as e:
+                logger.error(f"Error cleaning up sequence observability {execution_id}: {str(e)}")
     
     def _prepare_task_context(
         self, 
@@ -492,30 +763,123 @@ Provide helpful, accurate information about the weather forecast relevant to the
     ) -> Dict[str, Any]:
         """Prepare context for task execution.
         
-        Set up the context for task execution with outputs from previous tasks.
-        
         Args:
-            task: Task to prepare context for
-            context: Initial context
-            task_outputs: Outputs from previous tasks
-            index: Index of task in sequence
-            task_ids: List of task IDs in sequence
+            task: The task to prepare context for
+            context: The context to prepare
+            task_outputs: The task outputs so far
+            index: The index of the task in the sequence
+            task_ids: The list of task IDs in the sequence
             
         Returns:
-            Task context with previous outputs
+            The prepared context
         """
-        # Start with a copy of the initial context
+        # Create a copy of the context to avoid modifying the original
         task_context = context.copy() if context else {}
+        
+        # Create a 'user_query' key for compatibility if messages are present but user_query isn't
+        if 'user_query' not in task_context and 'messages' in task_context and task_context['messages']:
+            for msg in reversed(task_context['messages']):
+                if hasattr(msg, 'role') and msg.role == 'user':
+                    task_context['user_query'] = msg.content
+                    break
+                elif isinstance(msg, dict) and msg.get('role') == 'user':
+                    task_context['user_query'] = msg.get('content', '')
+                    break
         
         # Ensure messages are properly passed to each task in the sequence
         if 'messages' in context:
             logger.info(f"🔄 Passing {len(context['messages'])} messages to task {task.name}")
-            # Ensure we're passing the up-to-date messages that include outputs from previous tasks
-            task_context['messages'] = context['messages']
+            logger.info(f"BEFORE PROCESSING - FULL MESSAGES:")
+            for i, msg in enumerate(context['messages']):
+                if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                    logger.info(f"  [{i}] {msg.role}: {msg.content[:150]}...")
+                elif isinstance(msg, dict):
+                    logger.info(f"  [{i}] {msg.get('role', 'unknown')}: {msg.get('content', '')[:150]}...")
             
-            # Log first few messages for debugging
-            if len(context['messages']) > 0:
-                last_message = context['messages'][-1]
+            # Create a new list for this task's messages to avoid modifying the original
+            from ..models.message import Message
+            task_messages = []
+            
+            # First, check for and add system message
+            system_message_content = None
+            
+            # MODIFIED: Don't check for existing system message in context
+            # Instead, always prioritize task-specific system message
+            
+            # Get task-specific system prompt if available
+            if hasattr(task, 'system_prompt') and task.system_prompt:
+                system_message_content = task.system_prompt
+                logger.info(f"📝 Using task-specific system prompt for {task.name}: {system_message_content[:100]}...")
+            # Fallback to tasksmanager's system prompt
+            elif task.tasksmanager_id:
+                try:
+                    tasksmanager = self.persistence_model.tasksmanagers.read(task.tasksmanager_id)
+                    if tasksmanager and hasattr(tasksmanager, 'system_prompt') and tasksmanager.system_prompt:
+                        system_message_content = tasksmanager.system_prompt
+                        logger.info(f"📝 Using tasksmanager system prompt for {task.name}: {system_message_content[:100]}...")
+                except Exception as e:
+                    logger.warning(f"Error getting tasksmanager system prompt: {str(e)}")
+            
+            # ADDED DEBUG: Check for task messages directly
+            if hasattr(task, 'messages') and task.messages:
+                logger.info(f"Task {task.name} has {len(task.messages)} predefined messages")
+                system_msgs = [m for m in task.messages if 
+                              (hasattr(m, 'role') and m.role == 'system') or
+                              (isinstance(m, dict) and m.get('role') == 'system')]
+                if system_msgs:
+                    logger.info(f"Task has predefined system message: {str(system_msgs[0].content)[:100] if hasattr(system_msgs[0], 'content') else system_msgs[0].get('content', '')[:100]}...")
+                    # ADDED: Use system message from task.messages if available
+                    if hasattr(system_msgs[0], 'content'):
+                        system_message_content = system_msgs[0].content
+                    else:
+                        system_message_content = system_msgs[0].get('content', '')
+                    logger.info(f"📝 Using task's predefined system message: {system_message_content[:100]}...")
+            
+            # Add system message first if we have one
+            if system_message_content:
+                # Create new system message with task-specific content
+                system_message = Message(role="system", content=system_message_content)
+                task_messages.append(system_message)
+                logger.info(f"✅ Added task-specific system message for {task.name}")
+            else:
+                # No system message available
+                logger.warning(f"⚠️ No system message found for task {task.name}")
+            
+            # Then add all non-system messages from context
+            for msg in context['messages']:
+                is_system = False
+                if isinstance(msg, dict) and msg.get('role') == 'system':
+                    is_system = True
+                elif hasattr(msg, 'role') and msg.role == 'system':
+                    is_system = True
+                
+                # Only add non-system messages since we've already handled system message
+                if not is_system:
+                    task_messages.append(msg)
+                    logger.info(f"+ Added message from context: {msg.role if hasattr(msg, 'role') else msg.get('role', 'unknown')}")
+            
+            # Update task context with the complete message history
+            task_context['messages'] = task_messages
+            logger.info(f"✅ Prepared {len(task_messages)} messages for task {task.name} with all history preserved")
+            
+            # ADDED DEBUG: Log final message list to debug
+            logger.info(f"AFTER PROCESSING - FINAL MESSAGES:")
+            for i, msg in enumerate(task_messages):
+                if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                    logger.info(f"  [{i}] {msg.role}: {msg.content[:150]}...")
+                elif isinstance(msg, dict):
+                    logger.info(f"  [{i}] {msg.get('role', 'unknown')}: {msg.get('content', '')[:150]}...")
+            
+            # Log first and last messages for debugging
+            if len(task_messages) > 0:
+                # Log system message if present
+                if task_messages[0].role == "system" if hasattr(task_messages[0], 'role') else task_messages[0].get('role') == "system":
+                    system_content = task_messages[0].content if hasattr(task_messages[0], 'content') else task_messages[0].get('content', '')
+                    system_preview = system_content[:100] + "..." if len(system_content) > 100 else system_content
+                    logger.info(f"📝 System message: {system_preview}")
+                
+                # Log last message
+                last_message = task_messages[-1]
                 if hasattr(last_message, 'role') and hasattr(last_message, 'content'):
                     role = last_message.role
                     content_preview = last_message.content[:100] + "..." if len(last_message.content) > 100 else last_message.content
@@ -525,6 +889,27 @@ Provide helpful, accurate information about the weather forecast relevant to the
                     content = last_message.get('content', '')
                     content_preview = content[:100] + "..." if len(content) > 100 else content
                     logger.info(f"📝 Last message: {role} - {content_preview}")
+                
+                # Log message count by role
+                roles_count = {}
+                for msg in task_messages:
+                    role = msg.role if hasattr(msg, 'role') else msg.get('role', 'unknown')
+                    roles_count[role] = roles_count.get(role, 0) + 1
+                logger.info(f"📊 Message counts by role: {roles_count}")
+        # If no messages are provided, check if the task has messages and add them
+        elif hasattr(task, 'messages') and task.messages:
+            task_context['messages'] = task.messages.copy() if hasattr(task.messages, 'copy') else task.messages[:]
+            logger.info(f"📝 Using task's {len(task_context['messages'])} messages as initial messages")
+            
+            # ADDED DEBUG: Log task messages
+            logger.info(f"TASK-DEFINED MESSAGES:")
+            for i, msg in enumerate(task_context['messages']):
+                if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                    logger.info(f"  [{i}] {msg.role}: {msg.content[:150]}...")
+                elif isinstance(msg, dict):
+                    logger.info(f"  [{i}] {msg.get('role', 'unknown')}: {msg.get('content', '')[:150]}...")
+        else:
+            logger.warning(f"⚠️ No messages found in context and task {task.name} has no predefined messages")
         
         # Add index info
         task_context["task_index"] = index

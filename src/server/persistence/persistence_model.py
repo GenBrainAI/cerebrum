@@ -29,7 +29,7 @@ class PersistenceModelBase(ABC):
             # Create a general InMemoryCrud instance with BaseModel as a placeholder
             # and store it in the collections dictionary
             # NOTE: collections are NOT serializable !!!
-            self.collections[collection_name] = InMemoryCrud[BaseModel]()
+            self.collections[collection_name] = InMemoryCrud(BaseModel)
             return self.collections[collection_name]
 
     @abstractmethod

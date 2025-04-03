@@ -3,6 +3,10 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import logging
 
+# Configure logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 class WeatherTool:
     """Tool for fetching weather information for a location."""
     
@@ -16,6 +20,7 @@ class WeatherTool:
             "X-RapidAPI-Key": "YOUR_RAPIDAPI_KEY",  # Replace with your RapidAPI key
             "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
         }
+        logger.info("🌤️ WeatherTool initialized")
     
     def get_weather(self, city: str, country: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -38,38 +43,52 @@ class WeatherTool:
         Raises:
             Exception: If the weather data cannot be retrieved
         """
+        logger.info(f"🌤️ Getting weather for city={city}, country={country}")
+        
         # Special case handling for Paris
         if city and city.lower() == "paris" and not country:
             country = "France"
-            logging.info(f"🌍 Added default country (France) for Paris")
+            logger.info(f"🌍 Added default country (France) for Paris")
         
         # Construct the query parameter
         location_query = city
         if country:
             location_query = f"{city}, {country}"
         
+        logger.info(f"🌍 Constructed location query: {location_query}")
+        
         # Using a public weather API that doesn't require authentication
         # This is a simpler implementation that doesn't require an API key
         url = f"https://wttr.in/{location_query}?format=j1"
+        logger.info(f"🔗 API URL: {url}")
         
         # Make the API request
         try:
+            logger.info(f"📡 Making request to {url}")
             response = requests.get(url)
             
             # Check if the request was successful
             response.raise_for_status()
             
+            # Log response status and headers
+            logger.info(f"✅ Response status code: {response.status_code}")
+            logger.info(f"📋 Response headers: {response.headers}")
+            
             # Parse the JSON response
             weather_data = response.json()
+            logger.info(f"📊 Response data keys: {weather_data.keys()}")
             
             # Extract and format the relevant information from wttr.in API
             current = weather_data.get("current_condition", [{}])[0]
             location_info = weather_data.get("nearest_area", [{}])[0]
             
+            logger.info(f"🌡️ Current condition data: {current}")
+            logger.info(f"📍 Location info: {location_info}")
+            
             location_name = location_info.get("areaName", [{}])[0].get("value", city)
             country_name = location_info.get("country", [{}])[0].get("value", country if country else "")
             
-            return {
+            result = {
                 "temperature": float(current.get("temp_C", 0)),
                 "feels_like": float(current.get("FeelsLikeC", 0)),
                 "description": current.get("weatherDesc", [{}])[0].get("value", "Unknown"),
@@ -80,12 +99,19 @@ class WeatherTool:
                 "timestamp": datetime.now().isoformat()
             }
             
+            logger.info(f"✅ Successfully parsed weather data: {result}")
+            return result
+            
         except requests.exceptions.RequestException as e:
             # Handle any errors that occurred during the request
+            logger.error(f"❌ Request error: {str(e)}")
             raise Exception(f"Failed to retrieve weather data: {str(e)}")
         
         except (KeyError, IndexError, ValueError) as e:
             # Handle errors with parsing the response
+            logger.error(f"❌ Parsing error: {str(e)}")
+            if 'response' in locals():
+                logger.error(f"❌ Response content: {response.text[:500]}")
             raise Exception(f"Failed to parse weather data: {str(e)}")
     
     def get_forecast(self, city: str, country: Optional[str] = None, days: int = 3) -> Dict[str, Any]:
@@ -103,36 +129,60 @@ class WeatherTool:
         Raises:
             Exception: If the forecast data cannot be retrieved
         """
+        # Convert days to integer if it's passed as a string
+        try:
+            days = int(days)
+        except (ValueError, TypeError):
+            logger.warning(f"⚠️ Invalid days value: {days}, using default of 3")
+            days = 3
+            
+        logger.info(f"🌤️ Getting forecast for city={city}, country={country}, days={days}")
+        
         # Special case handling for Paris
         if city and city.lower() == "paris" and not country:
             country = "France"
-            logging.info(f"🌍 Added default country (France) for Paris")
+            logger.info(f"🌍 Added default country (France) for Paris")
         
         # Construct the query parameter
         location_query = city
         if country:
             location_query = f"{city}, {country}"
         
+        logger.info(f"🌍 Constructed location query: {location_query}")
+        
         # Using wttr.in for forecast data (up to 3 days)
         url = f"https://wttr.in/{location_query}?format=j1"
+        logger.info(f"🔗 API URL: {url}")
         
         try:
+            logger.info(f"📡 Making request to {url}")
             response = requests.get(url)
+            
+            # Log response status and headers
+            logger.info(f"✅ Response status code: {response.status_code}")
+            logger.info(f"📋 Response headers: {response.headers}")
+            
             response.raise_for_status()
             
             weather_data = response.json()
+            logger.info(f"📊 Response data keys: {weather_data.keys()}")
+            
             forecast_data = weather_data.get("weather", [])
+            logger.info(f"📅 Forecast data count: {len(forecast_data)}")
             
             # Limit to the requested number of days
             days = min(days, len(forecast_data))
             forecast_data = forecast_data[:days]
             
             location_info = weather_data.get("nearest_area", [{}])[0]
+            logger.info(f"📍 Location info: {location_info}")
+            
             location_name = location_info.get("areaName", [{}])[0].get("value", city)
             country_name = location_info.get("country", [{}])[0].get("value", country if country else "")
             
             forecasts = []
             for day_data in forecast_data:
+                logger.info(f"📅 Processing day data: {day_data.get('date')}")
                 date = day_data.get("date", "Unknown")
                 avg_temp = day_data.get("avgtempC", "Unknown")
                 max_temp = day_data.get("maxtempC", "Unknown")
@@ -140,11 +190,15 @@ class WeatherTool:
                 
                 # Get hourly data if available
                 hourly = day_data.get("hourly", [])
+                logger.info(f"🕒 Hourly data count: {len(hourly)}")
+                
                 daily_desc = "No description available"
                 
                 if hourly and len(hourly) > 0:
                     # Use mid-day description if available
                     mid_day = next((h for h in hourly if h.get("time") == "1200"), hourly[0])
+                    logger.info(f"🕛 Mid-day data: {mid_day}")
+                    
                     weather_desc = mid_day.get("weatherDesc", [{}])
                     if weather_desc and len(weather_desc) > 0:
                         daily_desc = weather_desc[0].get("value", daily_desc)
@@ -157,16 +211,23 @@ class WeatherTool:
                     "description": daily_desc
                 })
             
-            return {
+            result = {
                 "location": f"{location_name}, {country_name}",
                 "timestamp": datetime.now().isoformat(),
                 "forecasts": forecasts
             }
             
+            logger.info(f"✅ Successfully parsed forecast data: {result}")
+            return result
+            
         except requests.exceptions.RequestException as e:
+            logger.error(f"❌ Request error: {str(e)}")
             raise Exception(f"Failed to retrieve forecast data: {str(e)}")
         
         except (KeyError, IndexError, ValueError) as e:
+            logger.error(f"❌ Parsing error: {str(e)}")
+            if 'response' in locals():
+                logger.error(f"❌ Response content: {response.text[:500]}")
             raise Exception(f"Failed to parse forecast data: {str(e)}")
 
 # Function to register the weather tool with the catalog

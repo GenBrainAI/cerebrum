@@ -128,6 +128,50 @@ class TaskObservabilityManager:
             self.entries.append(entry)
             self._entry_queue.put(entry)
 
+    def add_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """Track a tool call with its input arguments"""
+        message = f"Tool call: {tool_name}"
+        self.add_entry(
+            message,
+            ObservabilityLevel.INFO,
+            metadata={
+                "tool_call": True,
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "call_id": datetime.now().isoformat(),
+                **(metadata or {})
+            }
+        )
+        return datetime.now().isoformat()  # Return call_id for tracking
+
+    def add_tool_result(
+        self,
+        tool_name: str,
+        result: Any,
+        call_id: str,
+        execution_time: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """Track the result of a tool call"""
+        message = f"Tool result: {tool_name}"
+        self.add_entry(
+            message,
+            ObservabilityLevel.INFO,
+            metadata={
+                "tool_result": True,
+                "tool_name": tool_name,
+                "result": result,
+                "call_id": call_id,
+                "execution_time": execution_time,
+                **(metadata or {})
+            }
+        )
+
     def add_state_update(self, old_state: str, new_state: str, metadata: Optional[Dict[str, Any]] = None):
         """Add a state transition entry"""
         message = f"Task state changed from {old_state} to {new_state}"
@@ -138,6 +182,27 @@ class TaskObservabilityManager:
                 "state_transition": True,
                 "old_state": old_state,
                 "new_state": new_state,
+                **(metadata or {})
+            }
+        )
+
+    def add_task_handover(
+        self,
+        from_task_id: str,
+        to_task_id: str,
+        input_data: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ):
+        """Track task handover between tasks in a sequence"""
+        message = f"Task handover from {from_task_id} to {to_task_id}"
+        self.add_entry(
+            message,
+            ObservabilityLevel.INFO,
+            metadata={
+                "task_handover": True,
+                "from_task_id": from_task_id,
+                "to_task_id": to_task_id,
+                "input_data": input_data,
                 **(metadata or {})
             }
         )
