@@ -6,6 +6,8 @@ import json
 import nbformat
 import base64
 import io
+import tempfile
+import subprocess
 from typing import Optional, Dict, Any, List, Union
 
 class NotebookViewerComponent:
@@ -13,7 +15,13 @@ class NotebookViewerComponent:
     
     def __init__(self):
         """Initialize the component."""
-        pass
+        # Check if streamlit_jupyter is available
+        self.has_streamlit_jupyter = False
+        try:
+            import streamlit_jupyter
+            self.has_streamlit_jupyter = True
+        except ImportError:
+            pass
     
     def render(self, notebook_path: str):
         """Render a Jupyter notebook in Streamlit."""
@@ -40,7 +48,15 @@ class NotebookViewerComponent:
         
         # Tab 2: Interactive Notebook - Using jupyterlite in an iframe
         with tab2:
-            self._render_notebook_interactive(notebook_path)
+            if self.has_streamlit_jupyter:
+                try:
+                    from streamlit_jupyter import StreamlitPython
+                    StreamlitPython(notebook_path)
+                except Exception as e:
+                    st.error(f"Error using streamlit_jupyter: {str(e)}")
+                    self.render_as_iframe(notebook_path)
+            else:
+                self.render_as_iframe(notebook_path)
         
         # Tab 3: Code View - Show the notebook source
         with tab3:
@@ -116,31 +132,61 @@ class NotebookViewerComponent:
             if traceback:
                 st.code('\n'.join(traceback), language="python")
     
-    def _render_notebook_interactive(self, notebook_path: str):
-        """Render notebook in an interactive iframe."""
-        st.info("This interactive view is a preview. For full functionality, open the notebook in Jupyter.")
+    def render_as_iframe(self, notebook_path: str):
+        """Render notebook in an iframe."""
+        st.info("Using HTML viewer for notebook preview.")
         
-        # First option: Use jupyterlite for a direct interactive experience
-        st.write("### JupyterLite Environment")
-        components.iframe(
-            "https://jupyterlite.github.io/demo/lab/index.html",
-            height=600
-        )
+        # Convert notebook to HTML
+        html_content = self._convert_notebook_to_html(notebook_path)
         
-        # Alternative: Provide a direct link to open in local Jupyter instance
-        st.write("### Open in Local Jupyter")
-        st.info("Make sure to run `jupyter notebook` in the project directory for this link to work")
-        jupyter_url = f"http://localhost:8888/notebooks/{os.path.basename(notebook_path)}"
-        st.markdown(f"[Open Notebook in Local Jupyter]({jupyter_url})")
+        if html_content:
+            # Display HTML in an iframe
+            components.html(html_content, height=600, scrolling=True)
+        else:
+            st.error("Failed to render notebook as HTML.")
+            # Fallback to a basic display
+            try:
+                with open(notebook_path, 'r', encoding='utf-8') as f:
+                    st.code(f.read(), language="python")
+            except Exception as e:
+                st.error(f"Failed to display notebook: {str(e)}")
+    
+    def _convert_notebook_to_html(self, notebook_path: str) -> Optional[str]:
+        """Convert a Jupyter notebook to HTML.
         
-        # Add download button for the notebook
+        Args:
+            notebook_path: Path to the notebook file
+            
+        Returns:
+            HTML content as string or None if conversion failed
+        """
         try:
-            with open(notebook_path, "rb") as file:
-                st.download_button(
-                    label="⬇️ Download Notebook",
-                    data=file,
-                    file_name=os.path.basename(notebook_path),
-                    mime="application/x-ipynb+json"
-                )
+            # Create a temporary file for the HTML output
+            with tempfile.NamedTemporaryFile(suffix='.html', delete=False) as temp_html:
+                temp_html_path = temp_html.name
+            
+            # Run nbconvert to convert notebook to HTML
+            process = subprocess.run(
+                ['jupyter', 'nbconvert', '--to', 'html', 
+                 '--output', temp_html_path, notebook_path],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            if process.returncode != 0:
+                st.error(f"Error converting notebook to HTML: {process.stderr}")
+                return None
+            
+            # Read the HTML content
+            with open(temp_html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            # Clean up the temporary file
+            os.unlink(temp_html_path)
+            
+            return html_content
+            
         except Exception as e:
-            st.error(f"Error creating download button: {str(e)}") 
+            st.error(f"Exception during notebook conversion: {str(e)}")
+            return None 

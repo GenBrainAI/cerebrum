@@ -475,6 +475,8 @@ class TaskHierarchyController:
                 await self.task_runner.initialize()
                 
             # Run the task sequence
+            # IMPORTANT: For backward compatibility, we're passing 'running_extra_params'
+            # as 'initial_context' which is what TaskRunner.run_task_sequence now expects
             result = await self.task_runner.run_task_sequence(
                 tasksmanager_id=tasksmanager_id,
                 task_ids=task_ids,

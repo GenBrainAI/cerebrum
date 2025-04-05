@@ -126,7 +126,7 @@ async def test_execute_sequence(sequence_controller, mock_task_runner, setup_seq
     # Verify results exist for each task
     for task_id in test_data["task_ids"]:
         assert task_id in result["results"]
-        assert result["results"][task_id] == f"Result for {task_id}"
+        assert result["results"][task_id]["response"] == f"Result for {task_id}"
 
 @pytest.mark.asyncio
 async def test_execute_sequence_by_id(sequence_controller, mock_task_runner, setup_sequence_test_data):

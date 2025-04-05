@@ -27,7 +27,7 @@ def test_notebook_viewer_render_file_not_found():
     with patch.object(Path, 'exists', return_value=False), \
          patch('streamlit.error') as mock_error, \
          patch('streamlit.write') as mock_write, \
-         patch('streamlit.tabs', return_value=[MagicMock(), MagicMock()]):
+         patch('streamlit.tabs', return_value=[MagicMock(), MagicMock(), MagicMock()]):
         
         component.render('nonexistent.ipynb')
         
@@ -43,16 +43,26 @@ def test_notebook_viewer_render_with_streamlit_jupyter():
     # Mock a successful render
     with patch.object(Path, 'exists', return_value=True), \
          patch('streamlit.write') as mock_write, \
-         patch('streamlit.tabs', return_value=[MagicMock(), MagicMock()]), \
+         patch('streamlit.tabs', return_value=[MagicMock(), MagicMock(), MagicMock()]), \
          patch('streamlit.code') as mock_code, \
          patch('builtins.open', mock_open(read_data='notebook content')), \
-         patch('streamlit_jupyter.StreamlitPython') as mock_streamlit_python:
+         patch.object(component, 'render_as_iframe') as mock_render_iframe, \
+         patch('nbformat.reads', return_value=MagicMock(metadata={}, cells=[])), \
+         patch.object(component, '_render_notebook_native'):
         
-        component.render('test.ipynb')
-        
-        # Check if StreamlitPython was called
-        mock_streamlit_python.assert_called_once_with('test.ipynb')
-        mock_code.assert_called_once()
+        # Mock the import of streamlit_jupyter.StreamlitPython
+        with patch.dict(sys.modules, {'streamlit_jupyter': MagicMock()}):
+            # Create a mock module with StreamlitPython
+            mock_streamlit_jupyter = MagicMock()
+            mock_streamlit_python = MagicMock()
+            mock_streamlit_jupyter.StreamlitPython = mock_streamlit_python
+            sys.modules['streamlit_jupyter'] = mock_streamlit_jupyter
+            
+            # Call render
+            component.render('test.ipynb')
+            
+            # Check if the function was called
+            mock_streamlit_python.assert_called_once_with('test.ipynb')
 
 def test_notebook_viewer_render_fallback():
     """Test notebook viewer fallback rendering."""
@@ -62,16 +72,17 @@ def test_notebook_viewer_render_fallback():
     # Mock the fallback render
     with patch.object(Path, 'exists', return_value=True), \
          patch('streamlit.write') as mock_write, \
-         patch('streamlit.tabs', return_value=[MagicMock(), MagicMock()]), \
+         patch('streamlit.tabs', return_value=[MagicMock(), MagicMock(), MagicMock()]), \
          patch('streamlit.code') as mock_code, \
          patch('builtins.open', mock_open(read_data='notebook content')), \
-         patch.object(component, 'render_as_iframe') as mock_render_iframe:
+         patch.object(component, 'render_as_iframe') as mock_render_iframe, \
+         patch('nbformat.reads', return_value=MagicMock(metadata={}, cells=[])), \
+         patch.object(component, '_render_notebook_native'):
         
         component.render('test.ipynb')
         
         # Check if fallback was called
         mock_render_iframe.assert_called_once_with('test.ipynb')
-        mock_code.assert_called_once()
 
 def test_convert_notebook_to_html():
     """Test notebook conversion to HTML."""

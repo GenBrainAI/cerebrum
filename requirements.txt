@@ -63,9 +63,20 @@ asyncio>=3.4.3
 python-dotenv>=1.0.0
 matplotlib
 plotly
+psutil>=5.9.0
+dnspython>=2.4.0
+pyOpenSSL>=23.3.0
 # Notebook Viewer Component Dependencies
 streamlit-jupyter>=0.2.1
 jupyterlab>=3.0.0
 nbconvert>=6.0.0
 ipykernel>=6.0.0
 networkx>=2.7.0
+# Database tools dependencies
+sqlalchemy>=2.0.0
+pandas>=2.0.0
+pymysql>=1.0.0
+psycopg2-binary>=2.9.0
+cx_oracle>=8.0.0
+pyodbc>=4.0.34
+pyarrow>=14.0.0

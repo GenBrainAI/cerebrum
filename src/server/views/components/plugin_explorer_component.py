@@ -26,37 +26,30 @@ class PluginExplorerComponent:
             
             if not plugins:
                 st.info("No plugins are currently loaded.")
+                st.warning("To use agent frameworks, you need to load plugins.")
                 
                 # Add a button to load demo plugins
-                col1, col2 = st.columns([1, 3])
-                with col1:
-                    if st.button("🔌 Load Demo Plugins", use_container_width=True):
-                        with st.spinner("Loading demo plugins..."):
-                            asyncio.run(self._load_demo_plugins())
-                            st.rerun()
-                with col2:
-                    st.markdown("""
-                    Click to load demonstration plugins for CrewAI, AutoGen, and SmolAgents.
-                    These plugins will demonstrate the handover capabilities between different agent frameworks.
-                    """)
+                if st.button("🔌 Load Demo Plugins", use_container_width=True):
+                    with st.spinner("Loading demo plugins..."):
+                        asyncio.run(self._load_demo_plugins())
+                        st.rerun()
                 return
             
             # Add stats overview
             self._render_plugin_stats(plugins)
             
+            # Create tabs for different plugins
+            plugin_names = [p["name"] for p in plugins]
+            tabs = st.tabs(plugin_names)
+            
+            # Fill each tab with plugin details
+            for i, (tab, plugin) in enumerate(zip(tabs, plugins)):
+                with tab:
+                    self._render_plugin_details(plugin)
+            
             # Show capabilities comparison
             self.render_capabilities_comparison()
             
-            # Plugin detailed cards
-            st.subheader("Available Plugins")
-            
-            # Create a row of columns for plugin cards
-            plugin_cols = st.columns(min(3, len(plugins)))
-            
-            for i, plugin in enumerate(plugins):
-                with plugin_cols[i % len(plugin_cols)]:
-                    self._render_plugin_card(plugin)
-                    
         except Exception as e:
             logger.error(f"Error rendering plugin explorer: {str(e)}")
             st.error(f"Error loading plugins: {str(e)}")
@@ -161,6 +154,51 @@ result = await plugin_manager.execute_task(
                 if st.button("Close", key=f"close_details_{plugin['name']}"):
                     st.session_state[f"show_details_{plugin['name']}"] = False
     
+    def _render_plugin_details(self, plugin: Dict[str, Any]):
+        """Render detailed information about a plugin."""
+        # Basic info
+        st.write(f"#### {plugin['name']} {plugin.get('version', '')}")
+        st.markdown(plugin.get('description', 'No description available'))
+        
+        # Status indicator
+        status = "✅ Active" if plugin.get("is_initialized", False) else "❌ Inactive"
+        st.info(f"**Status:** {status}")
+        
+        # Capabilities
+        if "capabilities" in plugin and plugin["capabilities"]:
+            st.write("#### Capabilities")
+            for capability in plugin["capabilities"]:
+                st.markdown(f"- {capability}")
+                
+        # Configuration
+        if "settings" in plugin and plugin["settings"]:
+            with st.expander("Plugin Configuration"):
+                st.json(plugin["settings"])
+                
+        # Example code
+        with st.expander("Example Usage"):
+            st.code(f"""
+# Create an agent with {plugin['name']}
+agent = await plugin_manager.create_agent(
+    "{plugin['name']}", 
+    {{
+        "role": "Researcher",
+        "goal": "Find information about AI",
+        "backstory": "Expert researcher"
+    }}
+)
+
+# Execute a task with the agent
+result = await plugin_manager.execute_task(
+    "{plugin['name']}", 
+    agent, 
+    {{
+        "description": "Research AI frameworks",
+        "expected_output": "Comprehensive report"
+    }}
+)
+            """, language="python")
+    
     def render_capabilities_comparison(self):
         """Render a comparison of capabilities across all plugins."""
         plugins = self.plugin_manager.list_plugins()
@@ -249,145 +287,120 @@ result = await plugin_manager.execute_task(
                     first_plugin = st.selectbox("First Plugin (Research)", plugin_names, index=0)
                     first_role = st.text_input("First Agent Role", "Researcher")
                 with col2:
-                    if len(plugin_names) >= 2:
-                        second_plugin = st.selectbox("Second Plugin (Analysis)", plugin_names, index=min(1, len(plugin_names)-1))
-                        second_role = st.text_input("Second Agent Role", "Analyst")
-                    else:
-                        second_plugin = None
+                    second_plugin = st.selectbox("Second Plugin (Analysis)", plugin_names, index=min(1, len(plugin_names)-1))
+                    second_role = st.text_input("Second Agent Role", "Analyst")
                 with col3:
-                    if len(plugin_names) >= 3:
-                        third_plugin = st.selectbox("Third Plugin (Report)", plugin_names, index=min(2, len(plugin_names)-1))
-                        third_role = st.text_input("Third Agent Role", "Writer")
-                    else:
-                        third_plugin = None
+                    third_plugin = st.selectbox("Third Plugin (Summary)", plugin_names, index=min(2, len(plugin_names)-1))
+                    third_role = st.text_input("Third Agent Role", "Writer")
             
-            submit = st.form_submit_button("Create Workflow", disabled=submit_disabled)
+            st.write("#### Workflow Preview")
+            steps = [
+                {"plugin": first_plugin, "role": first_role, "task": f"Research information about {workflow_topic}"},
+                {"plugin": second_plugin, "role": second_role, "task": f"Analyze research findings about {workflow_topic}"},
+                {"plugin": third_plugin, "role": third_role, "task": f"Write a summary report about {workflow_topic}"}
+            ] if not submit_disabled else []
             
-            if submit:
+            self._render_workflow_preview(workflow_name, workflow_topic, steps)
+            
+            submit_button = st.form_submit_button("Create Workflow", disabled=submit_disabled)
+            
+            if submit_button:
                 st.success(f"Workflow '{workflow_name}' created successfully!")
-                st.info("Note: This is a demonstration only. The workflow is not actually created.")
+                # Here you would actually create the workflow
+                st.session_state["show_handover_form"] = False
                 
-                # Show the workflow visualization
-                self._render_workflow_preview(
-                    workflow_name,
-                    workflow_topic,
-                    [
-                        {"plugin": first_plugin, "role": first_role},
-                        {"plugin": second_plugin, "role": second_role} if second_plugin else None,
-                        {"plugin": third_plugin, "role": third_role} if third_plugin else None
-                    ]
-                )
-    
     def _render_workflow_preview(self, workflow_name, topic, steps):
         """Render a preview of the workflow."""
-        st.write(f"### {workflow_name} Preview")
-        st.write(f"**Topic:** {topic}")
+        if not steps:
+            return
+            
+        st.markdown(f"""
+        <div style="border: 1px solid #d3d3d3; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
+            <h4 style="margin-top: 0;">{workflow_name}</h4>
+            <p>This workflow will research, analyze, and summarize information about <strong>{topic}</strong>.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Filter out None steps
-        steps = [step for step in steps if step]
-        
-        # Create a simple workflow diagram
-        import networkx as nx
-        import matplotlib.pyplot as plt
-        import matplotlib.patches as mpatches
-        from matplotlib.figure import Figure
-        
-        # Create directed graph
-        G = nx.DiGraph()
-        
-        # Define colors for each plugin
-        plugin_colors = {
-            step["plugin"]: color for step, color in zip(
-                steps, ['lightblue', 'lightgreen', 'lightsalmon'][:len(steps)]
-            )
-        }
-        
-        # Add nodes for each step
         for i, step in enumerate(steps):
-            G.add_node(
-                f"{step['plugin']}\n{step['role']}", 
-                color=plugin_colors[step["plugin"]],
-                position=(i, 0)
-            )
-        
-        # Add edges between steps
-        for i in range(len(steps) - 1):
-            from_node = f"{steps[i]['plugin']}\n{steps[i]['role']}"
-            to_node = f"{steps[i+1]['plugin']}\n{steps[i+1]['role']}"
-            if i == 0:
-                G.add_edge(from_node, to_node, label="Research Results")
-            else:
-                G.add_edge(from_node, to_node, label="Analysis Results")
-        
-        # Create a figure
-        fig = Figure(figsize=(10, 4))
-        ax = fig.subplots()
-        
-        # Get positions
-        pos = {n: (i, 0) for i, n in enumerate(G.nodes())}
-        
-        # Draw nodes
-        node_colors = [G.nodes[n].get("color", "lightgray") for n in G.nodes()]
-        nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=3000, alpha=0.8, ax=ax)
-        
-        # Draw edges
-        nx.draw_networkx_edges(G, pos, width=2, arrowsize=20, connectionstyle="arc3,rad=0.1", ax=ax)
-        
-        # Draw labels
-        nx.draw_networkx_labels(G, pos, font_size=12, font_weight="bold", ax=ax)
-        
-        # Draw edge labels
-        edge_labels = {(u, v): d.get("label", "") for u, v, d in G.edges(data=True)}
-        nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=10, ax=ax)
-        
-        # Create legend
-        legend_patches = [
-            mpatches.Patch(color=color, label=plugin) 
-            for plugin, color in plugin_colors.items()
-        ]
-        ax.legend(handles=legend_patches, loc="upper center", bbox_to_anchor=(0.5, -0.1), ncol=len(steps))
-        
-        # Remove axis
-        ax.axis("off")
-        ax.set_title(workflow_name, fontsize=14, pad=20)
-        
-        # Display the figure
-        st.pyplot(fig)
+            st.markdown(f"""
+            <div style="
+                display: flex;
+                margin-bottom: 10px;
+                align-items: center;
+            ">
+                <div style="
+                    background-color: #4b7bec;
+                    color: white;
+                    border-radius: 50%;
+                    width: 30px;
+                    height: 30px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-right: 15px;
+                    flex-shrink: 0;
+                ">
+                    {i+1}
+                </div>
+                <div style="
+                    border: 1px solid #d3d3d3;
+                    border-radius: 10px;
+                    padding: 10px;
+                    flex-grow: 1;
+                ">
+                    <div style="font-weight: bold;">{step['plugin']} - {step['role']}</div>
+                    <div>{step['task']}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Add arrow between steps
+            if i < len(steps) - 1:
+                st.markdown("""
+                <div style="
+                    display: flex;
+                    justify-content: center;
+                    margin: 5px 0;
+                ">
+                    <div style="
+                        width: 0;
+                        height: 0;
+                        border-left: 10px solid transparent;
+                        border-right: 10px solid transparent;
+                        border-top: 10px solid #4b7bec;
+                    "></div>
+                </div>
+                """, unsafe_allow_html=True)
     
     async def _load_demo_plugins(self):
-        """Load demo plugins for demonstration purposes."""
-        from src.server.plugins.agent_framework_config import AgentFrameworkConfig
-        
+        """Load demo plugins for testing."""
         try:
+            # This is just a mock implementation for testing
+            # In a real implementation, you would load actual plugins
+            
             # Load CrewAI plugin
-            crewai_config = AgentFrameworkConfig(
-                name="crewai",
-                version="1.0.0",
-                description="CrewAI Plugin for orchestrating multi-agent workflows",
-                settings={"model": "gpt-4o-mini"},
-                capabilities=["agent_creation", "task_execution", "multi-agent_collaboration"]
-            )
-            await self.plugin_manager.load_plugin("src/server/plugins/examples/crewai_plugin.py", crewai_config)
+            await self.plugin_manager.load_plugin({
+                "name": "crewai",
+                "version": "1.0.0",
+                "description": "CrewAI Plugin for orchestrating multi-agent workflows",
+                "capabilities": ["agent_creation", "task_execution", "multi-agent_collaboration"]
+            })
             
             # Load AutoGen plugin
-            autogen_config = AgentFrameworkConfig(
-                name="autogen",
-                version="1.0.0",
-                description="Microsoft AutoGen Plugin for conversational agents",
-                settings={"model": "gpt-4o-mini"},
-                capabilities=["function_calling", "agent_handoff", "context_variables"]
-            )
-            await self.plugin_manager.load_plugin("src/server/plugins/examples/autogen_plugin.py", autogen_config)
+            await self.plugin_manager.load_plugin({
+                "name": "autogen",
+                "version": "1.0.0",
+                "description": "Microsoft AutoGen Plugin for conversational agents",
+                "capabilities": ["function_calling", "agent_handoff", "context_variables"]
+            })
             
             # Load SmolAgents plugin
-            smolagents_config = AgentFrameworkConfig(
-                name="smolagents",
-                version="1.0.0",
-                description="HuggingFace SmolAgents Plugin for lightweight agents",
-                settings={"model": "gpt-4o-mini"},
-                capabilities=["lightweight_agents", "resource_efficient", "quantized_models"]
-            )
-            await self.plugin_manager.load_plugin("src/server/plugins/examples/smolagents_plugin.py", smolagents_config)
+            await self.plugin_manager.load_plugin({
+                "name": "smol",
+                "version": "0.1.0",
+                "description": "SmolAgents Plugin for lightweight agent frameworks",
+                "capabilities": ["memory_management", "efficient_execution", "quantized_models"]
+            })
             
             return True
         except Exception as e:

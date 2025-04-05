@@ -42,12 +42,13 @@ def test_create_entities_and_serialize_deserialize(client):
     assert toolset_response.status_code == 201
     toolset_id = toolset_response.json()["id"]
 
-    task_response = client.post("/task", json={"name": "Test Task", "toolsets": [toolset_id]})
+    # Create task with tasksmanager_id explicitly set
+    task_response = client.post("/task", json={"name": "Test Task", "toolsets": [toolset_id], "tasksmanager_id": bot_id})
     assert task_response.status_code == 201
     task_id = task_response.json()["id"]
 
     # Serialize to JSON
-    response = client.post("/state/save", json=local_storage.dict())
+    response = client.post("/state/save", json=local_storage.model_dump())
     assert response.status_code == 201
 
     # Deserialize from JSON

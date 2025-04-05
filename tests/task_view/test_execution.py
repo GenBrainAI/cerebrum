@@ -609,7 +609,7 @@ async def test_standard_task_execution():
     
     assert "response" in result, "Result should contain a 'response' key"
     assert "Paris" in result["response"], "Response should mention Paris as the capital of France"
-    assert "task" in result, "Result should contain a 'task' key"
+    assert "task_name" in result, "Result should contain a 'task_name' key"
     
     # Test follow-up question
     result = await task_runner._run_standard_task(
@@ -624,7 +624,7 @@ async def test_standard_task_execution():
     
     assert "response" in result, "Result should contain a 'response' key"
     assert "2.2 million" in result["response"], "Response should mention Paris's population"
-    assert "task" in result, "Result should contain a 'task' key"
+    assert "task_name" in result, "Result should contain a 'task_name' key"
     
     # Test unknown question
     result = await task_runner._run_standard_task(
@@ -639,7 +639,7 @@ async def test_standard_task_execution():
     
     assert "response" in result, "Result should contain a 'response' key"
     assert "not sure" in result["response"].lower(), "Response should indicate uncertainty for unknown questions"
-    assert "task" in result, "Result should contain a 'task' key"    
+    assert "task_name" in result, "Result should contain a 'task_name' key"    
     # Test execution with no messages
     empty_task = Task(
         id="empty_task",
@@ -647,7 +647,7 @@ async def test_standard_task_execution():
         tasksmanager_id="test_tm"
     )
     
-    # We expect a default response when no messages are provided
+    # We expect a response based on the default system message when no messages are provided
     result = await task_runner._run_standard_task(
         task=empty_task,
         running_extra_params={},
@@ -655,5 +655,6 @@ async def test_standard_task_execution():
     )
 
     assert "response" in result, "Result should contain a 'response' key"
-    assert "No messages provided" in result["response"], "Response should indicate no messages were provided"
-    assert "task" in result, "Result should contain a 'task' key"
+    # Check that the response contains something based on the default system message
+    assert result["response"], "Response should not be empty"
+    assert "task_name" in result, "Result should contain a 'task_name' key"

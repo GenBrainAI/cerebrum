@@ -29,6 +29,9 @@ from src.server.tools.internal_credentials_tools import InternalCredentialsTools
 from src.server.tools.internal_testing_tools import InternalTestingTools
 from src.server.tools.internal_proxy_tools import InternalProxyTools
 from src.server.tools.py_exec import PyExec
+from src.server.tools.general_tools.datetime_tools import DateTimeTools, get_current_datetime, is_future_date
+from src.server.tools.general_tools.system_monitor_tools import SystemMonitorTools
+from src.server.tools.general_tools.network_tools import NetworkTools
 
 # Models
 from src.server.models.tools_descriptors import ToolMetadata, ParameterInfo, ReturnInfo, ToolType
@@ -42,34 +45,6 @@ logger = logging.getLogger(__name__)
 
 # Note: ToolType is now imported from src.server.models.tools_descriptors
 # and no longer defined here to avoid duplication
-
-def register_py_exec(catalog: ToolsCatalog = None) -> List[str]:
-    """Register the Python execution tool with the tools catalog.
-    
-    Args:
-        catalog: Optional tools catalog instance. If not provided, the global instance will be used.
-        
-    Returns:
-        List of registered tool names
-    """
-    # Get catalog instance if not provided
-    if catalog is None:
-        from src.server.tools.tools_catalog import tools_catalog
-        catalog = tools_catalog
-    
-    # Create tool instance
-    py_exec = PyExec()
-    
-    # Register tool and its methods
-    registered_names = catalog.register_instance(
-        py_exec, 
-        "PyExec", 
-        exclude_base_methods=True, 
-        register_instance_itself=True
-    )
-    
-    print(f"✅ Registered PyExec with {len(registered_names)} methods")
-    return registered_names
 
 class ToolsCatalog:
     """Singleton catalog for all available tools."""
@@ -542,6 +517,94 @@ class ToolsCatalog:
                 except Exception as e:
                     print(f"❌ Failed to register InternalFileTools: {str(e)}")
                 
+                # Register general datetime tools
+                print("\n⏰ Registering datetime tools...")
+                try:
+                    # Create tool instance
+                    datetime_tools = DateTimeTools()
+                    
+                    # Register the instance methods
+                    names = self.register_instance(
+                        datetime_tools,
+                        "datetime_tools",
+                        exclude_base_methods=True,
+                        register_instance_itself=True
+                    )
+                    
+                    # Also register the standalone functions
+                    self.register_tool("datetime_tools.get_current_datetime", get_current_datetime)
+                    self.register_tool("datetime_tools.is_future_date", is_future_date)
+                    
+                    names.append("datetime_tools.get_current_datetime")
+                    names.append("datetime_tools.is_future_date")
+                    
+                    print(f"✅ Registered DateTimeTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register DateTimeTools: {str(e)}")
+                    logger.error(f"Failed to register DateTimeTools: {str(e)}")
+                
+                # Register system monitoring tools
+                print("\n🖥️ Registering system monitoring tools...")
+                try:
+                    # Create tool instance
+                    system_monitor = SystemMonitorTools()
+                    
+                    # Register tool and its methods
+                    names = self.register_instance(
+                        system_monitor, 
+                        "system_monitor", 
+                        exclude_base_methods=True, 
+                        register_instance_itself=True
+                    )
+                    
+                    print(f"✅ Registered SystemMonitorTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register SystemMonitorTools: {str(e)}")
+                    logger.error(f"Failed to register SystemMonitorTools: {str(e)}")
+                
+                # Register network tools
+                print("\n🌐 Registering network tools...")
+                try:
+                    # Create tool instance
+                    network_tools = NetworkTools()
+                    
+                    # Register tool and its methods
+                    names = self.register_instance(
+                        network_tools, 
+                        "network_tools", 
+                        exclude_base_methods=True, 
+                        register_instance_itself=True
+                    )
+                    
+                    print(f"✅ Registered NetworkTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register NetworkTools: {str(e)}")
+                    logger.error(f"Failed to register NetworkTools: {str(e)}")
+                
+                # Register database tools
+                print("\n🗃️ Registering database tools...")
+                try:
+                    from src.server.tools.database_tools.database_tools import DatabaseTools
+                    # Create tool instance
+                    database_tools = DatabaseTools()
+                    
+                    # Register tool and its methods
+                    names = self.register_instance(
+                        database_tools, 
+                        "database_tools", 
+                        exclude_base_methods=True, 
+                        register_instance_itself=True
+                    )
+                    
+                    print(f"✅ Registered DatabaseTools with {len(names)} methods")
+                    registered_tools.extend(names)
+                except Exception as e:
+                    print(f"❌ Failed to register DatabaseTools: {str(e)}")
+                    logger.error(f"Failed to register DatabaseTools: {str(e)}")
+                
                 # Register weather tools
                 print("\n☁️ Registering weather tools...")
                 try:
@@ -556,7 +619,18 @@ class ToolsCatalog:
                 # Register Python execution tool
                 print("\n🐍 Registering Python execution tool...")
                 try:
-                    names = register_py_exec(self)
+                    # Create tool instance
+                    py_exec = PyExec()
+                    
+                    # Register tool and its methods
+                    names = self.register_instance(
+                        py_exec, 
+                        "PyExec", 
+                        exclude_base_methods=True, 
+                        register_instance_itself=True
+                    )
+                    
+                    print(f"✅ Registered PyExec with {len(names)} methods")
                     registered_tools.extend(names)
                 except Exception as e:
                     print(f"❌ Failed to register PyExec: {str(e)}")

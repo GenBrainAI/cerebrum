@@ -91,7 +91,7 @@ class TestControllerHandover:
         mock_task_runner.run_task_sequence.assert_called_once_with(
             tasksmanager_id="test_tm",
             task_ids=["task1", "task2", "task3"],
-            running_extra_params=None
+            initial_context=None
         )
         
         # Verify results
@@ -123,7 +123,7 @@ class TestControllerHandover:
         mock_task_runner.run_task_sequence.assert_called_once_with(
             tasksmanager_id="test_tm",
             task_ids=["task1", "task2"],
-            running_extra_params=extra_params
+            initial_context=extra_params
         )
     
     @pytest.mark.asyncio
@@ -135,15 +135,19 @@ class TestControllerHandover:
         mock_task_runner.run_task_sequence = AsyncMock(side_effect=Exception("Test error"))
         controller.task_runner = mock_task_runner
         
-        # Run the task sequence and expect an exception
-        with pytest.raises(Exception) as excinfo:
-            await controller.run_task_sequence(
-                tasksmanager_id="test_tm",
-                task_ids=["task1", "task2"]
-            )
+        # Run the task sequence and check for error in the response
+        result = await controller.run_task_sequence(
+            tasksmanager_id="test_tm",
+            task_ids=["task1", "task2"]
+        )
         
-        assert "Test error" in str(excinfo.value)
+        # Verify the error is returned in the result
+        assert "error" in result
+        assert "Test error" in result["error"]
         
-        # Verify the error was logged
-        # This would ideally check the logger output, but we'll just verify the method was called
-        mock_task_runner.run_task_sequence.assert_called_once() 
+        # Verify the method was called
+        mock_task_runner.run_task_sequence.assert_called_once_with(
+            tasksmanager_id="test_tm",
+            task_ids=["task1", "task2"],
+            initial_context=None
+        ) 

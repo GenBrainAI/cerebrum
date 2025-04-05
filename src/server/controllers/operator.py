@@ -365,7 +365,7 @@ class ToolsOperator:
     async def _groq_completion(self, model: str, messages: List[Dict[str, Any]], curried_proxy: CurriedProxy) -> str:
         try:
             tools = curried_proxy.export_to_openai()  # We'll use OpenAI function format for compatibility
-            
+    
             # Clear previous mappings
             self.function_name_map = {}
             self.reverse_function_name_map = {}
@@ -383,16 +383,16 @@ class ToolsOperator:
                         tool['function']['name'] = openai_name
             
             groq_messages = self._messages_to_openai(messages)  # Reuse OpenAI format
-
+    
             # Prepare the function descriptions for Groq
             functions = [tool['function'] for tool in tools] if tools else None
-
+    
             response = await self.client.chat.completions.create(
-                model=model or "llama3-8b-8192",  # Groq's Llama3-8b-8192 model
+                model=model or "llama3-8b-8192",  # Default to llama3-8b-8192 as mixtral-8x7b-32768 is decommissioned
                 messages=groq_messages,
                 functions=functions
             )
-
+    
             return await self._process_llm_response(response, curried_proxy, groq_messages)
         except Exception as e:
             logging.error(f"Error in Groq completion: {e}")
