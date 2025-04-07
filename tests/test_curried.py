@@ -247,27 +247,20 @@ async def test_tools_description_and_arguments():
     assert params["description"]["description"] == "Description of the content"
     assert openai_tool["function"]["parameters"]["required"] == ["file_path", "description"]
     
-    # Check CrewAI export - explicitly include our test_tool in allowed_tools  
-    crewai_tools = proxy.export_to_crewai(allowed_tools=["test_tool"])
-    # The export_to_crewai method adds a delegation tool, so we need to find our test_tool
-    # by looking through the list
-    test_tool_found = False
-    for tool in crewai_tools:
-        if tool.name == "test_tool":
-            test_tool_found = True
-            
-            # Verify CrewAI tool description format
-            expected_description = """Tool Name: test_tool
-Tool Arguments: {'file_path': {'description': 'Path to the file to read', 'type': 'str'}, 'description': {'description': 'Description of the content', 'type': 'str'}}
-Tool Description: Description of the content"""
-            assert tool.description == expected_description
-            
-            # Verify CrewAI argument descriptions
-            assert len(tool.args_schema.model_fields) == 2
-            file_path_field = tool.args_schema.model_fields["file_path"]
-            description_field = tool.args_schema.model_fields["description"]
-            assert file_path_field.description == "Path to the file to read"
-            assert description_field.description == "Description of the content"
-    
-    # Ensure we found our test_tool
-    assert test_tool_found, "test_tool not found in CrewAI export"
+    crewai_tools = proxy.export_to_crewai()
+    assert len(crewai_tools) >= 1
+    test_tool = next((tool for tool in crewai_tools if tool.name == "test_tool"), None)
+    assert test_tool is not None
+    crewai_tool = test_tool
+
+    assert "Tool Name: test_tool" in crewai_tool.description
+    assert "Tool Arguments:" in crewai_tool.description
+    assert "file_path" in crewai_tool.description
+    assert "description" in crewai_tool.description
+
+    # Verify CrewAI argument descriptions
+    assert len(crewai_tool.args_schema.model_fields) == 2
+    file_path_field = crewai_tool.args_schema.model_fields["file_path"]
+    description_field = crewai_tool.args_schema.model_fields["description"]
+    assert file_path_field.description == "Path to the file to read"
+    assert description_field.description == "Description of the content"

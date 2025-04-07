@@ -249,6 +249,10 @@ def test_crewai_task_tree_error_handling(mock_persistence_model, persistence_mod
         assert task_results[task1.id]["status"] == "failed", "Task 1 should have failed status"
         assert task1.id in task_results and task2.id not in task_results, "Only Task 1 should have results"
         assert mock_run_crew_task.call_count == 1, "Only first task should be executed"
+        
+        assert "Agent role" in str(
+            task_results[task1.id].get("error", "")
+        ), "Error should mention an invalid agent role"
     
     logger.info("CrewAI task tree error handling test successful")
 

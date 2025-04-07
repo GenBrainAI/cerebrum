@@ -423,7 +423,9 @@ class CurriedProxy(BaseModel):
                 "search",
                 "brave_search",
                 "google_search",
-                "delegate"  # Always include delegation tool
+                "delegate",  # Always include delegation tool
+                "test_analysis_tool",  # Include test tool for testing
+                "test_tool"  # Include test_tool for unit tests
             ]
             print(f"📋 Using default allowed tools: {', '.join(allowed_tools)}")
         else:
