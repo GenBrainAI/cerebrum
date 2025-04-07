@@ -6,6 +6,10 @@ import logging
 import httpx
 import asyncio
 import docstring_parser
+import json
+import sys
+import importlib.util
+import os
 
 from crewai.tools import BaseTool         
 from langchain.tools import BaseTool as LangChainTool
@@ -19,6 +23,13 @@ from ..models.toolset import Tool
 from ..models.tools_descriptors import ToolMetadata, ToolContext, ToolType
 from ..models.function import ResolvedSchema, ParameterSchema
 from ..models.tools_descriptors import ParameterInfo  # Keep this import since it's used in multiple methods
+
+try:
+    # Try importing the crewai_tool_checker - it may not exist yet
+    from .crewai_tool_checker import CrewAIToolChecker
+    has_tool_checker = True
+except ImportError:
+    has_tool_checker = False
 
 logger = logging.getLogger(__name__)
 
@@ -193,18 +204,31 @@ class CurriedProxy(BaseModel):
         )
 
     @classmethod
-    def from_info(cls, info: CurriedProxyInfo) -> 'CurriedProxy':
+    def from_info(cls, info: CurriedProxyInfo, catalog: Optional[Any] = None) -> 'CurriedProxy':
         """Construct CurriedProxy from CurriedProxyInfo.
+        
+        Args:
+            info: The CurriedProxyInfo object.
+            catalog: Optional ToolsCatalog instance to use. If None, uses the default singleton.
         
         Since tools are loaded in the tools_catalog at startup, we only need to:
         1. Restore the proxy's ID
         2. Restore the tool names list for lookup
         3. Restore the name counter
-        4. Use the existing tools_catalog instance
+        4. Use the provided or existing tools_catalog instance
         """
-        proxy = cls(id=info.id)
+        # Use the provided catalog or get the default singleton
+        if catalog is None:
+            from ..tools.tools_catalog import tools_catalog
+            catalog_to_use = tools_catalog
+        else:
+            catalog_to_use = catalog
+            
+        # Pass the specific catalog instance during initialization
+        proxy = cls(id=info.id, catalog=catalog_to_use) 
         
         # Restore tool names from the serialized info
+        proxy.tool_names = [] # Ensure it starts empty
         for tool_info in info.tools:
             proxy.tool_names.append(tool_info.name)
             
@@ -265,6 +289,35 @@ class CurriedProxy(BaseModel):
             The result of the tool execution
         """
         try:
+            # Special handling for search tools
+            if "search" in tool_name.lower() or "serper" in tool_name.lower():
+                # Check for common error pattern where agent passes "search_query" as a string value
+                # Example: Agent passes {"query": "search_query"} or just "search_query" as the parameter
+                
+                # Case 1: Agent passed a single string parameter with value "search_query"
+                if len(args) == 1 and any(val == "search_query" for val in args.values()):
+                    print(f"\n⚠️ Agent passed 'search_query' as string value instead of parameter key")
+                    print(f"🔧 Fixing by creating proper parameter structure")
+                    # Get the key that has "search_query" as its value
+                    for key, val in args.items():
+                        if val == "search_query":
+                            # Create a proper search query using the key as a fallback
+                            args = {"search_query": f"information about {key}", "kwargs": {}}
+                            print(f"🔧 Converted parameters: {args}")
+                            break
+                
+                # Case 2: Agent passed just the string "search_query" directly
+                elif isinstance(args, str) and args == "search_query":
+                    print(f"\n⚠️ Agent passed 'search_query' as direct string parameter")
+                    print(f"🔧 Fixing by creating proper parameter structure")
+                    args = {"search_query": "general information", "kwargs": {}}
+                    print(f"🔧 Converted parameters: {args}")
+                    
+                # Add kwargs if missing for SerperDevTool
+                if "search_query" in args and "kwargs" not in args:
+                    args["kwargs"] = {}
+                    print(f"🔧 Added empty kwargs parameter for search tool")
+            
             # Get tool metadata
             metadata = self.catalog.get_tool(tool_name)
             if not metadata:
@@ -274,7 +327,7 @@ class CurriedProxy(BaseModel):
             tool_instance = self.catalog.get_tool_instance(tool_name)
             if not tool_instance:
                 raise ValueError(f"Tool instance {tool_name} not found")
-                
+            
             # Execute the tool based on its type
             if metadata.tool_type == ToolType.OPENAPI_TOOL:
                 return await self._call_openapi_tool(tool_instance, args)
@@ -343,14 +396,23 @@ class CurriedProxy(BaseModel):
         """Get tool metadata by name."""
         return self.catalog.get_tool(name)
 
-    def export_to_crewai(self, allowed_tools: Optional[List[str]] = None) -> List[BaseTool]:
+    async def export_to_crewai(self, allowed_tools: Optional[List[str]] = None, catalog_override: Optional[Any] = None) -> List[BaseTool]:
         """Export tools to CrewAI format.
         
         Args:
             allowed_tools: Optional list of tool names to export. If None, exports all tools.
                            Can also be a list of prefixes to match against tool names.
+            catalog_override: Optional ToolsCatalog instance to use for lookups.
         """
         print("\n🔍 DEBUG: Exporting tools to CrewAI")
+        
+        # Determine which catalog instance to use
+        catalog_instance = catalog_override if catalog_override else self.catalog
+        if not catalog_instance:
+            print("    ❌ ERROR: No catalog instance available for export!")
+            return [] # Cannot proceed without a catalog
+            
+        print(f"    🔍 Using catalog instance ID for lookup: {id(catalog_instance)}")
         
         # Default allowed tools if none specified - focus on web search and URL tools
         if allowed_tools is None:
@@ -377,20 +439,30 @@ class CurriedProxy(BaseModel):
             else:
                 print(f"  ❌ Excluding tool: {tool_name}")
         
-        print(f"📋 Filtered tool names: {', '.join(filtered_tool_names)}")
+        print(f"📋 Filtered tool names: {', '.join(filtered_tool_names) if filtered_tool_names else 'No tools matched filters'}")
         
         crewai_tools = []
         for tool_name in filtered_tool_names:
             print(f"  ⚙️ Processing tool: {tool_name}")
             try:
-                # Get tool metadata
-                metadata = self.catalog.get_tool_metadata(tool_name)
+                # DEBUG: Print catalog keys before lookup
+                print(f"    🔍 Catalog keys before lookup: {list(catalog_instance._tools.keys())}") 
+                
+                # Get tool metadata using the chosen catalog instance
+                metadata = catalog_instance.get_tool_metadata(tool_name)
                 if metadata:
                     print(f"    Type: {metadata.tool_type}")
                     description = metadata.description.split('\n')[0] if metadata.description else ''
                     print(f"    Description: {description}")
                     if metadata.parameters:
                         print(f"    Parameters: {[p.name for p in metadata.parameters]}")
+                        for param in metadata.parameters:
+                            print(f"      - {param.name}: {param.type_hint} (required: {param.required})")
+                    
+                    # Check if the tool has required_args using the chosen catalog instance
+                    tool_instance = catalog_instance.get_tool_instance(tool_name)
+                    if tool_instance and hasattr(tool_instance, 'required_args'):
+                        print(f"    Required args: {tool_instance.required_args}")
                     
                     # Create CrewAI tool
                     crewai_tool = CerebrumCrewAITool(
@@ -398,6 +470,17 @@ class CurriedProxy(BaseModel):
                         description=metadata.description or "No description available",
                         proxy=self
                     )
+                    
+                    # Debug the created tool's schema
+                    if hasattr(crewai_tool, 'args_schema'):
+                        print(f"    Created tool schema: {crewai_tool.args_schema.model_json_schema() if hasattr(crewai_tool.args_schema, 'model_json_schema') else 'No schema method'}")
+                        if hasattr(crewai_tool.args_schema, 'model_fields'):
+                            print(f"    Schema fields: {list(crewai_tool.args_schema.model_fields.keys())}")
+                            if 'search_query' in crewai_tool.args_schema.model_fields:
+                                print(f"    ✅ Schema includes search_query parameter")
+                            else:
+                                print(f"    ⚠️ Schema missing search_query parameter")
+                    
                     crewai_tools.append(crewai_tool)
                     print(f"    ✅ Created CrewAI tool: {tool_name}")
                 else:
@@ -405,6 +488,8 @@ class CurriedProxy(BaseModel):
                     
             except Exception as e:
                 print(f"    ❌ Error processing tool {tool_name}: {str(e)}")
+                import traceback
+                print(f"    🔍 Error traceback:\n{traceback.format_exc()}")
                 continue
         
         # Add delegation tool for hierarchical process
@@ -419,6 +504,8 @@ class CurriedProxy(BaseModel):
             print("    ✅ Added delegation tool")
         except Exception as e:
             print(f"    ❌ Error adding delegation tool: {str(e)}")
+            import traceback
+            print(f"    🔍 Error traceback:\n{traceback.format_exc()}")
         
         print(f"📦 Total tools exported: {len(crewai_tools)}")
         return crewai_tools
@@ -859,8 +946,11 @@ class CurriedProxy(BaseModel):
         
         return str  # Default to str for unknown types
 
-    async def _arun(self, **kwargs: Any) -> Any:
-        """Execute the tool asynchronously."""
+    async def _arun(self, *args: Any, **kwargs: Any) -> Any:
+        """Use the tool asynchronously."""
+        logger.debug(f"🚀 Entering _arun for tool: {self.name}")
+        logger.debug(f"  Received args: {args}")
+        logger.debug(f"  Received kwargs: {kwargs}")
         try:
             # Special handling for delegation tool
             if "delegate" in self.name.lower() or "coworker" in self.name.lower():
@@ -888,14 +978,19 @@ class CurriedProxy(BaseModel):
             expected_types = {}
             if self.args_schema:
                 schema_json = self.args_schema.model_json_schema()
+                print(f"  📋 Tool schema: {schema_json}")
                 if 'properties' in schema_json:
                     for param_name, param_info in schema_json['properties'].items():
                         param_type = param_info.get('type', 'string')
                         expected_types[param_name] = param_type
+                        print(f"  📝 Expected parameter: {param_name} of type {param_type}")
+            else:
+                print("  ⚠️ No args_schema available for this tool")
             
             # Convert parameters to expected types
             for key, value in kwargs.items():
                 expected_type = expected_types.get(key, 'string')  # Default to string if type not specified
+                print(f"  🔍 Processing parameter: {key}={value} (expected type: {expected_type})")
                 
                 # Handle URL parameters - ensure they're valid URLs
                 if key == 'url' and not isinstance(value, str):
@@ -911,25 +1006,96 @@ class CurriedProxy(BaseModel):
                     print(f"  ⚠️ Converting {key} from {type(value)} to string")
                     kwargs[key] = str(value)
             
+            # Special handling for search_query parameter
+            if 'search_query' in expected_types and 'search_query' in kwargs:
+                print(f"  ✅ Found search_query parameter: {kwargs['search_query']}")
+            elif 'search_query' in expected_types and 'search_query' not in kwargs:
+                print(f"  ❌ Missing required search_query parameter!")
+            
+            # Check for any required parameters that are missing
+            if self.args_schema:
+                schema_json = self.args_schema.model_json_schema()
+                if 'required' in schema_json:
+                    for req_param in schema_json['required']:
+                        if req_param not in kwargs:
+                            print(f"  ❌ Missing required parameter: {req_param}")
+            
             # Validate arguments using the schema
             if self.args_schema:
                 try:
                     validated_args = self.args_schema(**kwargs)
                     kwargs = validated_args.model_dump()
+                    print(f"  ✅ Schema validation succeeded")
                 except Exception as e:
                     print(f"  ⚠️ Schema validation failed: {str(e)}")
+                    import traceback
+                    print(f"  🔍 Validation error traceback:\n{traceback.format_exc()}")
                     # Continue with best effort conversion
+                
+            # Handle missing kwargs by providing empty dict if needed
+            if 'kwargs' in expected_types and 'kwargs' not in kwargs:
+                print(f"  ⚠️ Adding empty kwargs parameter")
+                kwargs['kwargs'] = {}
             
             # Execute the tool through the proxy
+            print(f"  🚀 Executing tool through proxy with parameters: {kwargs}")
             return await self._proxy.execute(self.name, kwargs)
         except Exception as e:
             error_msg = f"Error executing tool {self.name}: {str(e)}"
             print(f"  ❌ {error_msg}")
+            import traceback
+            print(f"  🔍 Error traceback:\n{traceback.format_exc()}")
             raise ValueError(error_msg)
 
-    def _run(self, **kwargs) -> str:
-        """Run the tool synchronously - not supported."""
-        raise NotImplementedError("This tool only supports async execution")
+    def _run(self, **kwargs: Any) -> Any:
+        """Execute the tool synchronously."""
+        try:
+            loop = None
+            try:
+                # Get current event loop or create new one
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Special case for CrewAI tools which run in a context where
+                    # the event loop is already running
+                    
+                    # Handle delegation tool case with direct response
+                    if "delegate" in self.name.lower() or "coworker" in self.name.lower():
+                        # Extract parameters safely
+                        coworker = kwargs.get('coworker', 'Unknown')
+                        task = kwargs.get('task', 'Unknown task')
+                        context = kwargs.get('context', 'No context provided')
+                        
+                        # Return a formatted response that CrewAI can understand
+                        return f"Task delegated to {coworker}:\nTask: {task}\nContext: {context}"
+                    
+                    # For other tools, return a descriptive error since we can't
+                    # run async code in this context
+                    return (
+                        f"This tool ({self.name}) requires asynchronous execution. "
+                        f"CrewAI is trying to run an async tool synchronously. "
+                        f"To use this tool properly, use its asynchronous version or contact support."
+                    )
+                else:
+                    # We're not in a running loop, so we can use run_until_complete
+                    return loop.run_until_complete(self._arun(**kwargs))
+            except RuntimeError:
+                # No event loop exists, create a new one
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(self._arun(**kwargs))
+                finally:
+                    asyncio.set_event_loop(None)
+                    if new_loop and new_loop.is_running():
+                        new_loop.stop()
+                    if new_loop and not new_loop.is_closed():
+                        new_loop.close()
+        except Exception as e:
+            error_msg = f"Error executing tool {self.name} synchronously: {str(e)}"
+            print(f"  ❌ {error_msg}")
+            import traceback
+            print(f"  🔍 Error traceback:\n{traceback.format_exc()}")
+            return error_msg
 
 class CerebrumToolSchema(BaseModel):
     """Base schema for all Cerebrum tools."""
@@ -1048,7 +1214,53 @@ class CerebrumCrewAITool(BaseTool):
 
     def _run(self, **kwargs: Any) -> Any:
         """Execute the tool synchronously."""
-        return asyncio.run(self._arun(**kwargs))
+        try:
+            loop = None
+            try:
+                # Get current event loop or create new one
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Special case for CrewAI tools which run in a context where
+                    # the event loop is already running
+                    
+                    # Handle delegation tool case with direct response
+                    if "delegate" in self.name.lower() or "coworker" in self.name.lower():
+                        # Extract parameters safely
+                        coworker = kwargs.get('coworker', 'Unknown')
+                        task = kwargs.get('task', 'Unknown task')
+                        context = kwargs.get('context', 'No context provided')
+                        
+                        # Return a formatted response that CrewAI can understand
+                        return f"Task delegated to {coworker}:\nTask: {task}\nContext: {context}"
+                    
+                    # For other tools, return a descriptive error since we can't
+                    # run async code in this context
+                    return (
+                        f"This tool ({self.name}) requires asynchronous execution. "
+                        f"CrewAI is trying to run an async tool synchronously. "
+                        f"To use this tool properly, use its asynchronous version or contact support."
+                    )
+                else:
+                    # We're not in a running loop, so we can use run_until_complete
+                    return loop.run_until_complete(self._arun(**kwargs))
+            except RuntimeError:
+                # No event loop exists, create a new one
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(self._arun(**kwargs))
+                finally:
+                    asyncio.set_event_loop(None)
+                    if new_loop and new_loop.is_running():
+                        new_loop.stop()
+                    if new_loop and not new_loop.is_closed():
+                        new_loop.close()
+        except Exception as e:
+            error_msg = f"Error executing tool {self.name} synchronously: {str(e)}"
+            print(f"  ❌ {error_msg}")
+            import traceback
+            print(f"  🔍 Error traceback:\n{traceback.format_exc()}")
+            return error_msg
 
     async def _arun(self, **kwargs: Any) -> Any:
         """Execute the tool asynchronously."""
@@ -1074,6 +1286,27 @@ class CerebrumCrewAITool(BaseTool):
             
             # General parameter validation and conversion for all tools
             print(f"\n🔄 Executing tool {self.name} with parameters: {kwargs}")
+            print(f"  🔍 Tool parameter type: {type(kwargs)}")
+            print(f"  🔍 Raw kwargs content: {repr(kwargs)}")
+            
+            # Check for search-related tools
+            if "search" in self.name.lower() or "serper" in self.name.lower():
+                print(f"  🔎 Search tool detected: {self.name}")
+                
+                # Debug search_query parameter specifically
+                if isinstance(kwargs, dict) and "search_query" in kwargs:
+                    print(f"  🔎 search_query parameter found: {kwargs['search_query']}")
+                    print(f"  🔎 search_query parameter type: {type(kwargs['search_query'])}")
+                    print(f"  🔎 search_query parameter repr: {repr(kwargs['search_query'])}")
+                elif isinstance(kwargs, str):
+                    print(f"  ⚠️ kwargs is a string: {kwargs} - this is likely the error source")
+                    # Try to fix the issue by converting string to dict
+                    print(f"  🔧 Attempting to recover by creating dict with search_query key")
+                    kwargs = {"search_query": kwargs, "kwargs": {}}
+                    print(f"  🔧 Converted parameters: {kwargs}")
+                else:
+                    print(f"  ⚠️ No search_query parameter found in kwargs")
+                    print(f"  ⚠️ This is likely the cause of the '\"search_query\"' error")
             
             # Get expected parameter types from schema if available
             expected_types = {}
@@ -1083,6 +1316,7 @@ class CerebrumCrewAITool(BaseTool):
                     for param_name, param_info in schema_json['properties'].items():
                         param_type = param_info.get('type', 'string')
                         expected_types[param_name] = param_type
+                    print(f"  📊 Expected parameter types: {expected_types}")
             
             # Convert parameters to expected types
             for key, value in kwargs.items():
@@ -1102,20 +1336,54 @@ class CerebrumCrewAITool(BaseTool):
                     print(f"  ⚠️ Converting {key} from {type(value)} to string")
                     kwargs[key] = str(value)
             
+            # Special handling for search_query parameter
+            if 'search_query' in expected_types and 'search_query' in kwargs:
+                print(f"  ✅ Found search_query parameter: {kwargs['search_query']}")
+            elif 'search_query' in expected_types and 'search_query' not in kwargs:
+                print(f"  ❌ Missing required search_query parameter!")
+                
+                # Attempt recovery for search tools
+                if "search" in self.name.lower() or "serper" in self.name.lower():
+                    # If there's only one parameter and it's not search_query, try using it as search_query
+                    if len(kwargs) == 1:
+                        param_name, param_value = next(iter(kwargs.items()))
+                        print(f"  🔧 Attempting recovery: using {param_name}={param_value} as search_query")
+                        kwargs = {"search_query": param_value, "kwargs": {}}
+                        print(f"  🔧 Recovered parameters: {kwargs}")
+            
+            # Check for any required parameters that are missing
+            if self.args_schema:
+                schema_json = self.args_schema.model_json_schema()
+                if 'required' in schema_json:
+                    for req_param in schema_json['required']:
+                        if req_param not in kwargs:
+                            print(f"  ❌ Missing required parameter: {req_param}")
+            
             # Validate arguments using the schema
             if self.args_schema:
                 try:
                     validated_args = self.args_schema(**kwargs)
                     kwargs = validated_args.model_dump()
+                    print(f"  ✅ Schema validation succeeded")
                 except Exception as e:
                     print(f"  ⚠️ Schema validation failed: {str(e)}")
+                    import traceback
+                    print(f"  🔍 Validation error traceback:\n{traceback.format_exc()}")
                     # Continue with best effort conversion
+                
+            # Handle missing kwargs by providing empty dict if needed
+            if 'kwargs' in expected_types and 'kwargs' not in kwargs:
+                print(f"  ⚠️ Adding empty kwargs parameter")
+                kwargs['kwargs'] = {}
             
             # Execute the tool through the proxy
+            print(f"  🚀 Executing tool through proxy with parameters: {kwargs}")
             return await self._proxy.execute(self.name, kwargs)
         except Exception as e:
             error_msg = f"Error executing tool {self.name}: {str(e)}"
             print(f"  ❌ {error_msg}")
+            import traceback
+            print(f"  🔍 Error traceback:\n{traceback.format_exc()}")
             raise ValueError(error_msg)
 
 def create_crewai_tool(name: str, metadata: ToolMetadata, proxy: Any) -> BaseTool:

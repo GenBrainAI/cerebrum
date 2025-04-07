@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 from enum import Enum
 
+from .base_model import BaseModel as CerebrumBaseModel
+from .tools_descriptors import ToolMetadata
+
 class Process(str, Enum):
     """Process type for crew execution.
     
@@ -20,23 +23,42 @@ class ToolModel(BaseModel):
     name: str
     description: str
 
+class AgentTool(BaseModel):
+    """Tool model for CrewAI agents."""
+    name: str
+    description: Optional[str] = None
+
 class AgentModel(BaseModel):
     """Model for agent configuration."""
     role: str
     goal: str
     backstory: str
-    tools: List[ToolModel]
-    class_tools: Optional[List[ToolModel]] = None
+    tools: List[AgentTool] = []
+    llm_model: Optional[str] = "OpenAIGPT4"
     verbose: bool = True
-    
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    allow_delegation: bool = True
+
+    def __init__(self, **data):
+        """Initialize with critical search tool instructions added to backstory."""
+        # Check if backstory exists and append critical format instructions
+        if "backstory" in data:
+            critical_instructions = (
+                "\n\n⚠️ CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, "
+                "you MUST format your parameters as a dictionary with 'search_query' as the key. "
+                "Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. "
+                "NEVER pass just the string 'search_query' as a parameter value."
+                "\n\nExample correct usage: search({'search_query': 'concerts in New York'})"
+                "\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL"
+            )
+            data["backstory"] = data["backstory"] + critical_instructions
+        super().__init__(**data)
 
 class TaskModel(BaseModel):
     """Model for task configuration."""
     description: str
     expected_output: str
     agent_role: str
-    depends_on: Optional[List[str]] = None
+    human_input: bool = False
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -64,6 +86,7 @@ class CreateCrewRequest(BaseModel):
     agents: List[AgentModel]
     tasks: List[TaskModel]
     tools_proxy_collection: Optional[ToolsProxyCollection] = None
+    allowed_tools: Optional[List[str]] = None  # Add allowed_tools field
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 @dataclass
@@ -136,13 +159,12 @@ class Agentic:
             
         return agentic
 
-class CrewAIConfig(BaseModel):
-    id: Optional[str] = Field(alias="id", default=None)
-    create_crew: Optional[CreateCrewRequest] = Field(alias="create_crew", default=None)
-    created_at: Optional[datetime] = Field(alias="created_at", default=None)
-    updated_at: Optional[datetime] = Field(alias="updated_at", default=None)
-    process: Optional[Process] = Field(alias="process", default=Process.sequential)
-
+class CrewAIConfig(CerebrumBaseModel):
+    """Configuration for CrewAI."""
+    id: UUID = Field(default_factory=uuid4)
+    create_crew: CreateCrewRequest
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 class CrewConfiguration(BaseModel):

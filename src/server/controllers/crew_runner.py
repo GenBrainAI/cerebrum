@@ -4,6 +4,7 @@ import json
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 from ..controllers.curried_proxy import CurriedProxy
 from datetime import datetime
+from ..tools.human_tools import human_input_tool
 
 def format_response(response: Union[str, Dict[str, Any], Any]) -> str:
     """Format the crew response into a string."""
@@ -102,9 +103,58 @@ async def run_crew_task(
         if task.execution_logs is None:
             task.execution_logs = []
         
-        crewai_config = persistence_model.crewai_config.read(task.crewai_config_id)
-        if not crewai_config:
-            error_msg = f"CrewAI configuration {task.crewai_config_id} not found"
+        # Debug dump of task attributes
+        task_attrs = {
+            'id': getattr(task, 'id', None),
+            'name': getattr(task, 'name', None),
+            'framework': getattr(task, 'framework', None),
+            'crewai_config_id': getattr(task, 'crewai_config_id', None),
+            'curried_proxy_id': getattr(task, 'curried_proxy_id', None),
+            'human_input': getattr(task, 'human_input', False)
+        }
+        print(f"📋 Task details: {task_attrs}")
+        
+        # Check if crewai_config_id is available
+        if not hasattr(task, 'crewai_config_id') or not task.crewai_config_id:
+            error_msg = f"CrewAI configuration ID not found in task attributes"
+            print(f"❌ {error_msg}")
+            task.execution_logs.append({
+                "timestamp": str(datetime.now()),
+                "type": "error",
+                "content": error_msg
+            })
+            persistence_model.tasks.update(task_id, task)
+            return {
+                "response": error_msg,
+                "status": "failed",
+                "error": error_msg
+            }
+            
+        print(f"🔍 Looking for CrewAI config {task.crewai_config_id} in persistence model")
+        
+        try:
+            # Get configuration with error tracing
+            crewai_config = persistence_model.crewai_config.read(task.crewai_config_id)
+            if not crewai_config:
+                error_msg = f"CrewAI configuration {task.crewai_config_id} not found in persistence model"
+                print(f"❌ {error_msg}")
+                task.execution_logs.append({
+                    "timestamp": str(datetime.now()),
+                    "type": "error",
+                    "content": error_msg
+                })
+                persistence_model.tasks.update(task_id, task)
+                return {
+                    "response": error_msg,
+                    "status": "failed",
+                    "error": error_msg
+                }
+            print(f"✅ Found CrewAI config: {getattr(crewai_config, 'name', 'Unnamed config')}")
+        except Exception as config_e:
+            error_msg = f"Error retrieving CrewAI configuration: {str(config_e)}"
+            print(f"❌ {error_msg}")
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}")
             task.execution_logs.append({
                 "timestamp": str(datetime.now()),
                 "type": "error",
@@ -119,72 +169,170 @@ async def run_crew_task(
         
         # Create or get the curried proxy
         curried_proxy = None
-        if task.curried_proxy_id:
-            curried_proxy = persistence_model.curried_proxies.read(task.curried_proxy_id)
-        else:
-            curried_proxy = CurriedProxy()
-        
-        # Validate agent role exists in crew configuration
-        if task.agent_role:
-            agent_roles = [agent.role for agent in crewai_config.create_crew.agents]
-            if task.agent_role not in agent_roles:
-                error_msg = f"Agent role '{task.agent_role}' not found in crew configuration. Available roles: {', '.join(agent_roles)}"
+        try:
+            if task.curried_proxy_id:
+                print(f"🔍 Getting curried proxy with ID: {task.curried_proxy_id}")
+                curried_proxy = persistence_model.curried_proxies.read(task.curried_proxy_id)
+                if not curried_proxy:
+                    print(f"⚠️ Curried proxy {task.curried_proxy_id} not found, creating new one")
+                    curried_proxy = CurriedProxy()
+                else:
+                    print(f"✅ Found curried proxy with ID: {task.curried_proxy_id}")
+            else:
+                print(f"⚠️ No curried proxy ID specified, creating new one")
+                curried_proxy = CurriedProxy()
+            
+            # Check if human input is enabled
+            human_input_enabled = False
+            if hasattr(task, 'human_input') and task.human_input:
+                human_input_enabled = True
+                print(f"🧠 Human input is enabled for this task")
+                
+                # Check if we're in test mode
+                is_test_mode = task_input and task_input.get('test_mode', False)
+                if is_test_mode:
+                    from ..tools.human_tools.human_tool import HumanInputTool
+                    print(f"🤖 Test mode detected - configuring HumanInputTool for automated responses")
+                    
+                    # Define default test responses if not provided
+                    mock_responses = task_input.get('mock_responses', [
+                        "I'm interested in rock and electronic music festivals in Europe.",
+                        "My budget is around 500 euros for tickets.",
+                        "I'd prefer festivals with camping options and good transportation.",
+                        "That sounds great! Please provide more details."
+                    ])
+                    
+                    # Configure the tool for test mode
+                    HumanInputTool.configure_test_mode(enable=True, mock_responses=mock_responses)
+                    print(f"🤖 HumanInputTool configured for test mode with {len(mock_responses)} responses")
+                
+                # Add human input tool to tools
+                if not hasattr(curried_proxy, 'tools'):
+                    curried_proxy.tools = {}
+                
+                # Register human input tool in the curried_proxy
+                curried_proxy.add_tool('human_input', human_input_tool)
+                print(f"✅ Registered human input tool")
+                
+            # Ensure we pass allowed_tools from the CrewAIConfig to create_crew
+            from .agents_controller import create_crew
+            
+            # Check if crewai_config has allowed_tools
+            create_crew_request = crewai_config.create_crew
+            if hasattr(crewai_config, 'allowed_tools') and crewai_config.allowed_tools:
+                # Add human_input to allowed_tools if enabled
+                if human_input_enabled and 'human_input' not in crewai_config.allowed_tools:
+                    crewai_config.allowed_tools.append('human_input')
+                    
+                print(f"📋 Found allowed_tools in CrewAIConfig: {', '.join(crewai_config.allowed_tools)}")
+                # Make sure allowed_tools is accessible to CreateCrewRequest
+                if not hasattr(create_crew_request, 'allowed_tools'):
+                    # Add allowed_tools as an attribute
+                    create_crew_request.allowed_tools = crewai_config.allowed_tools
+                else:
+                    # Update existing attribute
+                    create_crew_request.allowed_tools = crewai_config.allowed_tools
+            elif human_input_enabled:
+                # If no allowed_tools defined but human_input is enabled, create the list
+                allowed_tools = ['human_input']
+                print(f"📋 Setting allowed_tools to include human_input: {', '.join(allowed_tools)}")
+                if not hasattr(create_crew_request, 'allowed_tools'):
+                    create_crew_request.allowed_tools = allowed_tools
+                else:
+                    create_crew_request.allowed_tools = allowed_tools
+            else:
+                print("📋 No allowed_tools found in CrewAIConfig, will use defaults")
+            
+            crew = await create_crew(crewai_config.create_crew, curried_proxy)
+            
+            # Validate agent role exists in crew configuration
+            if hasattr(task, 'agent_role') and task.agent_role:
+                try:
+                    agent_roles = [getattr(agent, 'role', None) for agent in getattr(crewai_config, 'agents', [])]
+                    if task.agent_role not in agent_roles:
+                        error_msg = f"Agent role '{task.agent_role}' not found in crew configuration. Available roles: {', '.join(agent_roles)}"
+                        print(f"❌ {error_msg}")
+                        task.execution_logs.append({
+                            "timestamp": str(datetime.now()),
+                            "type": "error",
+                            "content": error_msg
+                        })
+                        persistence_model.tasks.update(task_id, task)
+                        return {
+                            "response": error_msg,
+                            "status": "failed",
+                            "error": error_msg
+                        }
+                    print(f"✅ Validated agent role: {task.agent_role}")
+                except Exception as role_e:
+                    print(f"⚠️ Error validating agent role: {str(role_e)}. Proceeding without role validation.")
+                    import traceback
+                    print(f"Traceback: {traceback.format_exc()}")
+            
+            # Add start log
+            task.execution_logs.append({
+                "timestamp": str(datetime.now()),
+                "type": "info",
+                "content": "Starting CrewAI task execution"
+            })
+            persistence_model.tasks.update(task_id, task)
+            
+            # Set human_input flag in task parameters if enabled
+            if human_input_enabled and task_input:
+                task_input['human_input_enabled'] = True
+            
+            # Ensure task_input is sanitized for CrewAI
+            sanitized_input = sanitize_data(task_input or {})
+            print(f"🧹 Task input sanitized for CrewAI compatibility")
+            
+            # Execute the crew with the provided input using run_in_executor
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, crew.kickoff, sanitized_input)
+            
+            # Format the result into a string response
+            formatted_result = format_response(result)
+            
+            # Extract tool information from input data
+            tool_info = None
+            if task.input_data and 'tool_request' in task.input_data:
+                tool_info = task.input_data['tool_request']
+            
+            # Add completion log
+            task.execution_logs.append({
+                "timestamp": str(datetime.now()),
+                "type": "info",
+                "content": "CrewAI task execution completed",
+                "result": formatted_result
+            })
+            
+            # Save the updated task
+            persistence_model.tasks.update(task_id, task)
+            
+            return {
+                "response": formatted_result,
+                "status": "success",
+                "generated_tool": tool_info
+            }
+        except Exception as e:
+            error_msg = f"Error in CrewAI task execution: {str(e)}"
+            print(f"❌ {error_msg}")
+            
+            # Add error log if task exists
+            if 'task' in locals() and task:
+                if task.execution_logs is None:
+                    task.execution_logs = []
                 task.execution_logs.append({
                     "timestamp": str(datetime.now()),
                     "type": "error",
                     "content": error_msg
                 })
                 persistence_model.tasks.update(task_id, task)
-                return {
-                    "response": error_msg,
-                    "status": "failed",
-                    "error": error_msg
-                }
-        
-        # Create and execute the crew
-        from .agents_controller import create_crew
-        crew = await create_crew(crewai_config.create_crew, curried_proxy)
-        
-        # Add start log
-        task.execution_logs.append({
-            "timestamp": str(datetime.now()),
-            "type": "info",
-            "content": "Starting CrewAI task execution"
-        })
-        persistence_model.tasks.update(task_id, task)
-        
-        # Ensure task_input is sanitized for CrewAI
-        sanitized_input = sanitize_data(task_input or {})
-        print(f"🧹 Task input sanitized for CrewAI compatibility")
-        
-        # Execute the crew with the provided input using run_in_executor
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, crew.kickoff, sanitized_input)
-        
-        # Format the result into a string response
-        formatted_result = format_response(result)
-        
-        # Extract tool information from input data
-        tool_info = None
-        if task.input_data and 'tool_request' in task.input_data:
-            tool_info = task.input_data['tool_request']
-        
-        # Add completion log
-        task.execution_logs.append({
-            "timestamp": str(datetime.now()),
-            "type": "info",
-            "content": "CrewAI task execution completed",
-            "result": formatted_result
-        })
-        
-        # Save the updated task
-        persistence_model.tasks.update(task_id, task)
-        
-        return {
-            "response": formatted_result,
-            "status": "success",
-            "generated_tool": tool_info
-        }
+            
+            return {
+                "response": error_msg,
+                "status": "failed",
+                "error": error_msg
+            }
     except Exception as e:
         error_msg = f"Error in CrewAI task execution: {str(e)}"
         print(f"❌ {error_msg}")

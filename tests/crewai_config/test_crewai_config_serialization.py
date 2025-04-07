@@ -4,6 +4,7 @@ import sys
 import os
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).parents[2])
@@ -14,7 +15,7 @@ from src.server.models.agent import (
     CreateCrewRequest, 
     AgentModel, 
     TaskModel, 
-    ToolModel, 
+    AgentTool,
     Process
 )
 from src.server.persistence.in_memory_crud import CrewAIConfigCrud
@@ -27,12 +28,12 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
     def setUp(self):
         """Set up test data."""
         # Create a sample CrewAI configuration
-        self.tool1 = ToolModel(
+        self.tool1 = AgentTool(
             name="WebsiteSearchTool",
             description="Search the web for information"
         )
         
-        self.tool2 = ToolModel(
+        self.tool2 = AgentTool(
             name="SerperDevTool",
             description="Search the web using Serper API"
         )
@@ -74,11 +75,10 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         )
         
         self.crewai_config = CrewAIConfig(
-            id="test-config-id",
+            id=uuid4(),
             create_crew=self.create_crew_request,
             created_at=datetime.now(),
-            updated_at=datetime.now(),
-            process=Process.sequential
+            updated_at=datetime.now()
         )
         
         # Initialize the CRUD handler
@@ -96,8 +96,7 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         parsed_data = json.loads(json_data)
         
         # Verify the structure
-        self.assertEqual(parsed_data["id"], "test-config-id")
-        self.assertEqual(parsed_data["process"], "sequential")
+        self.assertEqual(parsed_data["id"], str(self.crewai_config.id))
         self.assertIn("create_crew", parsed_data)
         
         # Verify create_crew structure
@@ -129,8 +128,7 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         deserialized_config = CrewAIConfig.model_validate_json(json_data)
         
         # Verify the structure
-        self.assertEqual(deserialized_config.id, "test-config-id")
-        self.assertEqual(deserialized_config.process, Process.sequential)
+        self.assertEqual(deserialized_config.id, self.crewai_config.id)
         self.assertIsNotNone(deserialized_config.create_crew)
         
         # Verify create_crew structure
@@ -165,10 +163,9 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         parsed_data = json.loads(json_data)
         
         # Verify the structure
-        self.assertIn("test-config-id", parsed_data)
-        config_data = parsed_data["test-config-id"]
-        self.assertEqual(config_data["id"], "test-config-id")
-        self.assertEqual(config_data["process"], "sequential")
+        self.assertIn(str(self.crewai_config.id), parsed_data)
+        config_data = parsed_data[str(self.crewai_config.id)]
+        self.assertEqual(config_data["id"], str(self.crewai_config.id))
         self.assertIn("create_crew", config_data)
         
         # Verify create_crew structure
@@ -193,11 +190,10 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         new_crud.from_json(json_data)
         
         # Retrieve the deserialized configuration
-        deserialized_config = new_crud.read("test-config-id")
+        deserialized_config = new_crud.read(self.crewai_config.id)
         
         # Verify the structure
-        self.assertEqual(deserialized_config.id, "test-config-id")
-        self.assertEqual(deserialized_config.process, Process.sequential)
+        self.assertEqual(deserialized_config.id, self.crewai_config.id)
         self.assertIsNotNone(deserialized_config.create_crew)
         
         # Verify create_crew structure
@@ -236,10 +232,9 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         crewai_config_json = parsed_data["crewai_config"]
         crewai_config_data = json.loads(crewai_config_json) if isinstance(crewai_config_json, str) else crewai_config_json
         
-        self.assertIn("test-config-id", crewai_config_data)
-        config_data = crewai_config_data["test-config-id"]
-        self.assertEqual(config_data["id"], "test-config-id")
-        self.assertEqual(config_data["process"], "sequential")
+        self.assertIn(str(self.crewai_config.id), crewai_config_data)
+        config_data = crewai_config_data[str(self.crewai_config.id)]
+        self.assertEqual(config_data["id"], str(self.crewai_config.id))
         self.assertIn("create_crew", config_data)
         
         print("✅ Persistence model serialization test passed")
@@ -257,11 +252,10 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         new_persistence_model.from_json(json_data)
         
         # Retrieve the deserialized configuration
-        deserialized_config = new_persistence_model.crewai_config.read("test-config-id")
+        deserialized_config = new_persistence_model.crewai_config.read(self.crewai_config.id)
         
         # Verify the structure
-        self.assertEqual(deserialized_config.id, "test-config-id")
-        self.assertEqual(deserialized_config.process, Process.sequential)
+        self.assertEqual(deserialized_config.id, self.crewai_config.id)
         self.assertIsNotNone(deserialized_config.create_crew)
         
         # Verify create_crew structure
@@ -306,11 +300,10 @@ class TestCrewAIConfigSerialization(unittest.TestCase):
         new_persistence_model.from_json(loaded_json)
         
         # Retrieve the deserialized configuration
-        deserialized_config = new_persistence_model.crewai_config.read("test-config-id")
+        deserialized_config = new_persistence_model.crewai_config.read(self.crewai_config.id)
         
         # Verify the structure
-        self.assertEqual(deserialized_config.id, "test-config-id")
-        self.assertEqual(deserialized_config.process, Process.sequential)
+        self.assertEqual(deserialized_config.id, self.crewai_config.id)
         self.assertIsNotNone(deserialized_config.create_crew)
         
         # Verify create_crew structure

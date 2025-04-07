@@ -446,6 +446,11 @@ class TaskManagementComponent:
             
             system_message = st.text_area("System Message", value="You are a helpful assistant.", height=250)
             
+            # Add human input toggle
+            human_input = st.checkbox("Enable Human Input", 
+                                     value=False,
+                                     help="Enable human-in-the-loop functionality for this task")
+            
             submitted = st.form_submit_button("Create Task")
             
             if submitted and tasksmanager_id:
@@ -459,7 +464,8 @@ class TaskManagementComponent:
                     description=description,
                     model=model_value,
                     system_message=system_message,
-                    inherit_manager_context=inherit_context
+                    inherit_manager_context=inherit_context,
+                    human_input=human_input
                 )
                 
                 if result:
@@ -516,6 +522,11 @@ class TaskManagementComponent:
             inherit_context = st.checkbox("Inherit Manager Context", value=task.inherit_manager_context)
             
             system_msg = st.text_area("System Message", value=system_message, height=250)
+            
+            # Add human input toggle
+            human_input = st.checkbox("Enable Human Input", 
+                                     value=task.human_input if task and hasattr(task, 'human_input') else False,
+                                     help="Enable human-in-the-loop functionality for this task")
             
             col1, col2 = st.columns(2)
             with col1:

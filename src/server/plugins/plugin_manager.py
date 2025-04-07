@@ -102,8 +102,28 @@ class PluginManager:
             for plugin in self._plugins.values()
         ]
     
-    async def execute_task(self, plugin_name: str, agent: Any, task: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a task using the specified plugin."""
+    async def execute_task(
+        self, 
+        plugin_name: str, 
+        task: Any, 
+        curried_proxy: Any = None, 
+        allowed_tools: List[str] = None, 
+        inputs: Dict[str, Any] = None,
+        persistence_model: Any = None
+    ) -> Any:
+        """Execute a task using the specified plugin.
+        
+        Args:
+            plugin_name: The name of the plugin to execute the task with
+            task: The task to execute
+            curried_proxy: The curried proxy for tool access
+            allowed_tools: The list of allowed tools
+            inputs: The inputs for the task
+            persistence_model: The persistence model to use
+            
+        Returns:
+            The result of the task execution
+        """
         plugin = self.get_plugin(plugin_name)
         if not plugin:
             raise ValueError(f"Plugin {plugin_name} not found")
@@ -111,7 +131,18 @@ class PluginManager:
         if not plugin.is_initialized:
             raise RuntimeError(f"Plugin {plugin_name} is not initialized")
         
-        return await plugin.execute_task(agent, task)
+        # Pass all the parameters to the plugin's run_task method
+        if plugin_name == "crewai":
+            return await plugin.run_task(
+                task=task,
+                curried_proxy=curried_proxy,
+                allowed_tools=allowed_tools,
+                inputs=inputs,
+                persistence_model=persistence_model
+            )
+        else:
+            # Default case for other plugins
+            return await plugin.execute_task(task)
     
     async def create_agent(self, plugin_name: str, config: Dict[str, Any]) -> Any:
         """Create an agent using the specified plugin."""

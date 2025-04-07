@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Any, List, Optional, Dict, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class ToolType(str, Enum):
     """Type of tool in the catalog."""
@@ -43,6 +43,11 @@ class ToolMetadata(BaseModel):
     class_name: Optional[str] = None
     method_name: Optional[str] = None
     async_tool: bool = False
+
+    model_config = ConfigDict(
+        populate_by_name=False,
+        arbitrary_types_allowed=True
+    )
 
 class ToolContext(BaseModel):
     """Context for tool execution."""

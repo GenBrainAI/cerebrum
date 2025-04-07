@@ -484,7 +484,7 @@ def render_state_management():
 def render_navigation():
     """Render the horizontal navigation menu."""
     st.markdown("---")
-    nav_cols = st.columns(5)  # Updated to 5 columns
+    nav_cols = st.columns(6)  # Updated to 6 columns to include human-in-the-loop
     
     with nav_cols[0]:
         if st.button("💬", help="Switch to chat view", key="switch_to_chat"):
@@ -511,6 +511,19 @@ def render_navigation():
                 save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
                 
             st.session_state.chat_view_mode = 'session_info'
+            st.rerun()
+    with nav_cols[3]:
+        if st.button("🧠", help="Human-in-the-Loop", key="switch_to_hitl"):
+            # Save current messages if they exist before switching views
+            if st.session_state.messages and st.session_state.current_task_id and st.session_state.current_session_id:
+                save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+                
+            # Import and call the human input view function
+            from src.pages.human_input_view import render_human_input_view
+            st.session_state.chat_view_mode = 'human_input'
+            
+            # We'll set a flag to render the human input view instead
+            st.session_state.render_human_input = True
             st.rerun()
     
     st.markdown("---")
@@ -2236,6 +2249,12 @@ async def render_main_content():
             save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
             if st.session_state.state_location:
                 save_current_state(st.session_state.state_location.state_name)
+        
+        # Check if we need to render the human input view
+        if hasattr(st.session_state, 'render_human_input') and st.session_state.render_human_input:
+            from src.pages.human_input_view import render_human_input_view
+            await render_human_input_view()
+            return
             
         if st.session_state.current_view == ViewType.TASK_HIERARCHY:
             from pages.task_hierarchy_view import render_task_hierarchy_view

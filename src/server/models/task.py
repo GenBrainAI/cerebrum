@@ -96,6 +96,7 @@ class Task(BaseModel):
         result: Result of the task
         last_response: Last response from the task
         data: Additional data for the task (used for handover)
+        inputs: Additional inputs for the task
     """
     
     id: str = Field(default=None)
@@ -123,6 +124,7 @@ class Task(BaseModel):
     contexts: Optional[List[Dict[str, Any]]] = Field(default=[])
     execution_logs: Optional[List[Dict[str, Any]]] = Field(default=[])
     input_data: Optional[Dict[str, Any]] = Field(default={})
+    inputs: Optional[Dict[str, Any]] = Field(default={})
     result: Optional[Any] = Field(default=None)
     last_response: Optional[Any] = Field(default=None)
     input_from_tasks: Optional[List[str]] = Field(default=[])

@@ -163,19 +163,20 @@ class ToolsCatalog:
                         default=None if param.default == inspect.Parameter.empty else param.default
                     ))
         
-        # Create metadata
-        return ToolMetadata(
-            name=name,
-            tool_type=ToolType.CLASS_METHOD,
-            description=description or docstring,
-            parameters=parameters,
-            original_obj=instance,
-            returns=ReturnInfo(
-                type_hint="Any",
-                description="Return value"
+        # Create metadata using a dictionary to force keyword argument initialization
+        metadata_args = {
+            "name": name,
+            "tool_type": ToolType.CLASS_METHOD,
+            "description": description or docstring,
+            "parameters": parameters,
+            "original_obj": instance,
+            "returns": ReturnInfo(
+                type_hint="Any", 
+                description="Instance object"
             ),
-            async_tool=inspect.iscoroutinefunction(instance) or (hasattr(instance, '__call__') and inspect.iscoroutinefunction(instance.__call__))
-        )
+            "async_tool": inspect.iscoroutinefunction(instance) or (hasattr(instance, '__call__') and inspect.iscoroutinefunction(instance.__call__))
+        }
+        return ToolMetadata(**metadata_args)
 
     def register_instance(self, instance: Any, name: str, exclude_base_methods: bool = True, register_instance_itself: bool = False) -> List[str]:
         """Register an instance and its methods as tools in the catalog.

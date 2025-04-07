@@ -60,40 +60,32 @@ class InMemoryCrud(CrudInterface[T], Generic[T]):
         # Serialize the storage dictionary to JSON
         return json.dumps(string_keyed_storage, default=pydantic_encoder)
 
-    def from_json(self, data: str):
-        """Deserialize JSON data to storage dictionary with validation."""
-        try:
-            items = json.loads(data)
-            new_storage = {}
+    def from_json(self, json_string: str) -> None:
+        """
+        Deserialize JSON string back to dictionary of items.
+        
+        Args:
+            json_string: The JSON string to deserialize.
+        """
+        data = json.loads(json_string)
+        for k, v in data.items():
+            if k.startswith("_"):
+                # Skip private attributes
+                continue
             
-            print(f"\n🔍 Loading {self._model_class.__name__} items:")
-            for k, v in items.items():
-                try:
-                    print(f"  📝 Processing {k}:")
-                    print(f"    Type before parsing: {type(v)}")
-                    
-                    # Ensure ID is preserved during parsing
-                    if isinstance(v, dict) and 'id' not in v:
-                        v['id'] = k
-                    
-                    parsed_item = self._model_class.parse_obj(v)
-                    
-                    print(f"    Type after parsing: {type(parsed_item)}")
-                    print(f"    Is instance of {self._model_class.__name__}: {isinstance(parsed_item, self._model_class)}")
-                    
-                    # Store with original key
-                    new_storage[k] = parsed_item
-                except Exception as e:
-                    print(f"❌ Failed to parse item {k}: {str(e)}")
-                    print(f"   Raw item data: {v}")
-                    raise
-                    
-            self.storage = new_storage
+            print(f"  📝 Processing {k}:")
+            print(f"    Type before parsing: {type(v)}")
             
-        except Exception as e:
-            print(f"❌ Error in from_json for {self._model_class.__name__}: {str(e)}")
-            print(f"   Raw data: {data[:200]}...")
-            raise
+            # Convert dictionary to model instance
+            try:
+                parsed_item = self._model_class.model_validate(v)
+                print(f"    Type after parsing: {type(parsed_item)}")
+                print(f"    Is instance of {self._model_class.__name__}: {isinstance(parsed_item, self._model_class)}")
+                self.storage[k] = parsed_item
+            except Exception as e:
+                print(f"    ❌ Error parsing item: {str(e)}")
+                # Store as is if we can't parse
+                self.storage[k] = v
 
     @property
     def model_class(self):
@@ -249,20 +241,52 @@ class CurriedProxyCrud(InMemoryCrud[CurriedProxy]):
             info_dict[str(proxy_id)] = proxy.to_info().model_dump()
         return json.dumps(info_dict, default=pydantic_encoder)
 
-    def from_json(self, json_str: str):
+    def from_json(self, data):
         """
         Restore CurriedProxy instances from JSON using CurriedProxyInfo
+        
+        Args:
+            data: Either a JSON string or a pre-parsed dictionary
         """
         try:
-            info_dict = json.loads(json_str)
+            # Check if data is already a dictionary
+            if isinstance(data, dict):
+                info_dict = data
+                print(f"CurriedProxyCrud: Data is already a dictionary, using directly")
+            else:
+                info_dict = json.loads(data)
+                print(f"CurriedProxyCrud: Parsed JSON string into dictionary")
+            
             self.storage = {}
             for proxy_id, info_data in info_dict.items():
-                proxy_info = CurriedProxyInfo(**info_data)
-                proxy = CurriedProxy.from_info(proxy_info)
-                self.storage[proxy_id] = proxy
+                try:
+                    proxy_info = CurriedProxyInfo(**info_data)
+                    proxy = CurriedProxy.from_info(proxy_info)
+                    self.storage[proxy_id] = proxy
+                except Exception as item_error:
+                    print(f"Error creating CurriedProxy for ID {proxy_id}: {str(item_error)}")
+                    # Continue processing other items
+            
+            return self.storage
+        except json.JSONDecodeError as e:
+            print(f"❌ Error in CurriedProxyCrud.from_json: JSON decoding error: {str(e)}")
+        except TypeError as e:
+            print(f"❌ Error in CurriedProxyCrud.from_json: {str(e)}")
         except Exception as e:
-            print(f"Error deserializing CurriedProxy: {str(e)}")
-            raise e
+            print(f"❌ Error in CurriedProxyCrud.from_json: {str(e)}")
+            # Safe way to print data for debugging
+            try:
+                data_type = type(data)
+                if isinstance(data, dict):
+                    print(f"   Data is a dictionary with {len(data)} keys")
+                else:
+                    data_preview = str(data)[:200] + "..." if len(str(data)) > 200 else str(data)
+                    print(f"   Data type: {data_type}")
+                    print(f"   Data preview: {data_preview}")
+            except Exception as print_error:
+                print(f"   Unable to print data details: {print_error}")
+        
+        return self.storage
 
 class TaskFlowCrud(InMemoryCrud[TaskFlow]):
     def __init__(self):

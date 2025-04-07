@@ -1,14 +1,51 @@
 """Tool execution metrics tracking."""
 from __future__ import annotations
-from typing import Dict, Any, Optional, Type, List, Union
+from typing import Dict, Any, Optional, Type, List, Union, Callable
 from datetime import datetime
 import logging
 import asyncio
 from crewai.tools import BaseTool
 import time
+import functools
 from pydantic import PrivateAttr, BaseModel, Field, ConfigDict, create_model
 
 logger = logging.getLogger(__name__)
+
+def measure_execution_time(func: Callable) -> Callable:
+    """Decorator to measure the execution time of a function."""
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        """Async wrapper for measuring execution time."""
+        start_time = time.time()
+        try:
+            result = await func(*args, **kwargs)
+            end_time = time.time()
+            logger.info(f"Function {func.__name__} executed in {end_time - start_time:.4f} seconds")
+            return result
+        except Exception as e:
+            end_time = time.time()
+            logger.error(f"Function {func.__name__} failed after {end_time - start_time:.4f} seconds: {str(e)}")
+            raise
+    
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        """Sync wrapper for measuring execution time."""
+        start_time = time.time()
+        try:
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            logger.info(f"Function {func.__name__} executed in {end_time - start_time:.4f} seconds")
+            return result
+        except Exception as e:
+            end_time = time.time()
+            logger.error(f"Function {func.__name__} failed after {end_time - start_time:.4f} seconds: {str(e)}")
+            raise
+    
+    # Choose the appropriate wrapper based on whether the function is async or not
+    if asyncio.iscoroutinefunction(func):
+        return async_wrapper
+    else:
+        return sync_wrapper
 
 class ToolExecutionMetrics:
     """Tracks execution metrics for a tool."""

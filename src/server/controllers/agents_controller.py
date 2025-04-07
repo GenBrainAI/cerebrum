@@ -55,118 +55,124 @@ def create_manager_agent() -> AgentModel:
     )
 
 async def create_crew(
-    request: CreateCrewRequest,
+    create_crew: CreateCrewRequest, 
     curried_proxy: Optional[CurriedProxy] = None
 ) -> Crew:
     """
     Create a CrewAI crew with support for both sequential and hierarchical processes.
     """
     print("\n🔄 Creating CrewAI crew...")
-    llm = CrewLLM()
-    try:
-        # Create agents with tools from proxy
-        agents = []
-        agent_tools = []
-        
-        if curried_proxy:
-            print("🛠️ Curried proxy provided, exporting tools...")
-            agent_tools = curried_proxy.export_to_crewai()
-            print(f"🔧 Exported {len(agent_tools)} tools from proxy")
+    
+    # Export tools from the proxy if provided
+    agent_tools = []
+    if curried_proxy:
+        print("🛠️ Curried proxy provided, exporting tools...")
+        # Check if crew config has allowed_tools specified
+        allowed_tools = None
+        if hasattr(create_crew, 'allowed_tools') and create_crew.allowed_tools:
+            allowed_tools = create_crew.allowed_tools
+            print(f"📋 Using allowed_tools from CreateCrewRequest: {', '.join(allowed_tools)}")
         else:
-            print("⚠️ No curried proxy provided, agents will have no tools")
-            
-        # Add manager agent for hierarchical process
-        if request.process == Process.hierarchical:
-            print("\n👥 Using hierarchical process")
-            if not any(a.role == "Technical Lead" for a in request.agents):
-                print("➕ Adding Technical Lead agent")
-                manager = create_manager_agent()
-                request.agents.insert(0, manager)  # Add manager as first agent
-            
-        for agent_data in request.agents:
-            print(f"\n👤 Creating agent: {agent_data.role}")
-            # Get LLM from agent data or default to gpt-4
-            agent_llm = getattr(llm, agent_data.llm_model) if hasattr(agent_data, 'llm_model') else llm.OpenAIGPT4
-            
-            # For hierarchical process, manager gets all tools
-            agent_tools_for_role = agent_tools
-            if request.process == Process.hierarchical and agent_data.role != "Technical Lead":
-                # Filter tools based on agent's specified tools
-                agent_tools_for_role = [
-                    tool for tool in agent_tools 
-                    if any(t.name == tool.name for t in agent_data.tools)
-                ]
-            
-            agent = Agent(
-                role=agent_data.role,
-                goal=agent_data.goal,
-                backstory=agent_data.backstory,
-                tools=agent_tools_for_role,
-                verbose=True,
-                llm=agent_llm
-            )
-            print(f"  ✅ Agent created with {len(agent_tools_for_role)} tools")
-            agents.append(agent)
-
-        # Create tasks with proper dependencies for hierarchical process
-        tasks = []
-        for task_data in request.tasks:
-            print(f"\n📋 Creating task: {task_data.description[:50]}...")
-            agent = next(
-                (a for a in agents if a.role == task_data.agent_role),
-                None
-            )
-            if not agent:
-                error_msg = f"Agent role '{task_data.agent_role}' not found."
-                print(f"  ❌ {error_msg}")
-                raise HTTPException(status_code=400, detail=error_msg)
-            
-            # For hierarchical process, add manager review after each task
-            task = Task(
-                description=task_data.description,
-                expected_output=str(task_data.expected_output),
-                agent=agent
-            )
-            print(f"  ✅ Task created and assigned to agent: {task_data.agent_role}")
-            tasks.append(task)
-            
-            if request.process == Process.hierarchical and agent.role != "Technical Lead":
-                # Add manager review task
-                manager_agent = next(a for a in agents if a.role == "Technical Lead")
-                review_task = Task(
-                    description=f"Review and validate the output of task: {task_data.description}",
-                    expected_output="Validation report and improvement suggestions",
-                    agent=manager_agent
-                )
-                print("  ➕ Added manager review task")
-                tasks.append(review_task)
-
-        # Create the crew with manager_llm for hierarchical process
-        crew_kwargs = {
-            "agents": agents,
-            "tasks": tasks,
-            "verbose": True,
-            "process": request.process
-        }
+            print("📋 No allowed_tools specified in CreateCrewRequest, using defaults")
+            allowed_tools = ["brave_search", "web_search", "SerperDevTool", "delegate"]
         
-        # Add manager_llm for hierarchical process
-        if request.process == Process.hierarchical:
-            crew_kwargs["manager_llm"] = llm.OpenAIGPT4
+        # Pass the proxy's specific catalog instance as an override
+        agent_tools = curried_proxy.export_to_crewai(
+            allowed_tools=allowed_tools, 
+            catalog_override=curried_proxy.catalog
+        )
+        print(f"🔧 Exported {len(agent_tools)} tools from proxy")
+    else:
+        print("⚠️ No curried proxy provided, agents will have no tools")
             
-        crew = Crew(**crew_kwargs)
-        print("\n✨ Crew created successfully!")
-        print(f"  - {len(agents)} agents")
-        print(f"  - {len(tasks)} tasks")
-        print(f"  - Process: {request.process}")
-        print(f"  - Tools per agent: varies by role\n")
+    # Add manager agent for hierarchical process
+    if create_crew.process == Process.hierarchical:
+        print("\n👥 Using hierarchical process")
+        if not any(a.role == "Technical Lead" for a in create_crew.agents):
+            print("➕ Adding Technical Lead agent")
+            manager = create_manager_agent()
+            create_crew.agents.insert(0, manager)  # Add manager as first agent
+        
+    llm = CrewLLM()
+    agents = []
+    for agent_data in create_crew.agents:
+        print(f"\n👤 Creating agent: {agent_data.role}")
+        # Get LLM from agent data or default to gpt-4
+        agent_llm = getattr(llm, agent_data.llm_model) if hasattr(agent_data, 'llm_model') else llm.OpenAIGPT4
+        
+        # For hierarchical process, manager gets all tools
+        agent_tools_for_role = agent_tools
+        if create_crew.process == Process.hierarchical and agent_data.role != "Technical Lead":
+            # Filter tools based on agent's specified tools
+            agent_tools_for_role = [
+                tool for tool in agent_tools 
+                if any(t.name == tool.name for t in agent_data.tools)
+            ]
+        
+        agent = Agent(
+            role=agent_data.role,
+            goal=agent_data.goal,
+            backstory=agent_data.backstory,
+            tools=agent_tools_for_role,
+            verbose=True,
+            llm=agent_llm
+        )
+        print(f"  ✅ Agent created with {len(agent_tools_for_role)} tools")
+        agents.append(agent)
 
-        return crew
+    # Create tasks with proper dependencies for hierarchical process
+    tasks = []
+    for task_data in create_crew.tasks:
+        print(f"\n📋 Creating task: {task_data.description[:50]}...")
+        agent = next(
+            (a for a in agents if a.role == task_data.agent_role),
+            None
+        )
+        if not agent:
+            error_msg = f"Agent role '{task_data.agent_role}' not found."
+            print(f"  ❌ {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        # For hierarchical process, add manager review after each task
+        task = Task(
+            description=task_data.description,
+            expected_output=str(task_data.expected_output),
+            agent=agent
+        )
+        print(f"  ✅ Task created and assigned to agent: {task_data.agent_role}")
+        tasks.append(task)
+        
+        if create_crew.process == Process.hierarchical and agent.role != "Technical Lead":
+            # Add manager review task
+            manager_agent = next(a for a in agents if a.role == "Technical Lead")
+            review_task = Task(
+                description=f"Review and validate the output of task: {task_data.description}",
+                expected_output="Validation report and improvement suggestions",
+                agent=manager_agent
+            )
+            print("  ➕ Added manager review task")
+            tasks.append(review_task)
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(e)
-        raise HTTPException(status_code=500, detail=str(e))
+    # Create the crew with manager_llm for hierarchical process
+    crew_kwargs = {
+        "agents": agents,
+        "tasks": tasks,
+        "verbose": True,
+        "process": create_crew.process
+    }
+    
+    # Add manager_llm for hierarchical process
+    if create_crew.process == Process.hierarchical:
+        crew_kwargs["manager_llm"] = llm.OpenAIGPT4
+        
+    crew = Crew(**crew_kwargs)
+    print("\n✨ Crew created successfully!")
+    print(f"  - {len(agents)} agents")
+    print(f"  - {len(tasks)} tasks")
+    print(f"  - Process: {create_crew.process}")
+    print(f"  - Tools per agent: varies by role\n")
+
+    return crew
 
 async def enhance_crew_with_context(
     crew: Crew,
@@ -238,6 +244,10 @@ async def execute_task(task_id: str, persistence_model) -> Dict[str, Any]:
         if task.use_context:
             crew = await enhance_crew_with_context(crew, task_id)
             
+        print(f"\n🔍 DEBUG - About to execute crew: {task.name}")
+        print(f"🔍 DEBUG - Crew details: {crew}")
+        print(f"🔍 DEBUG - Task input data: {task_input}")
+        
         # Execute crew tasks
         result = crew.kickoff()
         
