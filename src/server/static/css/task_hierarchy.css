@@ -1,0 +1,122 @@
+/* Task Hierarchy View Styling */
+
+.task-node {
+    padding: 10px;
+    border-radius: 5px;
+    margin: 5px 0;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    transition: all 0.3s ease;
+}
+
+.task-node:hover {
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.task-node.has-inputs {
+    border-left: 3px solid #4CAF50;
+}
+
+.task-node.has-outputs {
+    border-right: 3px solid #2196F3;
+}
+
+.task-flow-line {
+    stroke: #2196F3;
+    stroke-width: 2;
+    stroke-dasharray: 5, 5;
+    fill: none;
+}
+
+.task-node-title {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.task-node-description {
+    font-size: 0.9em;
+    color: #6c757d;
+    margin-bottom: 5px;
+}
+
+.task-node-plugin {
+    font-size: 0.8em;
+    padding: 2px 5px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-top: 5px;
+}
+
+.plugin-crewai {
+    background-color: #e3f2fd;
+    color: #0d47a1;
+}
+
+.plugin-autogen {
+    background-color: #e8f5e9;
+    color: #1b5e20;
+}
+
+.plugin-smolagents {
+    background-color: #fff3e0;
+    color: #e65100;
+}
+
+.task-node-status {
+    font-size: 0.8em;
+    float: right;
+}
+
+.status-pending {
+    color: #6c757d;
+}
+
+.status-running {
+    color: #007bff;
+}
+
+.status-completed {
+    color: #28a745;
+}
+
+.status-failed {
+    color: #dc3545;
+}
+
+.task-tree-container {
+    padding: 15px;
+    border-radius: 5px;
+    background-color: #ffffff;
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.05);
+}
+
+.task-tree-header {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.task-tree-controls {
+    margin-bottom: 15px;
+}
+
+.task-tree-legend {
+    font-size: 0.8em;
+    margin-top: 15px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+}
+
+.legend-item {
+    display: inline-block;
+    margin-right: 15px;
+}
+
+.legend-color {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 5px;
+    border-radius: 2px;
+}

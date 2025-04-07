@@ -21,6 +21,7 @@ from src.chat import get_last_used_state, get_state_dir, load_state
 from pathlib import Path
 from src.server.views.components.task_tree_visualization_component import TaskTreeVisualizationComponent
 from src.server.views.components.task_tree_demo_component import TaskTreeDemoComponent
+from src.server.views.components.task_tree_demo_launcher import TaskTreeDemoLauncher
 import time
 
 class TaskHierarchyView(BaseView):
@@ -684,6 +685,10 @@ async def render_task_hierarchy_view():
             
         # Tree View
         elif st.session_state.active_tab == 3:
+            with st.expander("Task Tree Demonstration", expanded=False):
+                demo_launcher = TaskTreeDemoLauncher(st.session_state.task_controller)
+                demo_launcher.render()
+            
             await render_tree_view(st.session_state.task_controller)
         
         # Handle keyboard shortcuts
