@@ -77,7 +77,7 @@ async def create_crew(
             allowed_tools = ["brave_search", "web_search", "SerperDevTool", "delegate"]
         
         # Pass the proxy's specific catalog instance as an override
-        agent_tools = curried_proxy.export_to_crewai(
+        agent_tools = await curried_proxy.export_to_crewai(
             allowed_tools=allowed_tools, 
             catalog_override=curried_proxy.catalog
         )

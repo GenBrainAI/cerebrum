@@ -1,4 +1,5 @@
-from src.server.controllers.tasks_tree_controller import TaskTreeManager, ExecutionConfig, ExecutionStrategy
+from src.server.controllers.task_tree_flow import TaskTreeFlowManager as TaskTreeManager
+from src.server.controllers.task_tree_flow import ExecutionConfig, ExecutionStrategy
 from src.server.models.task import Task
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.models.tasks_manager import TasksManager
@@ -7,6 +8,15 @@ from src.server.controllers.persistence_controller import save_to_storage
 from pathlib import Path
 import json
 import uuid
+from pydantic import BaseModel
+
+class TaskTreeMetadata(BaseModel):
+    """Metadata for a task tree."""
+    id: str
+    name: str
+    description: str
+    execution_strategy: str
+    root_task_id: str
 
 def create_multi_plugin_task_tree():
     """Create a task tree with multiple plugins for demonstration."""
@@ -78,17 +88,15 @@ def create_multi_plugin_task_tree():
     for task in level1_tasks + level2_tasks:
         persistence_model.tasks.create(task)
     
-    tree_metadata = {
-        "name": "Research Pipeline",
-        "description": "A multi-plugin task tree demonstrating handover between different AI frameworks",
-        "execution_strategy": "sequential",
-        "root_task_id": "research_project"
-    }
-    
-    persistence_model.collection("task_trees").create(
-        "research_pipeline", 
-        tree_metadata
+    tree_metadata = TaskTreeMetadata(
+        id="research_pipeline",
+        name="Research Pipeline",
+        description="A multi-plugin task tree demonstrating handover between different AI frameworks",
+        execution_strategy="sequential",
+        root_task_id="research_project"
     )
+    
+    persistence_model.collection("task_trees").create(tree_metadata)
     
     return persistence_model, tm.id
 

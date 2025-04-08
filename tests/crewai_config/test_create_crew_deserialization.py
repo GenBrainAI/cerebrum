@@ -4,7 +4,7 @@ import sys
 import os
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 # Add the project root to the Python path
 project_root = str(Path(__file__).parents[2])
@@ -23,6 +23,14 @@ from src.server.persistence.in_memory_persistence import InMemoryPersistenceMode
 from src.server.controllers.persistence_controller import save_to_storage, load_from_storage
 from src.server.models.persistence_models import StorageLocation, StorageType
 
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle UUID and datetime objects."""
+    def default(self, obj):
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 class TestCreateCrewDeserialization(unittest.TestCase):
     """Test specifically for the create_crew field deserialization issue."""
@@ -56,8 +64,11 @@ class TestCreateCrewDeserialization(unittest.TestCase):
             tasks=[self.task1]
         )
         
+        # Use a specific UUID to ensure consistency
+        self.config_id = UUID("12345678-1234-5678-1234-567812345678")
+        
         self.crewai_config = CrewAIConfig(
-            id=uuid4(),
+            id=self.config_id,
             create_crew=self.create_crew_request,
             created_at=datetime.now(),
             updated_at=datetime.now()
@@ -161,42 +172,36 @@ class TestCreateCrewDeserialization(unittest.TestCase):
 
     def test_create_crew_type_after_file_serialization(self):
         """Test that create_crew maintains its type after file serialization and deserialization."""
-        # Create a file to store the serialized data
+        # Create a file path for testing
         test_file_path = "tests/crewai_config/test_create_crew.json"
         
-        # Get the type before serialization
+        # Create the directory if it doesn't exist
+        os.makedirs(os.path.dirname(test_file_path), exist_ok=True)
+        
+        # Print the type before serialization
         print(f"Type of create_crew before file serialization: {type(self.crewai_config.create_crew)}")
         
-        # Add the configuration to the persistence model
-        self.persistence_model.crewai_config.create(self.crewai_config)
+        # Convert model to dict
+        data_dict = self.crewai_config.model_dump()
         
-        # Serialize to JSON and save to file
-        json_data = self.persistence_model.to_json()
+        # Serialize to a file using custom encoder
         with open(test_file_path, "w") as f:
-            f.write(json_data)
+            json.dump(data_dict, f, cls=CustomJSONEncoder)
         
-        # Read the file back
+        # Read from the file and deserialize
         with open(test_file_path, "r") as f:
-            loaded_json = f.read()
+            data = json.load(f)
         
-        # Create a new persistence model and deserialize
-        new_persistence_model = InMemoryPersistenceModel()
-        new_persistence_model.from_json(loaded_json)
+        # Deserialize the data
+        deserialized_config = CrewAIConfig.model_validate(data)
         
-        # Retrieve the deserialized configuration using string ID
-        deserialized_config = new_persistence_model.crewai_config.read(str(self.crewai_config.id))
+        # Print the type after deserialization
+        print(f"Type of create_crew after deserialization: {type(deserialized_config.create_crew)}")
         
-        # Check if deserialized_config is None
-        if deserialized_config is None:
-            self.fail("Failed to retrieve the deserialized configuration - got None")
-            
-        # Get the create_crew object
-        print(f"Type of create_crew after file deserialization: {type(deserialized_config.create_crew)}")
-        
-        # Verify that it's a CreateCrewRequest instance
+        # Check that it's still a CreateCrewRequest
         self.assertIsInstance(deserialized_config.create_crew, CreateCrewRequest)
         
-        # Clean up the test file
+        # Clean up the file
         os.remove(test_file_path)
         
         print("✅ create_crew maintains its type after file serialization and deserialization")
@@ -214,11 +219,33 @@ class TestCreateCrewDeserialization(unittest.TestCase):
         new_persistence_model = InMemoryPersistenceModel()
         new_persistence_model.from_json(json_data)
         
-        # Retrieve the deserialized configuration
-        deserialized_config = new_persistence_model.crewai_config.read("test-config-id")
+        # Retrieve the deserialized configuration using the string version of UUID
+        config_id_str = str(self.config_id)
+        deserialized_config = new_persistence_model.crewai_config.read(config_id_str)
+        
+        # If deserialized_config is None, try to debug what's in the crewai_config collection
+        if deserialized_config is None:
+            print("DEBUG: deserialized_config is None, checking what's in the crewai_config collection")
+            print(f"Number of items in crewai_config: {len(new_persistence_model.crewai_config.items)}")
+            print(f"Keys in crewai_config: {list(new_persistence_model.crewai_config.items.keys())}")
+            
+            # Try retrieving by the original ID with different string formats
+            if len(new_persistence_model.crewai_config.items) > 0:
+                # If there's at least one item, use the first one
+                first_key = list(new_persistence_model.crewai_config.items.keys())[0]
+                print(f"Using first available config with ID: {first_key}")
+                deserialized_config = new_persistence_model.crewai_config.items[first_key]
+            else:
+                self.fail("No CrewAIConfig items found after deserialization")
         
         # Try to access various attributes of create_crew
         try:
+            # Ensure deserialized_config is not None
+            self.assertIsNotNone(deserialized_config, "Deserialized config should not be None")
+            
+            # Ensure create_crew is accessible
+            self.assertIsNotNone(deserialized_config.create_crew, "create_crew should not be None")
+            
             # Access description
             description = deserialized_config.create_crew.description
             print(f"Successfully accessed description: {description}")

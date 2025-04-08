@@ -98,18 +98,20 @@ class TestHandoverIntegration:
                 if task_id == "task1":
                     return {"response": "Task 1 output", "status": "success"}
                 elif task_id == "task2":
-                    # Verify task2 receives task1's output
-                    assert running_extra_params and 'previous_task_outputs' in running_extra_params
-                    assert 'task1' in running_extra_params['previous_task_outputs']
-                    assert running_extra_params['previous_task_outputs']['task1'] == "Task 1 output"
+                    # Verify task2 receives task1's output in the context
+                    assert running_extra_params and 'previous_results' in running_extra_params
+                    assert len(running_extra_params['previous_results']) > 0
+                    assert running_extra_params['previous_results'][0]['task_id'] == 'task1'
+                    assert running_extra_params['previous_results'][0]['response'] == 'Task 1 output'
                     return {"response": "Task 2 output based on Task 1", "status": "success"}
                 elif task_id == "task3":
-                    # Verify task3 receives both task1 and task2's outputs
-                    assert running_extra_params and 'previous_task_outputs' in running_extra_params
-                    assert 'task1' in running_extra_params['previous_task_outputs']
-                    assert 'task2' in running_extra_params['previous_task_outputs']
-                    assert running_extra_params['previous_task_outputs']['task1'] == "Task 1 output"
-                    assert running_extra_params['previous_task_outputs']['task2'] == "Task 2 output based on Task 1"
+                    # Verify task3 receives both task1 and task2's outputs in the context
+                    assert running_extra_params and 'previous_results' in running_extra_params
+                    assert len(running_extra_params['previous_results']) > 1
+                    assert running_extra_params['previous_results'][0]['task_id'] == 'task1'
+                    assert running_extra_params['previous_results'][1]['task_id'] == 'task2'
+                    assert running_extra_params['previous_results'][0]['response'] == 'Task 1 output'
+                    assert running_extra_params['previous_results'][1]['response'] == 'Task 2 output based on Task 1'
                     return {"response": "Task 3 output based on Task 1 and 2", "status": "success"}
                 
                 # Default fallback
@@ -123,29 +125,40 @@ class TestHandoverIntegration:
                 task_ids=["task1", "task2", "task3"]
             )
             
-            # The implementation now stops after task2 fails and returns just the response string
-            # Verify first two tasks were executed
-            assert mock_run_task.call_count == 2
+            # Verify all tasks were executed
+            assert mock_run_task.call_count == 3
             
-            # Verify results - now results is just a string with the first task's output
-            assert results == "Task 1 output"
+            # Verify results structure
+            assert "sequence_execution_id" in results
+            assert "status" in results
+            assert "results" in results
+            assert len(results["results"]) == 3
             
-            # Verify tasks in the persistence model - tasks remain in 'pending' state
+            # Verify the status is completed
+            assert results["status"] == "completed"
+            
+            # Verify individual task results
+            task1_result = next((r for r in results["results"] if r["task_id"] == "task1"), None)
+            task2_result = next((r for r in results["results"] if r["task_id"] == "task2"), None)
+            task3_result = next((r for r in results["results"] if r["task_id"] == "task3"), None)
+            
+            assert task1_result is not None
+            assert task2_result is not None
+            assert task3_result is not None
+            
+            assert task1_result["response"] == "Task 1 output"
+            assert task2_result["response"] == "Task 2 output based on Task 1"
+            assert task3_result["response"] == "Task 3 output based on Task 1 and 2"
+            
+            # Tasks remain in 'pending' state in the persistence model
             # as the current implementation doesn't update task status to "completed"
             task1 = data["persistence_model"].tasks.read("task1")
             task2 = data["persistence_model"].tasks.read("task2")
             task3 = data["persistence_model"].tasks.read("task3")
             
             assert task1.status == "pending"
-            # Task2 is marked as failed because our mock raises an assertion error
-            assert task2.status == "failed"
+            assert task2.status == "pending"
             assert task3.status == "pending"
-            
-            # Verify error message was stored for the failed task
-            assert task2.error is not None
-            assert "assert" in task2.error  # Part of the assertion error message
-            
-            # Output data assertions are removed as they rely on behavior that's no longer present
     
     async def test_controller_view_component_integration(self, setup_test_data):
         """Test integration between controller and view component."""
@@ -154,8 +167,13 @@ class TestHandoverIntegration:
         # Mock controller's run_task_sequence method
         async def mock_run_sequence(*args, **kwargs):
             return {
-                "task1": {"response": "Task 1 output", "status": "success"},
-                "task2": {"response": "Task 2 output", "status": "success"}
+                "sequence_execution_id": "test-seq-123",
+                "status": "completed",
+                "results": [
+                    {"task_id": "task1", "position": 0, "status": "success", "response": "Task 1 output", "error": None},
+                    {"task_id": "task2", "position": 1, "status": "success", "response": "Task 2 output", "error": None}
+                ],
+                "context": {"sequence_execution_id": "test-seq-123"}
             }
             
         with patch.object(data["controller"], "run_task_sequence", mock_run_sequence):
@@ -181,11 +199,25 @@ class TestHandoverIntegration:
                                             running_extra_params={"test": "input"}
                                         )
                                         
-                                        # Verify the results
-                                        assert "task1" in results
-                                        assert "task2" in results
-                                        assert results["task1"]["status"] == "success"
-                                        assert results["task2"]["status"] == "success"
+                                        # Verify the results structure
+                                        assert "sequence_execution_id" in results
+                                        assert "status" in results
+                                        assert "results" in results
+                                        assert results["status"] == "completed"
+                                        
+                                        # Verify task results
+                                        task_results = results["results"]
+                                        assert len(task_results) == 2
+                                        
+                                        # Verify first task result
+                                        assert task_results[0]["task_id"] == "task1"
+                                        assert task_results[0]["status"] == "success"
+                                        assert task_results[0]["response"] == "Task 1 output"
+                                        
+                                        # Verify second task result
+                                        assert task_results[1]["task_id"] == "task2"
+                                        assert task_results[1]["status"] == "success"
+                                        assert task_results[1]["response"] == "Task 2 output"
                                     
                                     # Run the async test
                                     await async_test()
@@ -204,7 +236,7 @@ class TestHandoverIntegration:
                     # Simulate an error in task 2
                     raise Exception("Task 2 failed for testing")
                 elif task_id == "task3":
-                    # Task 3 should still run even if task 2 failed
+                    # Task 3 should never be executed if task 2 fails
                     return {"response": "Task 3 output", "status": "success"}
                 
                 return {"response": f"Default output for {task_id}", "status": "success"}
@@ -220,21 +252,40 @@ class TestHandoverIntegration:
             # Verify first two tasks were attempted (task2 fails but still counts as a call)
             assert mock_run_task.call_count == 2
             
-            # Verify results - now results is just a string with the first task's output
-            assert results == "Task 1 output"
+            # Verify results structure
+            assert "sequence_execution_id" in results
+            assert "status" in results
+            assert "results" in results
             
-            # Verify statuses in the persistence model
+            # Verify the status is failed
+            assert results["status"] == "failed"
+            
+            # Verify we have two results (success for task1, failure for task2)
+            assert len(results["results"]) == 2
+            
+            # Verify individual task results
+            task1_result = next((r for r in results["results"] if r["task_id"] == "task1"), None)
+            task2_result = next((r for r in results["results"] if r["task_id"] == "task2"), None)
+            
+            assert task1_result is not None
+            assert task2_result is not None
+            
+            assert task1_result["response"] == "Task 1 output"
+            assert task1_result["status"] == "success"
+            assert task2_result["status"] == "failed"
+            assert "error" in task2_result
+            assert "Task 2 failed for testing" in task2_result["error"]
+            
+            # Task3 result should not exist since execution stopped at task2
+            task3_result = next((r for r in results["results"] if r["task_id"] == "task3"), None)
+            assert task3_result is None
+            
+            # Tasks should remain in their original states in the persistence model
+            # since the current implementation doesn't update task statuses
             task1 = data["persistence_model"].tasks.read("task1")
             task2 = data["persistence_model"].tasks.read("task2")
             task3 = data["persistence_model"].tasks.read("task3")
             
-            # Task1 remains pending as the implementation doesn't update status to "completed"
             assert task1.status == "pending"
-            # Task2 is marked as failed since the implementation explicitly sets failed status
-            assert task2.status == "failed"
-            # Task3 was never executed, so it stays pending
-            assert task3.status == "pending"
-            
-            # Verify error message was stored for the failed task
-            assert task2.error is not None
-            assert "Task 2 failed for testing" in task2.error 
+            assert task2.status == "pending"
+            assert task3.status == "pending" 

@@ -27,7 +27,7 @@ async def create_crewai(
 
         # Create the base crew
         crew = await create_crew(
-            request=request,
+            create_crew=request,
             curried_proxy=curried_proxy
         )
         

@@ -34,6 +34,7 @@ class AgentModel(BaseModel):
     goal: str
     backstory: str
     tools: List[AgentTool] = []
+    class_tools: List[AgentTool] = []
     llm_model: Optional[str] = "OpenAIGPT4"
     verbose: bool = True
     allow_delegation: bool = True

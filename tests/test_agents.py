@@ -82,6 +82,15 @@ def test_create_agents_and_tasks():
     }
 
     response = client.post("/agent/crewai", json=request_data)
+    
+    # Print response for debugging
+    print(f"\nResponse status code: {response.status_code}")
+    try:
+        print(f"Response JSON: {response.json()}")
+    except Exception as e:
+        print(f"Failed to parse response as JSON: {e}")
+        print(f"Response text: {response.text}")
+    
     assert response.status_code == 201
     data = response.json()
     assert data["message"] == "Crew created"

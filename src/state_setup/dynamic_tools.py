@@ -20,18 +20,19 @@ from src.server.tools.internal_testing_tools import InternalTestingTools
 from src.server.tools.internal_proxy_tools import InternalProxyTools
 from src.server.tools.url_tools import URLTools
 from src.server.controllers.curried_proxy import CurriedProxy
-from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, ToolModel
+from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, AgentTool
 from src.server.models.process import Process
 from src.server.models.tasks_manager import TasksManager
 from src.server.models.task import Task
 from src.server.controllers.agents_controller import CreateCrewRequest, AgentModel
-from src.server.models.agent import ToolModel
 from src.server.models.persistence_models import StorageLocation, StorageType
 from src.server.controllers.persistence_controller import save_to_storage, load_from_storage
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.context.context_provider import ContextProvider
 from src.server.context.crew_context_enhancer import CrewContextEnhancer, CrewContextConfig
 from src.server.context.unified_context_manager import UnifiedContextManager
+from src.server.models.toolset import Tool
+from src.server.models.function import Function
 
 # Setup logging
 logging.basicConfig(
@@ -310,7 +311,7 @@ async def create_technical_lead_agent() -> AgentModel:
         - Implementing test-driven development
         - Coordinating between development and testing teams
         - Maintaining high code quality standards""",
-        tools=[ToolModel(name=tool_name, description="Tool for operations") 
+        tools=[AgentTool(name=tool_name, description="Tool for operations")
                for tool_name in tools_catalog.list_tools()]
     )
 
@@ -425,8 +426,8 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
                             3. Preventing duplicate files
                             4. Coordinating between implementation and test files""",
                             tools=[
-                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files"),
-                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                                AgentTool(name="internal_file_tools.save_implementation", description="Save implementation files"),
+                                AgentTool(name="internal_file_tools.save_tests", description="Save test files")
                             ]
                         ),
                         AgentModel(
@@ -435,8 +436,8 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
                             goal="Implement tools following the design specifications and save them to the correct files",
                             backstory="Skilled in writing clean, efficient, and well-tested code",
                             tools=[
-                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
-                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files")
+                                AgentTool(name="internal_file_tools", description="Tool for file operations"),
+                                AgentTool(name="internal_file_tools.save_implementation", description="Save implementation files")
                             ]
                         ),
                         AgentModel(
@@ -445,11 +446,11 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
                             goal="Create and execute tests for the implemented tools",
                             backstory="Expert in test-driven development and quality assurance",
                             tools=[
-                                ToolModel(name="internal_testing_tools", description="Tool for testing operations"),
-                                ToolModel(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
-                                ToolModel(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
-                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
-                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                                AgentTool(name="internal_testing_tools", description="Tool for testing operations"),
+                                AgentTool(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
+                                AgentTool(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
+                                AgentTool(name="internal_file_tools", description="Tool for file operations"),
+                                AgentTool(name="internal_file_tools.save_tests", description="Save test files")
                             ]
                         )
                     ],
@@ -469,9 +470,9 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
                             "agent_role": "File Operations Manager",
                             "expected_output": "File structure initialized successfully",
                             "tools": [
-                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
-                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files"),
-                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                                AgentTool(name="internal_file_tools", description="Tool for file operations"),
+                                AgentTool(name="internal_file_tools.save_implementation", description="Save implementation files"),
+                                AgentTool(name="internal_file_tools.save_tests", description="Save test files")
                             ]
                         },
                         {
@@ -493,8 +494,8 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
                             "agent_role": "Tools Developer",
                             "expected_output": "Complex Fibonacci implementation saved to src/tools/complex_fibonacci.py",
                             "tools": [
-                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
-                                ToolModel(name="internal_file_tools.save_implementation", description="Save implementation files")
+                                AgentTool(name="internal_file_tools", description="Tool for file operations"),
+                                AgentTool(name="internal_file_tools.save_implementation", description="Save implementation files")
                             ]
                         },
                         {
@@ -513,11 +514,11 @@ async def setup_dynamic_tools_state(persistence_model: InMemoryPersistenceModel,
                             "agent_role": "Test Engineer",
                             "expected_output": "Test suite saved to src/tools/tests/test_complex_fibonacci.py",
                             "tools": [
-                                ToolModel(name="internal_testing_tools", description="Tool for testing operations"),
-                                ToolModel(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
-                                ToolModel(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
-                                ToolModel(name="internal_file_tools", description="Tool for file operations"),
-                                ToolModel(name="internal_file_tools.save_tests", description="Save test files")
+                                AgentTool(name="internal_testing_tools", description="Tool for testing operations"),
+                                AgentTool(name="internal_testing_tools.run_unit_tests", description="Run unit tests"),
+                                AgentTool(name="internal_testing_tools.validate_test_coverage", description="Validate test coverage"),
+                                AgentTool(name="internal_file_tools", description="Tool for file operations"),
+                                AgentTool(name="internal_file_tools.save_tests", description="Save test files")
                             ]
                         }
                     ]

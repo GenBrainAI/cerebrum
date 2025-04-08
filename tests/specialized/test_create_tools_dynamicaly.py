@@ -31,7 +31,7 @@ from src.server.tools.tools_catalog import ToolsCatalog
 from src.server.controllers.curried_proxy import CurriedProxy
 from src.state_setup.dynamic_tools import setup_dynamic_tools_state
 from src.server.tools.tools_metrics import ToolExecutionMetrics
-from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, ToolModel
+from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, AgentTool
 from src.server.models.persistence_models import StorageType
 from src.server.context.context_provider import ContextProvider
 from crewai.tools import BaseTool as CrewAITool
@@ -101,26 +101,26 @@ CREWAI_CONFIG = {
             "agent_role": "Senior Software Architect",
             "expected_output": "Tool implementation with tests",
             "tools": [
-                {
-                    "name": "internal_credentials_tools.load_credentials",
-                    "description": "Load credentials from .env file"
-                },
-                {
-                    "name": "internal_credentials_tools.validate_credentials",
-                    "description": "Validate that required credentials are present"
-                },
-                {
-                    "name": "internal_file_tools.read_documentation",
-                    "description": "Read documentation files"
-                },
-                {
-                    "name": "internal_file_tools.save_implementation",
-                    "description": "Save tool implementation"
-                },
-                {
-                    "name": "internal_file_tools.save_tests",
-                    "description": "Save tool tests"
-                }
+                AgentTool(
+                    name="internal_credentials_tools.load_credentials",
+                    description="Load credentials from .env file"
+                ),
+                AgentTool(
+                    name="internal_credentials_tools.validate_credentials",
+                    description="Validate that required credentials are present"
+                ),
+                AgentTool(
+                    name="internal_file_tools.read_documentation",
+                    description="Read documentation files"
+                ),
+                AgentTool(
+                    name="internal_file_tools.save_implementation",
+                    description="Save tool implementation"
+                ),
+                AgentTool(
+                    name="internal_file_tools.save_tests",
+                    description="Save tool tests"
+                )
             ]
         }
     ],
@@ -131,26 +131,26 @@ CREWAI_CONFIG = {
             "goal": "Design and implement robust and reusable tools",
             "backstory": "Expert in software design and architecture with extensive experience in tool development",
             "tools": [
-                {
-                    "name": "internal_credentials_tools.load_credentials",
-                    "description": "Load credentials from .env file"
-                },
-                {
-                    "name": "internal_credentials_tools.validate_credentials",
-                    "description": "Validate that required credentials are present"
-                },
-                {
-                    "name": "internal_file_tools.read_documentation",
-                    "description": "Read documentation files"
-                },
-                {
-                    "name": "internal_file_tools.save_implementation",
-                    "description": "Save tool implementation"
-                },
-                {
-                    "name": "internal_file_tools.save_tests",
-                    "description": "Save tool tests"
-                }
+                AgentTool(
+                    name="internal_credentials_tools.load_credentials",
+                    description="Load credentials from .env file"
+                ),
+                AgentTool(
+                    name="internal_credentials_tools.validate_credentials",
+                    description="Validate that required credentials are present"
+                ),
+                AgentTool(
+                    name="internal_file_tools.read_documentation",
+                    description="Read documentation files"
+                ),
+                AgentTool(
+                    name="internal_file_tools.save_implementation",
+                    description="Save tool implementation"
+                ),
+                AgentTool(
+                    name="internal_file_tools.save_tests",
+                    description="Save tool tests"
+                )
             ]
         }
     ]
@@ -707,7 +707,7 @@ async def test_crewai_invocation(test_state):
         task_manager = TasksManager(
             name="Dynamic Tools Manager",
             description="Manager for dynamic tools generation tasks",
-            crewai_config_id=crewai_config.id
+            crewai_config_id=str(crewai_config.id)
         )
         task_manager = persistence_model.tasksmanagers.create(task_manager)
         assert task_manager is not None, "Failed to create task manager"
@@ -718,7 +718,7 @@ async def test_crewai_invocation(test_state):
             name=f"Generate {tool_request['name']}",
             description=f"Generate a tool: {tool_request['name']}",
             tasksmanager_id=task_manager.id,
-            crewai_config_id=crewai_config.id,
+            crewai_config_id=str(crewai_config.id),
             curried_proxy_id=str(curried_proxy.id),
             agent_role="Senior Software Architect",
             input_data={
@@ -830,7 +830,7 @@ async def test_crewai_invocation_with_context(test_state):
         task_manager = TasksManager(
             name="Dynamic Tools Manager with Context",
             description="Manager for dynamic tools generation tasks with context",
-            crewai_config_id=crewai_config.id,
+            crewai_config_id=str(crewai_config.id),
             use_context=True  # Enable context usage
         )
         task_manager = persistence_model.tasksmanagers.create(task_manager)
@@ -841,7 +841,7 @@ async def test_crewai_invocation_with_context(test_state):
             name=f"Generate {tool_request['name']} with Context",
             description=f"Generate a tool: {tool_request['name']}",
             tasksmanager_id=task_manager.id,
-            crewai_config_id=crewai_config.id,
+            crewai_config_id=str(crewai_config.id),
             curried_proxy_id=str(curried_proxy.id),
             agent_role="Senior Software Architect",
             use_context=True,  # Enable context usage

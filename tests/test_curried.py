@@ -247,7 +247,7 @@ async def test_tools_description_and_arguments():
     assert params["description"]["description"] == "Description of the content"
     assert openai_tool["function"]["parameters"]["required"] == ["file_path", "description"]
     
-    crewai_tools = proxy.export_to_crewai()
+    crewai_tools = await proxy.export_to_crewai()
     assert len(crewai_tools) >= 1
     test_tool = next((tool for tool in crewai_tools if tool.name == "test_tool"), None)
     assert test_tool is not None

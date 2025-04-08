@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from crewai_tools import WebsiteSearchTool, SerperDevTool, FileReadTool
 
 from src.server.apis.agents_api import initialize_agent_tools
-from src.server.models.agent import AgentModel, ToolModel, CreateCrewRequest, TaskModel
+from src.server.models.agent import AgentModel, AgentTool, CreateCrewRequest, TaskModel
 from src.server.controllers.curried_proxy import CurriedProxy
 from src.server.models.agent import CrewAIConfig
 from src.server.tools.tools_catalog import (
@@ -65,7 +65,7 @@ async def test_initialize_agent_tools_successful(mock_tools_catalog):
         goal="Test Goal",
         backstory="Test Backstory",
         tools=[
-            ToolModel(name="TestTool", description="Test Description")
+            AgentTool(name="TestTool", description="Test Description")
         ]
     )
     
@@ -97,7 +97,7 @@ async def test_initialize_agent_tools_unknown_tool():
         goal="Test Goal",
         backstory="Test Backstory",
         tools=[
-            ToolModel(name="UnknownTool", description="Test Description")
+            AgentTool(name="UnknownTool", description="Test Description")
         ]
     )
     
@@ -123,7 +123,7 @@ async def test_initialize_agent_tools_with_class_tools():
         backstory="Test Backstory",
         tools=[],  # Empty list for required tools field
         class_tools=[
-            ToolModel(name="TestClassTool", description="Test Class Tool")
+            AgentTool(name="TestClassTool", description="Test Class Tool")
         ]
     )
     
@@ -172,7 +172,7 @@ async def test_create_crewai_endpoint():
                 goal="Test Goal",
                 backstory="Test Backstory",
                 tools=[
-                    ToolModel(name="TestTool", description="Test Description")
+                    AgentTool(name="TestTool", description="Test Description")
                 ]
             )
         ],
@@ -250,7 +250,7 @@ async def test_agent_tool_name_validation():
                 goal="Test Goal",
                 backstory="Test Backstory",
                 tools=[
-                    ToolModel(name="SeperDevTool", description="Incorrectly spelled tool")  # Intentional typo
+                    AgentTool(name="SeperDevTool", description="Incorrectly spelled tool")  # Intentional typo
                 ]
             )
         ],

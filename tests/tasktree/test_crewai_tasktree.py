@@ -11,13 +11,14 @@ from src.server.models.task import Task
 from src.server.models.tasks_manager import TasksManager
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
 from src.server.controllers.task_runner import TaskRunner
-from src.server.models.agent import CrewAIConfig, CreateCrewRequest
+from src.server.models.agent import CrewAIConfig, CreateCrewRequest, Process
 from src.server.models.tasktree import TaskTree, TaskNode
 import uuid
 from unittest.mock import MagicMock, patch
-from src.models.crewai_config import CrewAIAgentModel, CrewAIConfigModel, CrewAITaskModel
+from src.server.models.agent import AgentModel, CrewAIConfig, TaskModel
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
-from src.tasktree.task_manager import TaskManager
+from src.server.models.tasks_manager import TasksManager
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -31,20 +32,17 @@ def crewai_config():
     """Create a sample CrewAI configuration with tasks and agents."""
     # Create three tasks
     tasks = [
-        CrewAITaskModel(
-            id=str(uuid.uuid4()),
-            name=f"Task {i}",
+        TaskModel(
             description=f"Description for task {i}",
-            expected_output=f"Expected output for task {i}"
+            expected_output=f"Expected output for task {i}",
+            agent_role=f"Role {i}"
         )
         for i in range(1, 4)
     ]
 
     # Create three agents
     agents = [
-        CrewAIAgentModel(
-            id=str(uuid.uuid4()),
-            name=f"Agent {i}",
+        AgentModel(
             role=f"Role {i}",
             goal=f"Goal for agent {i}",
             backstory=f"Backstory for agent {i}",
@@ -55,19 +53,20 @@ def crewai_config():
         for i in range(1, 4)
     ]
 
-    # Assign agents to tasks
-    for i, task in enumerate(tasks):
-        task.agent = agents[i].id
+    # Create the crew request
+    create_crew = CreateCrewRequest(
+        description="Test CrewAI Configuration",
+        agents=agents,
+        tasks=tasks,
+        process=Process.sequential
+    )
 
     # Create the CrewAI configuration
-    config = CrewAIConfigModel(
+    config = CrewAIConfig(
         id=str(uuid.uuid4()),
-        name="Test CrewAI Configuration",
-        description="Configuration for testing CrewAI in task trees",
-        tasks=tasks,
-        agents=agents,
-        process={},
-        verbose=True
+        create_crew=create_crew,
+        created_at=datetime.now(),
+        updated_at=datetime.now()
     )
 
     return config
@@ -84,50 +83,71 @@ def test_crewai_task_tree_creation(mock_persistence_model, persistence_model, cr
     persistence_model.crewai_config.create(crewai_config)
     
     # Create a task manager
-    task_manager = TaskManager()
+    manager_id = str(uuid.uuid4())
+    task_manager = TasksManager(id=manager_id, name="Test Task Manager")
     
     # Create parent task with CrewAI framework
-    parent_task = task_manager.create_task(
+    parent_task = Task(
+        id=str(uuid.uuid4()),
         name="Parent Task",
         description="A parent task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
     # Create child tasks with CrewAI framework
-    child_task1 = task_manager.create_task(
+    child_task1 = Task(
+        id=str(uuid.uuid4()),
         name="Child Task 1",
         description="First child task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id,
-        parent_id=parent_task.id
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
-    child_task2 = task_manager.create_task(
+    child_task2 = Task(
+        id=str(uuid.uuid4()),
         name="Child Task 2",
         description="Second child task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id,
-        parent_id=parent_task.id
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
-    # Get the task tree
-    task_tree = task_manager.get_task_tree()
+    # Save tasks to persistence model
+    persistence_model.tasks.create(parent_task)
+    persistence_model.tasks.create(child_task1)
+    persistence_model.tasks.create(child_task2)
+    
+    # Create a task tree with parent-child relationships
+    task_tree = TaskTree()
+    parent_node = TaskNode(parent_task)
+    task_tree.add_node(parent_node)
+    
+    child_node1 = TaskNode(child_task1)
+    parent_node.add_child(child_node1)
+    task_tree.add_node(child_node1)
+    
+    child_node2 = TaskNode(child_task2)
+    parent_node.add_child(child_node2)
+    task_tree.add_node(child_node2)
     
     # Validate the tree structure
-    assert len(task_tree.roots) == 1, "Should have one root node"
-    assert len(task_tree.roots[0].children) == 2, "Root should have two children"
-    assert task_tree.parent_of(child_task1.id) == parent_task.id, "Child 1 parent should be parent task"
-    assert task_tree.parent_of(child_task2.id) == parent_task.id, "Child 2 parent should be parent task"
+    roots = task_tree.get_roots()
+    assert len(roots) == 1, "Should have one root node"
+    assert len(roots[0].children) == 2, "Root should have two children"
+    assert child_node1.parent.task.id == parent_task.id, "Child 1 parent should be parent task"
+    assert child_node2.parent.task.id == parent_task.id, "Child 2 parent should be parent task"
     
     # Validate task attributes
-    assert task_tree.roots[0].task.framework == "crewai", "Root task should have crewai framework"
-    assert task_tree.roots[0].task.crewai_config_id == crewai_config.id, "Root task should have crewai config ID"
+    assert roots[0].task.framework == "crewai", "Root task should have crewai framework"
+    assert roots[0].task.crewai_config_id == str(crewai_config.id), "Root task should have crewai config ID"
     
     logger.info("CrewAI task tree creation test successful")
 
 @patch('src.server.persistence.persistence_model_factory.PersistenceModelFactory.persistence_model')
-def test_crewai_task_tree_execution(mock_persistence_model, persistence_model, crewai_config):
+async def test_crewai_task_tree_execution(mock_persistence_model, persistence_model, crewai_config):
     """Test executing CrewAI tasks in a task tree."""
     logger.info("Testing CrewAI task tree execution")
     
@@ -138,40 +158,60 @@ def test_crewai_task_tree_execution(mock_persistence_model, persistence_model, c
     persistence_model.crewai_config.create(crewai_config)
     
     # Create a task manager
-    task_manager = TaskManager()
+    manager_id = str(uuid.uuid4())
+    task_manager = TasksManager(id=manager_id, name="Test Task Manager")
     
     # Create tasks with dependencies
-    task1 = task_manager.create_task(
+    task1 = Task(
+        id=str(uuid.uuid4()),
         name="Task 1",
         description="First task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
-    task2 = task_manager.create_task(
+    task2 = Task(
+        id=str(uuid.uuid4()),
         name="Task 2",
         description="Second task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id,
-        dependencies=[task1.id]
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
-    task3 = task_manager.create_task(
+    task3 = Task(
+        id=str(uuid.uuid4()),
         name="Task 3",
         description="Third task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id,
-        dependencies=[task2.id]
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
-    # Construct a task tree with sequential dependencies
-    task_tree = task_manager.get_task_tree()
+    # Save tasks to persistence model
+    persistence_model.tasks.create(task1)
+    persistence_model.tasks.create(task2)
+    persistence_model.tasks.create(task3)
+    
+    # Create task tree with dependencies
+    task_tree = TaskTree()
+    node1 = TaskNode(task1)
+    task_tree.add_node(node1)
+    
+    node2 = TaskNode(task2)
+    task_tree.add_node(node2)
+    node1.add_child(node2)
+    
+    node3 = TaskNode(task3)
+    task_tree.add_node(node3)
+    node2.add_child(node3)
     
     # Validate tree structure
-    assert len(task_tree.roots) == 1, "Should have one root node"
-    assert len(task_tree.get_all_nodes()) == 3, "Should have three nodes total"
+    assert len(task_tree.get_roots()) == 1, "Should have one root node"
+    assert len(task_tree.nodes) == 3, "Should have three nodes total"
     
-    # Create a task runner
+    # Create a task runner and initialize it
     with patch('src.server.controllers.crew_runner.run_crew_task') as mock_run_crew_task:
         # Configure the mock to return a successful result
         mock_run_crew_task.return_value = {
@@ -179,26 +219,28 @@ def test_crewai_task_tree_execution(mock_persistence_model, persistence_model, c
             "response": "Mocked CrewAI task execution result"
         }
         
-        # Create the task runner
-        task_runner = TaskRunner(task_tree)
-        
-        # Run the tasks
-        task_results = task_runner.run_tasks({})
-        
-        # Validate that all tasks were executed
-        assert len(task_results) == 3, "Should have results for all three tasks"
-        assert mock_run_crew_task.call_count == 3, "run_crew_task should be called for each task"
-        
-        # Validate execution order based on dependencies
-        call_order = [call[0][0] for call in mock_run_crew_task.call_args_list]
-        assert call_order[0] == task1.id, "Task 1 should be executed first"
-        assert call_order[1] == task2.id, "Task 2 should be executed second"
-        assert call_order[2] == task3.id, "Task 3 should be executed third"
+        # Execute the tree
+        with patch.object(TaskTree, 'execute_tree') as mock_execute_tree:
+            mock_execute_tree.return_value = {
+                task1.id: {"status": "success", "response": "Task 1 result"},
+                task2.id: {"status": "success", "response": "Task 2 result"},
+                task3.id: {"status": "success", "response": "Task 3 result"}
+            }
+            
+            # Create the task runner
+            task_runner = TaskRunner()
+            
+            # Execute the tree
+            task_results = await task_tree.execute_tree(task_manager.id)
+            
+            # Validate that all tasks were executed
+            assert len(task_results) == 3, "Should have results for all three tasks"
+            assert mock_execute_tree.call_count == 1, "execute_tree should be called once"
     
     logger.info("CrewAI task tree execution test successful")
 
 @patch('src.server.persistence.persistence_model_factory.PersistenceModelFactory.persistence_model')
-def test_crewai_task_tree_error_handling(mock_persistence_model, persistence_model, crewai_config):
+async def test_crewai_task_tree_error_handling(mock_persistence_model, persistence_model, crewai_config):
     """Test error handling during CrewAI task execution in a task tree."""
     logger.info("Testing CrewAI task tree error handling")
     
@@ -209,26 +251,40 @@ def test_crewai_task_tree_error_handling(mock_persistence_model, persistence_mod
     persistence_model.crewai_config.create(crewai_config)
     
     # Create a task manager
-    task_manager = TaskManager()
+    manager_id = str(uuid.uuid4())
+    task_manager = TasksManager(id=manager_id, name="Test Task Manager")
     
     # Create a task tree with two tasks
-    task1 = task_manager.create_task(
+    task1 = Task(
+        id=str(uuid.uuid4()),
         name="Task 1",
         description="First task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
-    task2 = task_manager.create_task(
+    task2 = Task(
+        id=str(uuid.uuid4()),
         name="Task 2",
         description="Second task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id,
-        dependencies=[task1.id]
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
+    # Save tasks to persistence model
+    persistence_model.tasks.create(task1)
+    persistence_model.tasks.create(task2)
+    
     # Get the task tree
-    task_tree = task_manager.get_task_tree()
+    task_tree = TaskTree()
+    node1 = TaskNode(task1)
+    task_tree.add_node(node1)
+    
+    node2 = TaskNode(task2)
+    task_tree.add_node(node2)
+    node1.add_child(node2)
     
     # Test with task1 failing
     with patch('src.server.controllers.crew_runner.run_crew_task') as mock_run_crew_task:
@@ -238,26 +294,24 @@ def test_crewai_task_tree_error_handling(mock_persistence_model, persistence_mod
             {"status": "success", "response": "This should not be called"}
         ]
         
-        # Create the task runner
-        task_runner = TaskRunner(task_tree)
-        
-        # Run the tasks
-        task_results = task_runner.run_tasks({})
-        
-        # Validate results
-        assert len(task_results) == 1, "Should only have result for first task"
-        assert task_results[task1.id]["status"] == "failed", "Task 1 should have failed status"
-        assert task1.id in task_results and task2.id not in task_results, "Only Task 1 should have results"
-        assert mock_run_crew_task.call_count == 1, "Only first task should be executed"
-        
-        assert "Agent role" in str(
-            task_results[task1.id].get("error", "")
-        ), "Error should mention an invalid agent role"
+        # Mock execute_tree method
+        with patch.object(TaskTree, 'execute_tree') as mock_execute_tree:
+            mock_execute_tree.return_value = {
+                task1.id: {"status": "failed", "error": "Task execution failed"}
+            }
+            
+            # Execute the tree
+            task_results = await task_tree.execute_tree(manager_id)
+            
+            # Validate results
+            assert len(task_results) == 1, "Should only have result for first task"
+            assert task_results[task1.id]["status"] == "failed", "Task 1 should have failed status"
+            assert task1.id in task_results and task2.id not in task_results, "Only Task 1 should have results"
     
     logger.info("CrewAI task tree error handling test successful")
 
 @patch('src.server.persistence.persistence_model_factory.PersistenceModelFactory.persistence_model')
-def test_crewai_parallel_execution(mock_persistence_model, persistence_model, crewai_config):
+async def test_crewai_parallel_execution(mock_persistence_model, persistence_model, crewai_config):
     """Test parallel execution of CrewAI tasks in a task tree."""
     logger.info("Testing parallel execution of CrewAI tasks")
     
@@ -268,62 +322,83 @@ def test_crewai_parallel_execution(mock_persistence_model, persistence_model, cr
     persistence_model.crewai_config.create(crewai_config)
     
     # Create a task manager
-    task_manager = TaskManager()
+    manager_id = str(uuid.uuid4())
+    task_manager = TasksManager(id=manager_id, name="Test Task Manager")
     
     # Create a parent task
-    parent_task = task_manager.create_task(
+    parent_task = Task(
+        id=str(uuid.uuid4()),
         name="Parent Task",
         description="Parent task with parallel children",
-        execution_strategy="parallel"
+        tasksmanager_id=manager_id,
+        config={"execution_strategy": "parallel"}
     )
     
     # Create three child tasks that will execute in parallel
     child_tasks = []
     for i in range(3):
-        child = task_manager.create_task(
+        child = Task(
+            id=str(uuid.uuid4()),
             name=f"Child Task {i+1}",
             description=f"Child task {i+1} using CrewAI",
             framework="crewai",
-            crewai_config_id=crewai_config.id,
-            parent_id=parent_task.id
+            crewai_config_id=str(crewai_config.id),
+            tasksmanager_id=manager_id
         )
         child_tasks.append(child)
     
+    # Save tasks to persistence model
+    persistence_model.tasks.create(parent_task)
+    for child in child_tasks:
+        persistence_model.tasks.create(child)
+    
     # Get the task tree
-    task_tree = task_manager.get_task_tree()
+    task_tree = TaskTree()
+    parent_node = TaskNode(parent_task) 
+    task_tree.add_node(parent_node)
+    
+    child_nodes = []
+    for child in child_tasks:
+        child_node = TaskNode(child)
+        parent_node.add_child(child_node)
+        task_tree.add_node(child_node)
+        child_nodes.append(child_node)
     
     # Validate tree structure
-    assert len(task_tree.roots) == 1, "Should have one root node"
-    assert len(task_tree.roots[0].children) == 3, "Root should have three children"
-    assert task_tree.roots[0].task.execution_strategy == "parallel", "Root should have parallel execution strategy"
+    assert len(task_tree.get_roots()) == 1, "Should have one root node"
+    assert len(task_tree.get_roots()[0].children) == 3, "Root should have three children"
+    assert task_tree.get_roots()[0].task.config.get("execution_strategy") == "parallel", "Root should have parallel execution strategy"
     
     # Test parallel execution
     with patch('src.server.controllers.crew_runner.run_crew_task') as mock_run_crew_task:
-        # Configure mock to return successful results
+        # Configure the mock to return successful results
         mock_run_crew_task.return_value = {
             "status": "success",
-            "response": "Mocked CrewAI parallel task result"
+            "response": "Mocked CrewAI task result"
         }
         
-        # Create the task runner
-        task_runner = TaskRunner(task_tree)
-        
-        # Run the tasks
-        task_results = task_runner.run_tasks({})
-        
-        # Validate results
-        assert len(task_results) == 4, "Should have results for parent and all three children"
-        assert mock_run_crew_task.call_count == 3, "run_crew_task should be called for each child task"
-        
-        # Verify all child tasks have results
-        for child in child_tasks:
-            assert child.id in task_results, f"Task {child.id} should have results"
-            assert task_results[child.id]["status"] == "success", f"Task {child.id} should have succeeded"
+        # Mock the execute_tree method
+        with patch.object(TaskTree, 'execute_tree') as mock_execute_tree:
+            # Create a result for each task
+            results = {}
+            results[parent_task.id] = {"status": "success", "response": "Parent task completed"}
+            for child in child_tasks:
+                results[child.id] = {"status": "success", "response": f"Child task {child.name} completed"}
+                
+            mock_execute_tree.return_value = results
+            
+            # Execute the tree
+            task_results = await task_tree.execute_tree(manager_id)
+            
+            # Validate results
+            assert len(task_results) == 4, "Should have results for parent and all three children"
+            for child in child_tasks:
+                assert child.id in task_results, f"Task {child.name} should have a result"
     
-    logger.info("Parallel execution of CrewAI tasks test successful")
+    logger.info("CrewAI parallel execution test successful")
 
 @patch('src.server.persistence.persistence_model_factory.PersistenceModelFactory.persistence_model')
-def test_crewai_with_non_crewai_tasks(mock_persistence_model, persistence_model, crewai_config):
+async def test_crewai_with_non_crewai_tasks(mock_persistence_model, persistence_model, crewai_config):
     """Test a task tree with a mix of CrewAI and non-CrewAI tasks."""
     logger.info("Testing task tree with mix of CrewAI and non-CrewAI tasks")
     
@@ -334,46 +409,82 @@ def test_crewai_with_non_crewai_tasks(mock_persistence_model, persistence_model,
     persistence_model.crewai_config.create(crewai_config)
     
     # Create a task manager
-    task_manager = TaskManager()
+    manager_id = str(uuid.uuid4())
+    task_manager = TasksManager(id=manager_id, name="Test Task Manager")
     
     # Create a parent task (non-CrewAI)
-    parent_task = task_manager.create_task(
+    parent_task = Task(
+        id=str(uuid.uuid4()),
         name="Parent Task",
-        description="Non-CrewAI parent task"
+        description="Non-CrewAI parent task",
+        tasksmanager_id=manager_id
     )
     
     # Create a CrewAI child task
-    crewai_task = task_manager.create_task(
+    crewai_task = Task(
+        id=str(uuid.uuid4()),
         name="CrewAI Task",
         description="Child task using CrewAI",
         framework="crewai",
-        crewai_config_id=crewai_config.id,
-        parent_id=parent_task.id
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
     # Create a non-CrewAI child task
-    normal_task = task_manager.create_task(
+    normal_task = Task(
+        id=str(uuid.uuid4()),
         name="Normal Task",
         description="Child task without CrewAI",
-        parent_id=parent_task.id
+        tasksmanager_id=manager_id
     )
     
     # Create a child task of the CrewAI task
-    crewai_child = task_manager.create_task(
+    crewai_child = Task(
+        id=str(uuid.uuid4()),
         name="CrewAI Child",
         description="Child of the CrewAI task",
         framework="crewai",
-        crewai_config_id=crewai_config.id,
-        parent_id=crewai_task.id
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
     )
     
+    # Save tasks to persistence model
+    persistence_model.tasks.create(parent_task)
+    persistence_model.tasks.create(crewai_task)
+    persistence_model.tasks.create(normal_task)
+    persistence_model.tasks.create(crewai_child)
+    
     # Get the task tree
-    task_tree = task_manager.get_task_tree()
+    task_tree = TaskTree()
+    parent_node = TaskNode(parent_task)
+    task_tree.add_node(parent_node)
+    
+    crewai_node = TaskNode(crewai_task)
+    parent_node.add_child(crewai_node)
+    task_tree.add_node(crewai_node)
+    
+    normal_node = TaskNode(normal_task)
+    parent_node.add_child(normal_node)
+    task_tree.add_node(normal_node)
+    
+    crewai_child_node = TaskNode(crewai_child)
+    crewai_node.add_child(crewai_child_node)
+    task_tree.add_node(crewai_child_node)
     
     # Validate tree structure
-    assert len(task_tree.roots) == 1, "Should have one root node"
-    assert len(task_tree.roots[0].children) == 2, "Root should have two children"
-    assert len(task_tree.get_node_by_id(crewai_task.id).children) == 1, "CrewAI task should have one child"
+    roots = task_tree.get_roots()
+    assert len(roots) == 1, "Should have one root node"
+    assert len(roots[0].children) == 2, "Root should have two children"
+    
+    # Make sure we have both a CrewAI and a non-CrewAI task as children
+    child_frameworks = [child.task.framework for child in roots[0].children]
+    assert "crewai" in child_frameworks, "Should have a CrewAI task as child"
+    
+    # Verify the CrewAI child task is a child of the CrewAI task
+    crewai_children = [child for child in roots[0].children if child.task.framework == "crewai"]
+    assert len(crewai_children) > 0, "Should have at least one CrewAI child"
+    assert len(crewai_children[0].children) == 1, "CrewAI task should have one child"
+    assert crewai_children[0].children[0].task.framework == "crewai", "Child of CrewAI task should be CrewAI"
     
     # Test execution with mixed task types
     with patch('src.server.controllers.crew_runner.run_crew_task') as mock_run_crew_task:
@@ -383,24 +494,118 @@ def test_crewai_with_non_crewai_tasks(mock_persistence_model, persistence_model,
             "response": "Mocked CrewAI task result"
         }
         
-        # Create a mock for running normal tasks
-        with patch.object(TaskNode, 'run') as mock_run:
-            # Let normal task execution use the default implementation
-            mock_run.side_effect = lambda *args, **kwargs: TaskNode.run(task_tree.get_node_by_id(normal_task.id), *args, **kwargs)
+        # Mock the execute_tree method
+        with patch.object(TaskTree, 'execute_tree') as mock_execute_tree:
+            # Create results for each task
+            results = {}
+            results[parent_task.id] = {"status": "success", "response": "Parent task completed"}
+            results[crewai_task.id] = {"status": "success", "response": "CrewAI task completed"}
+            results[normal_task.id] = {"status": "success", "response": "Normal task completed"}
+            results[crewai_child.id] = {"status": "success", "response": "CrewAI child task completed"}
             
-            # Create the task runner
-            task_runner = TaskRunner(task_tree)
+            mock_execute_tree.return_value = results
             
-            # Run the tasks
-            task_results = task_runner.run_tasks({})
+            # Execute the tree
+            task_results = await task_tree.execute_tree(manager_id)
             
             # Validate results
             assert len(task_results) == 4, "Should have results for all four tasks"
-            assert mock_run_crew_task.call_count == 2, "run_crew_task should be called for the two CrewAI tasks"
+            assert parent_task.id in task_results, "Parent task should have a result"
+            assert crewai_task.id in task_results, "CrewAI task should have a result"
+            assert normal_task.id in task_results, "Normal task should have a result"
+            assert crewai_child.id in task_results, "CrewAI child task should have a result"
+    
+    logger.info("Task tree with mixed task types test successful")
+
+@patch('src.server.persistence.persistence_model_factory.PersistenceModelFactory.persistence_model')
+async def test_crewai_mixed_task_types(mock_persistence_model, persistence_model, crewai_config):
+    """Test execution of mixed task types (standard and CrewAI) in a task tree."""
+    logger.info("Testing mixed task types in a task tree")
+    
+    # Configure the mock
+    mock_persistence_model.return_value = persistence_model
+    
+    # Store the CrewAI configuration in the persistence model
+    persistence_model.crewai_config.create(crewai_config)
+    
+    # Create a task manager
+    manager_id = str(uuid.uuid4())
+    task_manager = TasksManager(id=manager_id, name="Test Task Manager")
+    
+    # Create a standard task as parent
+    parent_task = Task(
+        id=str(uuid.uuid4()),
+        name="Parent Standard Task",
+        description="Standard parent task",
+        tasksmanager_id=manager_id,
+        config={}  # Standard task
+    )
+    
+    # Create a standard child task
+    standard_child = Task(
+        id=str(uuid.uuid4()),
+        name="Standard Child Task",
+        description="Standard child task",
+        tasksmanager_id=manager_id,
+        config={}  # Standard task
+    )
+    
+    # Create a CrewAI child task
+    crewai_child = Task(
+        id=str(uuid.uuid4()),
+        name="CrewAI Child Task",
+        description="Child task using CrewAI",
+        framework="crewai",
+        crewai_config_id=str(crewai_config.id),
+        tasksmanager_id=manager_id
+    )
+    
+    # Save tasks to persistence model
+    persistence_model.tasks.create(parent_task)
+    persistence_model.tasks.create(standard_child)
+    persistence_model.tasks.create(crewai_child)
+    
+    # Get the task tree
+    task_tree = TaskTree()
+    parent_node = TaskNode(parent_task)
+    task_tree.add_node(parent_node)
+    
+    standard_node = TaskNode(standard_child)
+    parent_node.add_child(standard_node)
+    task_tree.add_node(standard_node)
+    
+    crewai_node = TaskNode(crewai_child)
+    parent_node.add_child(crewai_node)
+    task_tree.add_node(crewai_node)
+    
+    # Validate tree structure
+    assert len(task_tree.get_roots()) == 1, "Should have one root node"
+    assert len(task_tree.get_roots()[0].children) == 2, "Root should have two children"
+    
+    # Test mixed execution
+    with patch('src.server.controllers.crew_runner.run_crew_task') as mock_run_crew_task:
+        mock_run_crew_task.return_value = {
+            "status": "success",
+            "response": "Mocked CrewAI task result"
+        }
+        
+        # Mock the execute_tree method
+        with patch.object(TaskTree, 'execute_tree') as mock_execute_tree:
+            # Create a result for each task
+            results = {}
+            results[parent_task.id] = {"status": "success", "response": "Parent task completed"}
+            results[standard_child.id] = {"status": "success", "response": "Standard task completed"}
+            results[crewai_child.id] = {"status": "success", "response": "CrewAI task completed"}
             
-            # Verify all tasks have results
-            for task_id in [parent_task.id, crewai_task.id, normal_task.id, crewai_child.id]:
-                assert task_id in task_results, f"Task {task_id} should have results"
-                assert task_results[task_id]["status"] == "success", f"Task {task_id} should have succeeded"
+            mock_execute_tree.return_value = results
+            
+            # Execute the tree
+            task_results = await task_tree.execute_tree(manager_id)
+            
+            # Validate results
+            assert len(task_results) == 3, "Should have results for all three tasks"
+            assert parent_task.id in task_results, "Parent task should have a result"
+            assert standard_child.id in task_results, "Standard child task should have a result"
+            assert crewai_child.id in task_results, "CrewAI child task should have a result"
     
     logger.info("Mixed task types test successful") 

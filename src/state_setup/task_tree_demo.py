@@ -27,7 +27,7 @@ from src.server.models.message import Message
 from src.server.models.persistence_models import StorageLocation, StorageType
 from src.server.controllers.curried_proxy import CurriedProxy
 from src.server.models.tools_catalog import ToolsCatalog
-from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, TaskModel, ToolModel
+from src.server.models.agent import CrewAIConfig, CreateCrewRequest, AgentModel, TaskModel, ToolModel, AgentTool
 from src.server.models.process import Process
 from src.server.controllers.task_tree_flow import ExecutionStrategy
 from src.server.tools.url_tools import URLTools
@@ -103,7 +103,7 @@ async def setup_task_tree_demo_state():
                     collecting and preparing data from various sources. You ensure
                     data is correctly formatted and ready for analysis.""",
                     tools=[
-                        ToolModel(
+                        AgentTool(
                             name="URLTools.get_data_from_url",
                             description="Get data from specified URL"
                         )

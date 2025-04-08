@@ -101,16 +101,24 @@ async def test_task_handover_basic():
     
     # Verify all tasks ran successfully
     if isinstance(results, dict) and "results" in results:
-        # Dictionary response with results key
-        result_dict = results["results"]
-        assert "task1" in result_dict
-        assert "task2" in result_dict
-        assert "task3" in result_dict
+        # Dictionary response with results array
+        result_list = results["results"]
+        assert len(result_list) == 3
+        
+        # Find each task's result by position
+        task1_result = next((r for r in result_list if r.get("position") == 0), None)
+        task2_result = next((r for r in result_list if r.get("position") == 1), None)
+        task3_result = next((r for r in result_list if r.get("position") == 2), None)
+        
+        # Verify they were found
+        assert task1_result is not None, "Task 1 result not found"
+        assert task2_result is not None, "Task 2 result not found"
+        assert task3_result is not None, "Task 3 result not found"
         
         # Verify task results
-        assert result_dict["task1"]["response"] == "Task 1 output"
-        assert result_dict["task2"]["response"] == "Task 2 output"
-        assert result_dict["task3"]["response"] == "Task 3 output"
+        assert task1_result["response"] == "Task 1 output"
+        assert task2_result["response"] == "Task 2 output"
+        assert task3_result["response"] == "Task 3 output"
     else:
         # String response
         assert "Task 1 output" in str(results)
@@ -246,10 +254,26 @@ async def test_task_handover_error_handling():
     
     # Verify the results object
     if isinstance(results, dict) and "results" in results:
-        # Dictionary response with results key
-        result_dict = results["results"]
-        assert "task1" in result_dict
-        # Since task2 failed, task3 may or may not be present depending on sequence controller behavior
+        # Dictionary response with results array
+        result_list = results["results"]
+        assert len(result_list) == 2  # Only task1 and task2 (failed) should be in the results
+        
+        # Find each task's result by position
+        task1_result = next((r for r in result_list if r.get("position") == 0), None)
+        task2_result = next((r for r in result_list if r.get("position") == 1), None)
+        
+        # Verify they were found
+        assert task1_result is not None, "Task 1 result not found"
+        assert task2_result is not None, "Task 2 result not found"
+        
+        # Verify task results
+        assert task1_result["response"] == "Task 1 output"
+        assert task2_result["status"] == "failed"
+        assert "Task 2 error" in task2_result["error"] or "Task 2 error" in task2_result["response"]
+        
+        # Verify task3 is not in results since sequence stopped after task2 failed
+        task3_result = next((r for r in result_list if r.get("position") == 2), None)
+        assert task3_result is None, "Task 3 should not be in results after task2 failed"
     else:
         # String response - for sequences that fail, the output is often just the successful part
         assert "Task 1 output" in str(results)
@@ -370,18 +394,27 @@ async def test_task_handover_complex_dependencies():
     
     # Verify all tasks ran successfully
     if isinstance(results, dict) and "results" in results:
-        # Dictionary response with results key
-        result_dict = results["results"]
-        assert "task1" in result_dict
-        assert "task2" in result_dict
-        assert "task3" in result_dict
-        assert "task4" in result_dict
+        # Dictionary response with results array
+        result_list = results["results"]
+        assert len(result_list) == 4
+        
+        # Find each task's result by position
+        task1_result = next((r for r in result_list if r.get("position") == 0), None)
+        task2_result = next((r for r in result_list if r.get("position") == 1), None)
+        task3_result = next((r for r in result_list if r.get("position") == 2), None)
+        task4_result = next((r for r in result_list if r.get("position") == 3), None)
+        
+        # Verify they were found
+        assert task1_result is not None, "Task 1 result not found"
+        assert task2_result is not None, "Task 2 result not found"
+        assert task3_result is not None, "Task 3 result not found"
+        assert task4_result is not None, "Task 4 result not found"
         
         # Verify task results
-        assert result_dict["task1"]["response"] == "Task 1 output"
-        assert result_dict["task2"]["response"] == "Task 2 output"
-        assert result_dict["task3"]["response"] == "Task 3 output"
-        assert result_dict["task4"]["response"] == "Task 4 output combining Task 2 and Task 3"
+        assert task1_result["response"] == "Task 1 output"
+        assert task2_result["response"] == "Task 2 output"
+        assert task3_result["response"] == "Task 3 output"
+        assert task4_result["response"] == "Task 4 output combining Task 2 and Task 3"
     else:
         # String response
         assert "Task 1 output" in str(results)

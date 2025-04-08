@@ -14,6 +14,8 @@ from src.server.models.tasks_manager import TasksManager
 from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
 from src.server.controllers.task_runner import TaskRunner
 from src.server.models.agent import CrewAIConfig, CreateCrewRequest
+from uuid import UUID
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ async def test_crewai_tool_visualization(mock_streamlit, persistence_model):
         task_manager = TasksManager(
             name="Test Manager",
             description="Test manager description",
-            crewai_config_id=stored_config.id
+            crewai_config_id=str(stored_config.id)
         )
         stored_manager = persistence_model.tasksmanagers.create(task_manager)
         assert stored_manager is not None, "Failed to store task manager"
@@ -86,7 +88,7 @@ async def test_crewai_tool_visualization(mock_streamlit, persistence_model):
             name="Test Task",
             description="Test task description",
             tasksmanager_id=stored_manager.id,
-            crewai_config_id=stored_config.id,
+            crewai_config_id=str(stored_config.id),
             agent_role="Test Agent",
             input_data={
                 "tool_request": {
@@ -110,7 +112,18 @@ async def test_crewai_tool_visualization(mock_streamlit, persistence_model):
         # Test tool configuration display
         config_container = mock_streamlit['container'].return_value
         config_container.__enter__.return_value = config_container
-        st.write(json.dumps(crewai_config.dict(), indent=2))
+        
+        # Use model_dump instead of dict and handle UUID serialization
+        class UUIDEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, UUID):
+                    return str(obj)
+                elif isinstance(obj, datetime):
+                    return obj.isoformat()
+                return super().default(obj)
+        
+        config_dict = crewai_config.model_dump(exclude_none=True)
+        st.write(json.dumps(config_dict, indent=2, cls=UUIDEncoder))
         mock_streamlit['write'].assert_called()
         
         # Test tool execution button

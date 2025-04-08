@@ -10,7 +10,7 @@ from src.server.persistence.in_memory_persistence import InMemoryPersistenceMode
 from src.server.persistence.persistence_model_factory import PersistenceModelFactory
 from src.server.models.agent import CrewAIConfig
 from src.server.controllers.agents_controller import CreateCrewRequest, AgentModel
-from src.server.models.agent import ToolModel
+from src.server.models.agent import AgentTool
 from src.server.models.persistence_models import StorageType
 from src.state_setup.dynamic_tools import (
     setup_dynamic_tools_state,
@@ -45,7 +45,7 @@ def mock_crewai_config():
                     role="Test Role",
                     goal="Test Goal",
                     backstory="Test Backstory",
-                    tools=[ToolModel(name="internal_file_tools", description="Test tool")]
+                    tools=[AgentTool(name="internal_file_tools", description="Test tool")]
                 )
             ],
             tasks=[
@@ -54,7 +54,7 @@ def mock_crewai_config():
                     "description": "Test task description",
                     "agent_role": "Test Role",
                     "expected_output": "Test output",
-                    "tools": [ToolModel(name="internal_file_tools", description="Test tool")]
+                    "tools": [AgentTool(name="internal_file_tools", description="Test tool")]
                 }
             ]
         ),

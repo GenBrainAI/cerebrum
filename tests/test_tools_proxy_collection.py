@@ -1,5 +1,5 @@
 import pytest
-from src.server.models.agent import ToolsProxyCollection, ToolsetSpec, ToolSpec, ObjectToolSpec, CreateCrewRequest, AgentModel, TaskModel, ToolModel
+from src.server.models.agent import ToolsProxyCollection, ToolsetSpec, ToolSpec, ObjectToolSpec, CreateCrewRequest, AgentModel, TaskModel, AgentTool
 
 def test_tools_proxy_collection():
     tools_proxy_collection = ToolsProxyCollection(
@@ -44,7 +44,7 @@ def test_create_crew_request_with_tools_proxy_collection():
                 role="Developer",
                 goal="Develop software",
                 backstory="Experienced developer",
-                tools=[ToolModel(name="IDE", description="Integrated Development Environment")]
+                tools=[AgentTool(name="IDE", description="Integrated Development Environment")]
             )
         ],
         tasks=[
@@ -70,7 +70,7 @@ def test_create_crew_request_without_tools_proxy_collection():
                 role="Developer",
                 goal="Develop software",
                 backstory="Experienced developer",
-                tools=[ToolModel(name="IDE", description="Integrated Development Environment")]
+                tools=[AgentTool(name="IDE", description="Integrated Development Environment")]
             )
         ],
         tasks=[

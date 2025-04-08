@@ -1,9 +1,9 @@
 import pytest
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import MagicMock, create_autospec, Mock, PropertyMock
 from crewai import Agent, Task, Crew
 from crewai.tools.base_tool import BaseTool
 from src.server.controllers.agents_controller import create_crew
-from src.server.models.agent import CreateCrewRequest, AgentModel, TaskModel, ToolModel
+from src.server.models.agent import CreateCrewRequest, AgentModel, TaskModel, AgentTool
 from src.server.controllers.curried_proxy import CurriedProxy
 from fastapi import HTTPException
 class MockTool(BaseTool):
@@ -21,9 +21,13 @@ async def test_create_crew():
     # Create a mock tool
     mock_tool = MockTool()
 
-    # Mock CurriedProxy
+    # Mock CurriedProxy with catalog attribute
     mock_curried_proxy = create_autospec(CurriedProxy)
     mock_curried_proxy.export_to_crewai.return_value = [mock_tool]
+    
+    # Add the catalog attribute to the mock
+    mock_catalog = Mock()
+    mock_curried_proxy.catalog = mock_catalog
 
     # Create a sample CreateCrewRequest
     create_crew_request = CreateCrewRequest(
@@ -33,7 +37,7 @@ async def test_create_crew():
                 role="Tester",
                 goal="Test the system",
                 backstory="Experienced QA engineer",
-                tools=[ToolModel(name="test_tool", description="A test tool")]
+                tools=[AgentTool(name="test_tool", description="A test tool")]
             )
         ],
         tasks=[
@@ -54,7 +58,11 @@ async def test_create_crew():
     assert isinstance(crew.agents[0], Agent)
     assert crew.agents[0].role == "Tester"
     assert crew.agents[0].goal == "Test the system"
-    assert crew.agents[0].backstory == "Experienced QA engineer"
+    
+    # We expect the backstory to have the critical tool instructions appended
+    # So we just check if it starts with our original backstory
+    assert crew.agents[0].backstory.startswith("Experienced QA engineer")
+    
     assert len(crew.tasks) == 1
     assert isinstance(crew.tasks[0], Task)
     assert crew.tasks[0].description == "Run tests"
@@ -77,7 +85,7 @@ async def test_create_crew_without_proxy():
                 role="Tester",
                 goal="Test the system",
                 backstory="Experienced QA engineer",
-                tools=[ToolModel(name="test_tool", description="A test tool")]
+                tools=[AgentTool(name="test_tool", description="A test tool")]
             )
         ],
         tasks=[
@@ -112,7 +120,7 @@ async def test_create_crew_invalid_agent_role():
                 role="Tester",
                 goal="Test the system",
                 backstory="Experienced QA engineer",
-                tools=[ToolModel(name="test_tool", description="A test tool")]
+                tools=[AgentTool(name="test_tool", description="A test tool")]
             )
         ],
         tasks=[
@@ -136,9 +144,13 @@ async def test_create_crew_missing_agent():
     # Create a mock tool
     mock_tool = MockTool()
 
-    # Mock CurriedProxy
+    # Mock CurriedProxy with catalog attribute
     mock_curried_proxy = create_autospec(CurriedProxy)
     mock_curried_proxy.export_to_crewai.return_value = [mock_tool]
+    
+    # Add the catalog attribute to the mock
+    mock_catalog = Mock()
+    mock_curried_proxy.catalog = mock_catalog
 
     create_crew_request = CreateCrewRequest(
         description="Test Crew",
@@ -147,7 +159,7 @@ async def test_create_crew_missing_agent():
                 role="Tester",
                 goal="Test the system",
                 backstory="Experienced QA engineer",
-                tools=[ToolModel(name="test_tool", description="A test tool")]
+                tools=[AgentTool(name="test_tool", description="A test tool")]
             )
         ],
         tasks=[
@@ -169,8 +181,19 @@ async def test_create_crew_missing_agent():
 ##### More tests to come
 
 @pytest.mark.asyncio
-async def test_create_crew_without_proxy():
-    """Test creating a crew without a curried proxy"""
+async def test_create_crew_with_duplicate_tools():
+    """Test creating a crew with duplicate tools"""
+    # Create a mock tool
+    mock_tool = MockTool()
+
+    # Mock CurriedProxy with catalog attribute
+    mock_curried_proxy = create_autospec(CurriedProxy)
+    mock_curried_proxy.export_to_crewai.return_value = [mock_tool]
+    
+    # Add the catalog attribute to the mock
+    mock_catalog = Mock()
+    mock_curried_proxy.catalog = mock_catalog
+
     create_crew_request = CreateCrewRequest(
         description="Test Crew",
         agents=[
@@ -178,7 +201,7 @@ async def test_create_crew_without_proxy():
                 role="Tester",
                 goal="Test the system",
                 backstory="Experienced QA engineer",
-                tools=[ToolModel(name="test_tool", description="A test tool")]
+                tools=[AgentTool(name="test_tool", description="A test tool")]
             )
         ],
         tasks=[
@@ -191,14 +214,14 @@ async def test_create_crew_without_proxy():
     )
 
     # Call create_crew without a proxy
-    crew = await create_crew(create_crew_request, None)
+    crew = await create_crew(create_crew_request, mock_curried_proxy)
 
     # Assertions
     assert isinstance(crew, Crew)
     assert len(crew.agents) == 1
     assert isinstance(crew.agents[0], Agent)
     assert crew.agents[0].role == "Tester"
-    assert len(crew.agents[0].tools) == 0  # Should have no tools
+    assert len(crew.agents[0].tools) == 1  # Should have tools from the proxy
     assert len(crew.tasks) == 1
     assert isinstance(crew.tasks[0], Task)
     assert crew.tasks[0].description == "Run tests"
@@ -209,9 +232,13 @@ async def test_create_crew_with_tools():
     # Create a mock tool
     mock_tool = MockTool()
 
-    # Mock CurriedProxy
+    # Mock CurriedProxy with catalog attribute
     mock_curried_proxy = create_autospec(CurriedProxy)
     mock_curried_proxy.export_to_crewai.return_value = [mock_tool]
+    
+    # Add the catalog attribute to the mock
+    mock_catalog = Mock()
+    mock_curried_proxy.catalog = mock_catalog
 
     create_crew_request = CreateCrewRequest(
         description="Test Crew",
@@ -220,7 +247,7 @@ async def test_create_crew_with_tools():
                 role="Tester",
                 goal="Test the system",
                 backstory="Experienced QA engineer",
-                tools=[ToolModel(name="mock_tool", description="A test tool")]
+                tools=[AgentTool(name="mock_tool", description="A test tool")]
             )
         ],
         tasks=[

@@ -179,3 +179,4 @@ test_storage/
 tests/db/chroma.sqlite3
 
 
+.qodo
