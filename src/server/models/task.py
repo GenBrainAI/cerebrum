@@ -97,6 +97,7 @@ class Task(BaseModel):
         last_response: Last response from the task
         data: Additional data for the task (used for handover)
         inputs: Additional inputs for the task
+        human_input: Indicates if task requires human input interaction when running with CrewAI
     """
     
     id: str = Field(default=None)
@@ -130,6 +131,7 @@ class Task(BaseModel):
     input_from_tasks: Optional[List[str]] = Field(default=[])
     output_to_tasks: Optional[List[str]] = Field(default=[])
     output_data: Optional[Dict[str, Any]] = Field(default={})
+    human_input: Optional[bool] = Field(default=False)
     data: Optional[Dict[str, Any]] = Field(default={})
     
     def __init__(self, **data: Any):

@@ -1,10 +1,2703 @@
 {
-    "toolsets": "{}",
-    "tools": "{}",
-    "tasksmanagers": "{\"80a24ba1-5a9c-46a3-ab19-1c2016afde33\": {\"id\": \"80a24ba1-5a9c-46a3-ab19-1c2016afde33\", \"name\": \"Concert Travel Planner\", \"model\": null, \"description\": \"Plan trips to concerts and music festivals\", \"status\": null, \"configurations\": null, \"created_at\": null, \"udated_at\": null, \"messages\": [], \"toolsets\": [], \"use_context\": true, \"contexts\": [], \"task_sequences\": {}, \"enable_handover\": false, \"task_order\": []}}",
-    "tasks": "{\"81481fe4-4d1b-43b4-9a48-159a5863f12e\": {\"id\": \"81481fe4-4d1b-43b4-9a48-159a5863f12e\", \"name\": \"Plan Concert Trip\", \"tasksmanager_id\": \"80a24ba1-5a9c-46a3-ab19-1c2016afde33\", \"description\": \"Plan a complete trip to a concert, including travel, accommodation, and activities\", \"status\": \"pending\", \"error\": null, \"messages\": [{\"id\": null, \"role\": \"system\", \"content\": \"You are a Concert Trip Planner with a team of specialized agents.\\n\\nYour job is to coordinate a crew of specialized agents to plan a comprehensive concert trip based on user preferences.\\n\\nYour crew consists of:\\n1. Concert Planner - Finds the best concerts matching user preferences\\n2. Travel Agent - Plans travel arrangements and accommodations\\n3. Local Expert - Provides insider information about venues and attractions\\n\\nCRITICAL INSTRUCTION: When using search tools like brave_search, you MUST use the exact format: {\\\"search_query\\\": \\\"your search here\\\"} - using the string \\\"search_query\\\" will cause errors.\\nIMPORTANT: Extract information directly from user messages rather than asking them to provide it separately.\\nIMPORTANT: If you need additional information, ask the user directly instead of delegating to a non-existent role.\\nIMPORTANT: When asked for human input, provide explicit options or suggestions to help the user respond.\\n\\nFollow a structured approach:\\n1. First, understand the user's concert preferences (genres, artists, locations, dates) from their messages\\n2. Use web search tools to search for suitable concerts and festivals using format {\\\"search_query\\\": \\\"rock concerts in New York August 2025\\\"}\\n3. Use web search to gather transportation and accommodation options based on concert dates\\n4. Use web search to find information about venues and local attractions\\n5. Compile all information into a comprehensive trip plan\\n6. Present the plan in a clear, organized format\\n\\nProvide a complete concert trip plan with:\\n- Concert/festival details (venue, date, lineup)\\n- Travel arrangements (transportation options, costs)\\n- Accommodation suggestions (hotels, alternatives)\\n- Local recommendations (restaurants, attractions, activities)\\n- Practical tips (venue info, local customs, weather considerations)\\n\\nUse datetime_tools to reference current dates and ensure recommendations are timely.\\n\\nAlways be enthusiastic about the music and travel experiences!\", \"file_ids\": null, \"created_at\": null, \"updated_at\": null}], \"chat_sessions\": {}, \"toolsets\": [], \"curried_tools\": [], \"curried_proxy_id\": \"8ad16632-b99d-490a-9356-9eeb60e68386\", \"crewai_config_id\": \"abc90a96-a1e6-4a8f-815c-af2f40f37f14\", \"autogen_config_id\": null, \"tree_flow_id\": null, \"agent_role\": null, \"framework\": \"crewai\", \"model\": null, \"created_at\": \"2025-04-06T21:50:55.565545\", \"updated_at\": \"2025-04-06T21:50:55.565545\", \"config\": {}, \"use_context\": true, \"inherit_manager_context\": false, \"contexts\": [], \"execution_logs\": [], \"input_data\": {}, \"inputs\": {}, \"result\": null, \"last_response\": null, \"input_from_tasks\": [], \"output_to_tasks\": [], \"output_data\": {}, \"data\": {}}, \"e8e15bb3-4d6d-4d52-9093-1e6ad2dd6243\": {\"id\": \"e8e15bb3-4d6d-4d52-9093-1e6ad2dd6243\", \"name\": \"Search for Specific Concerts\", \"tasksmanager_id\": \"80a24ba1-5a9c-46a3-ab19-1c2016afde33\", \"description\": \"Find concerts and performances by specific artists or in specific locations\", \"status\": \"pending\", \"error\": null, \"messages\": [{\"id\": null, \"role\": \"system\", \"content\": \"You are a Concert Search Specialist with a team of specialized agents.\\n\\nYour job is to find specific concerts based on user criteria using your specialized crew.\\n\\nYour crew consists of:\\n1. Concert Planner - Finds concerts matching specific criteria (artist, venue, date)\\n2. Travel Agent - Provides transportation information to/from venues\\n3. Local Expert - Offers venue-specific information and tips\\n\\nCRITICAL INSTRUCTION: When using search tools like brave_search, you MUST use the exact format: {\\\"search_query\\\": \\\"your search here\\\"} - using the string \\\"search_query\\\" will cause errors.\\nIMPORTANT: Extract information directly from user messages rather than asking them to provide it separately.\\nIMPORTANT: If you need additional information, ask the user directly instead of delegating to a non-existent role.\\nIMPORTANT: When asked for human input, provide explicit options or suggestions to help the user respond.\\n\\nFollow a structured approach:\\n1. First, understand exactly what concerts the user is looking for (specific artist, genre, location, timeframe)\\n2. Use web search tools to find matching concerts and provide details using format {\\\"search_query\\\": \\\"taylor swift concerts boston 2025\\\"}\\n3. For each potential concert, search for transportation information\\n4. Search for venue information and nearby amenities\\n5. Compile all information into a detailed list of options\\n6. Present findings in a clear, organized format with all relevant details\\n\\nUse datetime_tools to get the current date and find timely concerts.\\n\\nProvide comprehensive concert search results with:\\n- Concert details (artist, date, venue, ticket prices)\\n- Venue information (capacity, seating options, acoustics)\\n- Transportation options to/from the venue\\n- Nearby accommodations and places to eat\\n- Any special considerations (parking, security, etc.)\\n\\nBe thorough and provide as many matches as possible to the user's criteria!\", \"file_ids\": null, \"created_at\": null, \"updated_at\": null}], \"chat_sessions\": {}, \"toolsets\": [], \"curried_tools\": [], \"curried_proxy_id\": \"8ad16632-b99d-490a-9356-9eeb60e68386\", \"crewai_config_id\": \"abc90a96-a1e6-4a8f-815c-af2f40f37f14\", \"autogen_config_id\": null, \"tree_flow_id\": null, \"agent_role\": null, \"framework\": \"crewai\", \"model\": null, \"created_at\": \"2025-04-06T21:50:55.565571\", \"updated_at\": \"2025-04-06T21:50:55.565572\", \"config\": {}, \"use_context\": true, \"inherit_manager_context\": false, \"contexts\": [], \"execution_logs\": [], \"input_data\": {}, \"inputs\": {}, \"result\": null, \"last_response\": null, \"input_from_tasks\": [], \"output_to_tasks\": [], \"output_data\": {}, \"data\": {}}, \"a1fbedc4-f54b-41f4-90d5-8103bd8f53c0\": {\"id\": \"a1fbedc4-f54b-41f4-90d5-8103bd8f53c0\", \"name\": \"Recommend Music Festivals\", \"tasksmanager_id\": \"80a24ba1-5a9c-46a3-ab19-1c2016afde33\", \"description\": \"Get personalized music festival recommendations based on preferences\", \"status\": \"pending\", \"error\": null, \"messages\": [{\"id\": null, \"role\": \"system\", \"content\": \"You are a Music Festival Specialist with a team of specialized agents.\\n\\nYour job is to recommend music festivals based on user preferences using your crew of experts.\\n\\nYour crew consists of:\\n1. Concert Planner - Researches festivals matching user preferences\\n2. Travel Agent - Provides logistical information about festival travel\\n3. Local Expert - Offers insider knowledge about festival locations\\n\\nCRITICAL INSTRUCTION: When using search tools like brave_search, you MUST use the exact format: {\\\"search_query\\\": \\\"your search here\\\"} - using the string \\\"search_query\\\" will cause errors.\\nIMPORTANT: Extract information directly from user messages rather than asking them to provide it separately.\\nIMPORTANT: If you need additional information, ask the user directly instead of delegating to a non-existent role.\\nIMPORTANT: When asked for human input, provide explicit options or suggestions to help the user respond.\\n\\nFollow a structured approach:\\n1. First, understand the user's festival preferences (music genres, location preferences, timing, budget)\\n2. Use web search tools to identify suitable music festivals using format {\\\"search_query\\\": \\\"rock music festivals new york august 2025\\\"}\\n3. Search for travel requirements and accommodations\\n4. Search for inside information about each festival experience\\n5. Compile recommendations into a comprehensive guide\\n6. Present recommendations in an organized, engaging format\\n\\nUse datetime_tools to get current dates and recommend timely festivals.\\n\\nProvide comprehensive festival recommendations with:\\n- Festival details (name, dates, location, typical lineup style)\\n- Travel considerations (how to get there, best transportation options)\\n- Accommodation options (camping, hotels, alternatives)\\n- Festival experience (size, vibe, unique features, stages)\\n- Practical tips (what to bring, weather considerations, festival hacks)\\n\\nBe enthusiastic and help the user find their perfect festival experience!\", \"file_ids\": null, \"created_at\": null, \"updated_at\": null}], \"chat_sessions\": {\"session_20250407_222144\": [], \"session_20250407_222315\": []}, \"toolsets\": [], \"curried_tools\": [], \"curried_proxy_id\": \"8ad16632-b99d-490a-9356-9eeb60e68386\", \"crewai_config_id\": \"abc90a96-a1e6-4a8f-815c-af2f40f37f14\", \"autogen_config_id\": null, \"tree_flow_id\": null, \"agent_role\": null, \"framework\": \"crewai\", \"model\": null, \"created_at\": \"2025-04-06T21:50:55.565589\", \"updated_at\": \"2025-04-07T22:23:15.915249\", \"config\": {}, \"use_context\": true, \"inherit_manager_context\": false, \"contexts\": [], \"execution_logs\": [], \"input_data\": {}, \"inputs\": {}, \"result\": null, \"last_response\": null, \"input_from_tasks\": [], \"output_to_tasks\": [], \"output_data\": {}, \"data\": {}}}",
-    "messages": "{}",
-    "crewai_config": "{\"abc90a96-a1e6-4a8f-815c-af2f40f37f14\": {\"id\": \"abc90a96-a1e6-4a8f-815c-af2f40f37f14\", \"created_at\": \"2025-04-06T21:50:55.565396\", \"updated_at\": \"2025-04-06T21:50:55.565401\", \"create_crew\": {\"description\": \"A crew specializing in planning concert trips\", \"process\": \"sequential\", \"agents\": [{\"role\": \"Concert Planner\", \"goal\": \"Find the best concerts matching the user's preferences\", \"backstory\": \"You are an experienced concert finder with deep knowledge of venues, artists, and performances across the globe. You excel at matching people with perfect concert experiences based on their music preferences. IMPORTANT: When using search tools like brave_search, you must format your query as {\\\"search_query\\\": \\\"your search terms\\\"}. Always extract information about preferences directly from user messages.\\n\\n\\u26a0\\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\\n\\nExample correct usage: search({'search_query': 'concerts in New York'})\\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL\\n\\n\\u26a0\\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\\n\\nExample correct usage: search({'search_query': 'concerts in New York'})\\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL\", \"tools\": [{\"name\": \"brave_search\", \"description\": \"Search the web using Brave Search. Set the input parameter as: search_query\"}, {\"name\": \"web_search\", \"description\": \"General web search capability. Set the input parameter as: search_query\"}, {\"name\": \"datetime_tools\", \"description\": \"Get current date and time information\"}], \"llm_model\": \"OpenAIGPT4\", \"verbose\": true, \"allow_delegation\": true}, {\"role\": \"Travel Agent\", \"goal\": \"Plan the best travel arrangements for concert attendees\", \"backstory\": \"You are a travel expert with years of experience planning trips around music events. You know the best ways to get to venues, where to stay, and how to make the trip smooth and enjoyable. IMPORTANT: When using search tools like brave_search, you must format your query as {\\\"search_query\\\": \\\"your search terms\\\"}. Always extract information about preferences directly from user messages.\\n\\n\\u26a0\\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\\n\\nExample correct usage: search({'search_query': 'concerts in New York'})\\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL\\n\\n\\u26a0\\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\\n\\nExample correct usage: search({'search_query': 'concerts in New York'})\\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL\", \"tools\": [{\"name\": \"brave_search\", \"description\": \"Search the web using Brave Search. Set the input parameter as: search_query\"}, {\"name\": \"web_search\", \"description\": \"General web search capability. Set the input parameter as: search_query\"}, {\"name\": \"datetime_tools\", \"description\": \"Get current date and time information\"}], \"llm_model\": \"OpenAIGPT4\", \"verbose\": true, \"allow_delegation\": true}, {\"role\": \"Local Expert\", \"goal\": \"Provide insider information about concert venues and local attractions\", \"backstory\": \"You have visited countless concert venues worldwide and know the best spots in each city. From where to get the best pre-show dinner to the perfect places to celebrate after the concert. IMPORTANT: When using search tools like brave_search, you must format your query as {\\\"search_query\\\": \\\"your search terms\\\"}. Always extract information about preferences directly from user messages.\\n\\n\\u26a0\\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\\n\\nExample correct usage: search({'search_query': 'concerts in New York'})\\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL\\n\\n\\u26a0\\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\\n\\nExample correct usage: search({'search_query': 'concerts in New York'})\\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL\", \"tools\": [{\"name\": \"brave_search\", \"description\": \"Search the web using Brave Search. Set the input parameter as: search_query\"}, {\"name\": \"web_search\", \"description\": \"General web search capability. Set the input parameter as: search_query\"}, {\"name\": \"datetime_tools\", \"description\": \"Get current date and time information\"}], \"llm_model\": \"OpenAIGPT4\", \"verbose\": true, \"allow_delegation\": true}], \"tasks\": [{\"description\": \"Research concerts and music festivals that match the user's preferences in their chosen destination.\\n\\nCRITICAL SYSTEM INSTRUCTIONS:\\n1. When using search tools like brave_search, ALWAYS format your parameters as: \\n   {'search_query': 'your search terms', 'kwargs': {}}\\n2. NEVER pass just the string 'search_query' as a parameter.\\n3. Example correct usage: search({'search_query': 'upcoming concerts in Tokyo'})\\n4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL\\n\\nThe user is interested in traveling to see live music. Ask them where they're planning to travel and what type of music they enjoy. Then find upcoming concerts and festivals in that location that match their preferences. Include dates, venues, ticket prices, and featured artists where available.\\n\\nUse datetime_tools to get the current date for relevant event searches.\", \"expected_output\": \"A list of relevant concerts and music festivals at the user's chosen destination, with information about date, venue, price, and participating artists.\", \"agent_role\": \"Concert Planner\", \"human_input\": true}, {\"description\": \"Create an optimal travel plan around the identified concerts or festivals.\\n\\nCRITICAL SYSTEM INSTRUCTIONS:\\n1. When using search tools like brave_search, ALWAYS format your parameters as: \\n   {'search_query': 'your search terms', 'kwargs': {}}  \\n2. NEVER pass just the string 'search_query' as a parameter value.\\n3. Example correct usage: search({'search_query': 'hotels near Madison Square Garden'})\\n4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL\\n\\nFirst, gather essential information about the concert location and date from the Concert Planner. Then, plan the ideal travel experience including:\\n- Transportation options to the destination (flights, trains, etc.)\\n- Local transportation in the area\\n- Accommodation recommendations near the venue\\n- Pre and post-concert activities that complement the music experience\\n\\nConsider the traveler's preferences and budget when making recommendations.\\n\\nUse datetime_tools to reference current dates when scheduling travel.\", \"expected_output\": \"A detailed travel plan with dates, transportation, and accommodations\", \"agent_role\": \"Travel Agent\", \"human_input\": true}, {\"description\": \"Provide insider information about concert venues and local music scenes.\\n\\nCRITICAL SYSTEM INSTRUCTIONS:\\n1. When using search tools like brave_search, ALWAYS format your parameters as: \\n   {'search_query': 'your search terms', 'kwargs': {}}\\n2. NEVER pass just the string 'search_query' as a parameter.\\n3. Example correct usage: search({'search_query': 'best seats at Radio City Music Hall'})\\n4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL\\n\\nBased on the concert or festival selected by the user, provide insider tips such as:\\n- The best seating areas or viewing spots at the venue\\n- Pre-show or after-party locations frequented by locals\\n- Local transportation advice for getting to/from the venue\\n- Safety tips for the area around the venue\\n- Local food recommendations near the venue\\n- Special venue policies or customs to be aware of\\n\\nYour advice should help the traveler experience the event like a local music fan rather than a tourist.\\n\\nUse datetime_tools to check if specific recommendations are relevant based on current date and concert timing.\", \"expected_output\": \"Detailed venue information and local recommendations\", \"agent_role\": \"Local Expert\", \"human_input\": true}], \"tools_proxy_collection\": null, \"allowed_tools\": [\"brave_search\", \"web_search\", \"delegate\", \"datetime_tools\"]}}}",
-    "curried_proxies": "{\"8ad16632-b99d-490a-9356-9eeb60e68386\": {\"id\": \"8ad16632-b99d-490a-9356-9eeb60e68386\", \"tools\": [], \"name_counter\": {}, \"name\": \"Concert Travel Planner Tools\"}}",
-    "task_flows": "{}"
+  "toolsets": {},
+  "tools": {},
+  "tasksmanagers": {
+    "16584b53-1e94-4990-b1d7-e555b58cb949": {
+      "id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+      "name": "Concert Travel Planner",
+      "model": null,
+      "description": "Plan trips to concerts and music festivals",
+      "status": null,
+      "configurations": null,
+      "created_at": null,
+      "udated_at": null,
+      "messages": [],
+      "toolsets": [],
+      "use_context": true,
+      "contexts": [],
+      "task_sequences": {},
+      "enable_handover": false,
+      "task_order": []
+    }
+  },
+  "tasks": {
+    "85e5cbc5-61f1-444c-98a3-e7fd04880075": {
+      "id": "85e5cbc5-61f1-444c-98a3-e7fd04880075",
+      "name": "Plan Concert Trip",
+      "tasksmanager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+      "description": "Plan a complete trip to a concert, including travel, accommodation, and activities",
+      "status": "pending",
+      "error": null,
+      "messages": [
+        {
+          "id": null,
+          "role": "system",
+          "content": "You are a Concert Trip Planner with a team of specialized agents.\n\nYour job is to coordinate a crew of specialized agents to plan a comprehensive concert trip based on user preferences.\n\nYour crew consists of:\n1. Concert Planner - Finds the best concerts matching user preferences\n2. Travel Agent - Plans travel arrangements and accommodations\n3. Local Expert - Provides insider information about venues and attractions\n\nCRITICAL INSTRUCTION: When using search tools like brave_search, you MUST use the exact format: {\"search_query\": \"your search here\"} - using the string \"search_query\" will cause errors.\nIMPORTANT: Extract information directly from user messages rather than asking them to provide it separately.\nIMPORTANT: If you need additional information, ask the user directly instead of delegating to a non-existent role.\nIMPORTANT: When asked for human input, provide explicit options or suggestions to help the user respond.\n\nFollow a structured approach:\n1. First, understand the user's concert preferences (genres, artists, locations, dates) from their messages\n2. Use web search tools to search for suitable concerts and festivals using format {\"search_query\": \"rock concerts in New York August 2025\"}\n3. Use web search to gather transportation and accommodation options based on concert dates\n4. Use web search to find information about venues and local attractions\n5. Compile all information into a comprehensive trip plan\n6. Present the plan in a clear, organized format\n\nProvide a complete concert trip plan with:\n- Concert/festival details (venue, date, lineup)\n- Travel arrangements (transportation options, costs)\n- Accommodation suggestions (hotels, alternatives)\n- Local recommendations (restaurants, attractions, activities)\n- Practical tips (venue info, local customs, weather considerations)\n\nUse datetime_tools to reference current dates and ensure recommendations are timely.\n\nAlways be enthusiastic about the music and travel experiences!",
+          "file_ids": null,
+          "created_at": null,
+          "updated_at": null
+        }
+      ],
+      "chat_sessions": {},
+      "toolsets": [],
+      "curried_tools": [],
+      "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
+      "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+      "autogen_config_id": null,
+      "tree_flow_id": null,
+      "agent_role": null,
+      "framework": "crewai",
+      "model": null,
+      "created_at": "2025-04-20T00:48:10.701643",
+      "updated_at": "2025-04-20T00:48:10.701644",
+      "config": {},
+      "use_context": true,
+      "inherit_manager_context": false,
+      "contexts": [],
+      "execution_logs": [],
+      "input_data": {},
+      "inputs": {},
+      "result": null,
+      "last_response": null,
+      "input_from_tasks": [],
+      "output_to_tasks": [],
+      "output_data": {},
+      "human_input": false,
+      "data": {}
+    },
+    "6b1d2715-32a7-409a-a758-16ce0f4238fc": {
+      "id": "6b1d2715-32a7-409a-a758-16ce0f4238fc",
+      "name": "Search for Specific Concerts",
+      "tasksmanager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+      "description": "Find concerts and performances by specific artists or in specific locations",
+      "status": "pending",
+      "error": null,
+      "messages": [
+        {
+          "id": null,
+          "role": "system",
+          "content": "You are a Concert Search Specialist with a team of specialized agents.\n\nYour job is to find specific concerts based on user criteria using your specialized crew.\n\nYour crew consists of:\n1. Concert Planner - Finds concerts matching specific criteria (artist, venue, date)\n2. Travel Agent - Provides transportation information to/from venues\n3. Local Expert - Offers venue-specific information and tips\n\nCRITICAL INSTRUCTION: When using search tools like brave_search, you MUST use the exact format: {\"search_query\": \"your search here\"} - using the string \"search_query\" will cause errors.\nIMPORTANT: Extract information directly from user messages rather than asking them to provide it separately.\nIMPORTANT: If you need additional information, ask the user directly instead of delegating to a non-existent role.\nIMPORTANT: When asked for human input, provide explicit options or suggestions to help the user respond.\n\nFollow a structured approach:\n1. First, understand exactly what concerts the user is looking for (specific artist, genre, location, timeframe)\n2. Use web search tools to find matching concerts and provide details using format {\"search_query\": \"taylor swift concerts boston 2025\"}\n3. For each potential concert, search for transportation information\n4. Search for venue information and nearby amenities\n5. Compile all information into a detailed list of options\n6. Present findings in a clear, organized format with all relevant details\n\nUse datetime_tools to get the current date and find timely concerts.\n\nProvide comprehensive concert search results with:\n- Concert details (artist, date, venue, ticket prices)\n- Venue information (capacity, seating options, acoustics)\n- Transportation options to/from the venue\n- Nearby accommodations and places to eat\n- Any special considerations (parking, security, etc.)\n\nBe thorough and provide as many matches as possible to the user's criteria!",
+          "file_ids": null,
+          "created_at": null,
+          "updated_at": null
+        }
+      ],
+      "chat_sessions": {},
+      "toolsets": [],
+      "curried_tools": [],
+      "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
+      "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+      "autogen_config_id": null,
+      "tree_flow_id": null,
+      "agent_role": null,
+      "framework": "crewai",
+      "model": null,
+      "created_at": "2025-04-20T00:48:10.701671",
+      "updated_at": "2025-04-20T00:48:10.701672",
+      "config": {},
+      "use_context": true,
+      "inherit_manager_context": false,
+      "contexts": [],
+      "execution_logs": [],
+      "input_data": {},
+      "inputs": {},
+      "result": null,
+      "last_response": null,
+      "input_from_tasks": [],
+      "output_to_tasks": [],
+      "output_data": {},
+      "human_input": false,
+      "data": {}
+    },
+    "743a383f-5a4f-42a1-9146-b2b06f8bcbad": {
+      "id": "743a383f-5a4f-42a1-9146-b2b06f8bcbad",
+      "name": "Recommend Music Festivals",
+      "tasksmanager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+      "description": "Get personalized music festival recommendations based on preferences",
+      "status": "pending",
+      "error": null,
+      "messages": [
+        {
+          "id": null,
+          "role": "system",
+          "content": "You are a Music Festival Specialist with a team of specialized agents.\n\nYour job is to recommend music festivals based on user preferences using your crew of experts.\n\nYour crew consists of:\n1. Concert Planner - Researches festivals matching user preferences\n2. Travel Agent - Provides logistical information about festival travel\n3. Local Expert - Offers insider knowledge about festival locations\n\nCRITICAL INSTRUCTION: When using search tools like brave_search, you MUST use the exact format: {\"search_query\": \"your search here\"} - using the string \"search_query\" will cause errors.\nIMPORTANT: Extract information directly from user messages rather than asking them to provide it separately.\nIMPORTANT: If you need additional information, ask the user directly instead of delegating to a non-existent role.\nIMPORTANT: When asked for human input, provide explicit options or suggestions to help the user respond.\n\nFollow a structured approach:\n1. First, understand the user's festival preferences (music genres, location preferences, timing, budget)\n2. Use web search tools to identify suitable music festivals using format {\"search_query\": \"rock music festivals new york august 2025\"}\n3. Search for travel requirements and accommodations\n4. Search for inside information about each festival experience\n5. Compile recommendations into a comprehensive guide\n6. Present recommendations in an organized, engaging format\n\nUse datetime_tools to get current dates and recommend timely festivals.\n\nProvide comprehensive festival recommendations with:\n- Festival details (name, dates, location, typical lineup style)\n- Travel considerations (how to get there, best transportation options)\n- Accommodation options (camping, hotels, alternatives)\n- Festival experience (size, vibe, unique features, stages)\n- Practical tips (what to bring, weather considerations, festival hacks)\n\nBe enthusiastic and help the user find their perfect festival experience!",
+          "file_ids": null,
+          "created_at": null,
+          "updated_at": null
+        }
+      ],
+      "chat_sessions": {},
+      "toolsets": [],
+      "curried_tools": [],
+      "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
+      "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+      "autogen_config_id": null,
+      "tree_flow_id": null,
+      "agent_role": null,
+      "framework": "crewai",
+      "model": null,
+      "created_at": "2025-04-20T00:48:10.701690",
+      "updated_at": "2025-04-20T00:48:10.701690",
+      "config": {},
+      "use_context": true,
+      "inherit_manager_context": false,
+      "contexts": [],
+      "execution_logs": [],
+      "input_data": {},
+      "inputs": {},
+      "result": null,
+      "last_response": null,
+      "input_from_tasks": [],
+      "output_to_tasks": [],
+      "output_data": {},
+      "human_input": false,
+      "data": {}
+    }
+  },
+  "messages": {},
+  "crewai_config": {
+    "288b0af9-c757-45ad-b90e-5368a83c60ec": {
+      "id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+      "created_at": "2025-04-20T00:48:10.701503",
+      "updated_at": "2025-04-20T00:48:10.701507",
+      "create_crew": {
+        "description": "A crew specializing in planning concert trips",
+        "process": "sequential",
+        "agents": [
+          {
+            "role": "Concert Planner",
+            "goal": "Find the best concerts matching the user's preferences",
+            "backstory": "You are an experienced concert finder with deep knowledge of venues, artists, and performances across the globe. You excel at matching people with perfect concert experiences based on their music preferences. IMPORTANT: When using search tools like brave_search, you must format your query as {\"search_query\": \"your search terms\"}. Always extract information about preferences directly from user messages.\n\n\u26a0\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\n\nExample correct usage: search({'search_query': 'concerts in New York'})\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL",
+            "tools": [
+              {
+                "name": "brave_search",
+                "description": "Search the web using Brave Search. Set the input parameter as: search_query"
+              },
+              {
+                "name": "web_search",
+                "description": "General web search capability. Set the input parameter as: search_query"
+              },
+              {
+                "name": "datetime_tools",
+                "description": "Get current date and time information"
+              },
+              {
+                "name": "human_input",
+                "description": "Ask the human user for input when you need more information or clarification."
+              }
+            ],
+            "class_tools": [],
+            "llm_model": "OpenAIGPT4",
+            "verbose": true,
+            "allow_delegation": true
+          },
+          {
+            "role": "Travel Agent",
+            "goal": "Plan the best travel arrangements for concert attendees",
+            "backstory": "You are a travel expert with years of experience planning trips around music events. You know the best ways to get to venues, where to stay, and how to make the trip smooth and enjoyable. IMPORTANT: When using search tools like brave_search, you must format your query as {\"search_query\": \"your search terms\"}. Always extract information about preferences directly from user messages.\n\n\u26a0\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\n\nExample correct usage: search({'search_query': 'concerts in New York'})\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL",
+            "tools": [
+              {
+                "name": "brave_search",
+                "description": "Search the web using Brave Search. Set the input parameter as: search_query"
+              },
+              {
+                "name": "web_search",
+                "description": "General web search capability. Set the input parameter as: search_query"
+              },
+              {
+                "name": "datetime_tools",
+                "description": "Get current date and time information"
+              },
+              {
+                "name": "human_input",
+                "description": "Ask the human user for input when you need more information or clarification."
+              }
+            ],
+            "class_tools": [],
+            "llm_model": "OpenAIGPT4",
+            "verbose": true,
+            "allow_delegation": true
+          },
+          {
+            "role": "Local Expert",
+            "goal": "Provide insider information about concert venues and local attractions",
+            "backstory": "You have visited countless concert venues worldwide and know the best spots in each city. From where to get the best pre-show dinner to the perfect places to celebrate after the concert. IMPORTANT: When using search tools like brave_search, you must format your query as {\"search_query\": \"your search terms\"}. Always extract information about preferences directly from user messages.\n\n\u26a0\ufe0f CRITICAL TOOL INSTRUCTION: When using search tools or SerperDevTool, you MUST format your parameters as a dictionary with 'search_query' as the key. Example: {'search_query': 'your search terms'} or {'search_query': 'events in Paris', 'kwargs': {}}. NEVER pass just the string 'search_query' as a parameter value.\n\nExample correct usage: search({'search_query': 'concerts in New York'})\nExample INCORRECT usage: search('search_query') <- THIS WILL FAIL",
+            "tools": [
+              {
+                "name": "brave_search",
+                "description": "Search the web using Brave Search. Set the input parameter as: search_query"
+              },
+              {
+                "name": "web_search",
+                "description": "General web search capability. Set the input parameter as: search_query"
+              },
+              {
+                "name": "datetime_tools",
+                "description": "Get current date and time information"
+              },
+              {
+                "name": "human_input",
+                "description": "Ask the human user for input when you need more information or clarification."
+              }
+            ],
+            "class_tools": [],
+            "llm_model": "OpenAIGPT4",
+            "verbose": true,
+            "allow_delegation": true
+          }
+        ],
+        "tasks": [
+          {
+            "description": "Research concerts and music festivals that match the user's preferences in their chosen destination.\n\nCRITICAL SYSTEM INSTRUCTIONS:\n1. When using search tools like brave_search, ALWAYS format your parameters as: \n   {'search_query': 'your search terms', 'kwargs': {}}\n2. NEVER pass just the string 'search_query' as a parameter.\n3. Example correct usage: search({'search_query': 'upcoming concerts in Tokyo'})\n4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL\n\n5. To interact with the human user, use the human_input tool like this:\n   human_input(\"What type of music do you enjoy?\")\n   Always ask one clear question at a time.\n   Wait for the human's response before proceeding.\n   If the human doesn't provide enough details, ask follow-up questions.\n\nThe user is interested in traveling to see live music. First, use the human_input tool to ask where they're planning to travel and what type of music they enjoy. Then find upcoming concerts and festivals in that location that match their preferences. Include dates, venues, ticket prices, and featured artists where available.\n\nUse datetime_tools to get the current date for relevant event searches.\n\nIMPORTANT: Make sure to use the human_input tool to gather specific preferences before searching, such as:\n- Specific music genres they enjoy\n- Preferred dates for attending concerts\n- Budget considerations for tickets\n- Whether they prefer small venues or large festivals\n- Any specific artists they hope to see",
+            "expected_output": "A list of relevant concerts and music festivals at the user's chosen destination, with information about date, venue, price, and participating artists.",
+            "agent_role": "Concert Planner",
+            "human_input": true
+          },
+          {
+            "description": "Create an optimal travel plan around the identified concerts or festivals.\n\nCRITICAL SYSTEM INSTRUCTIONS:\n1. When using search tools like brave_search, ALWAYS format your parameters as: \n   {'search_query': 'your search terms', 'kwargs': {}}  \n2. NEVER pass just the string 'search_query' as a parameter value.\n3. Example correct usage: search({'search_query': 'hotels near Madison Square Garden'})\n4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL\n\n5. To interact with the human user, use the human_input tool like this:\n   human_input(\"Do you prefer budget accommodations or luxury hotels?\")\n   Always ask one clear question at a time.\n   Wait for the human's response before proceeding.\n   If the human doesn't provide enough details, ask follow-up questions.\n\nFirst, gather essential information about the concert location and date from the Concert Planner. Then, use the human_input tool to ask about travel preferences before planning the ideal travel experience, including:\n- Transportation options to the destination (flights, trains, etc.)\n- Local transportation in the area\n- Accommodation recommendations near the venue\n- Pre and post-concert activities that complement the music experience\n\nIMPORTANT: Make sure to use the human_input tool to ask about specific travel preferences such as:\n- Budget constraints for accommodations and transportation\n- Preferred transportation methods (flight, train, car, etc.)\n- Whether they prefer staying close to the venue or in a different area\n- Interest in specific activities before or after the concert\n- Any accessibility requirements or special considerations\n\nConsider the traveler's preferences and budget when making recommendations.\n\nUse datetime_tools to reference current dates when scheduling travel.",
+            "expected_output": "A detailed travel plan with dates, transportation, and accommodations",
+            "agent_role": "Travel Agent",
+            "human_input": true
+          },
+          {
+            "description": "Provide insider information about concert venues and local music scenes.\n\nCRITICAL SYSTEM INSTRUCTIONS:\n1. When using search tools like brave_search, ALWAYS format your parameters as: \n   {'search_query': 'your search terms', 'kwargs': {}}\n2. NEVER pass just the string 'search_query' as a parameter.\n3. Example correct usage: search({'search_query': 'best seats at Radio City Music Hall'})\n4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL\n\n5. To interact with the human user, use the human_input tool like this:\n   human_input(\"Do you prefer quiet bars or lively clubs for after the concert?\")\n   Always ask one clear question at a time.\n   Wait for the human's response before proceeding.\n   If the human doesn't provide enough details, ask follow-up questions.\n\nBased on the concert or festival selected by the user, provide insider tips. Use the human_input tool to ask about their specific interests and preferences for the venue experience, such as:\n- If they want recommendations for the best seating/viewing areas\n- What kind of pre-show or after-party experiences they're interested in\n- Food preferences for dining options near the venue\n- Interest in local cultural experiences related to the music scene\n- Any safety concerns they might have about the venue area\n\nAfter gathering their preferences, provide customized insider tips such as:\n- The best seating areas or viewing spots at the venue\n- Pre-show or after-party locations frequented by locals\n- Local transportation advice for getting to/from the venue\n- Safety tips for the area around the venue\n- Local food recommendations near the venue\n- Special venue policies or customs to be aware of\n\nYour advice should help the traveler experience the event like a local music fan rather than a tourist.\n\nUse datetime_tools to check if specific recommendations are relevant based on current date and concert timing.",
+            "expected_output": "Detailed venue information and local recommendations",
+            "agent_role": "Local Expert",
+            "human_input": true
+          }
+        ],
+        "tools_proxy_collection": null,
+        "allowed_tools": [
+          "brave_search",
+          "web_search",
+          "delegate",
+          "datetime_tools",
+          "human_input"
+        ]
+      }
+    }
+  },
+  "curried_proxies": {
+    "b7eea812-0c6a-4aea-b525-ff3028338a14": {
+      "id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
+      "tool_names": [
+        "brave_search",
+        "web_search",
+        "SerperDevTool",
+        "human_input",
+        "datetime_tools.format_datetime",
+        "datetime_tools.get_current_datetime",
+        "datetime_tools.get_date_with_offset",
+        "datetime_tools.is_future_date"
+      ],
+      "catalog": {
+        "tools": {
+          "internal_file_tools": {
+            "name": "internal_file_tools",
+            "description": "Tool for internal file operations.\n\nThis tool provides functionality for reading documentation and saving generated code.\nIt handles file operations with proper error handling and metrics tracking.\n\nMethods:\n    read_documentation: Read documentation from a file\n    save_implementation: Save generated tool implementation to file\n    save_tests: Save generated test code to file",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "base_dir",
+                "type_hint": "str",
+                "description": "Parameter base_dir",
+                "default": "src/tools",
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "base_dir": "src/tools"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "internal_file_tools.read_documentation": {
+            "name": "read_documentation",
+            "description": "Read documentation from a file.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "file_path",
+                "type_hint": "str",
+                "description": "Path to the documentation file to read",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing:\n- content: The contents of the documentation file"
+            },
+            "original_obj": {},
+            "class_name": "internal_file_tools",
+            "method_name": "read_documentation",
+            "async_tool": true
+          },
+          "internal_file_tools.save_implementation": {
+            "name": "save_implementation",
+            "description": "Save generated tool implementation to file.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "code",
+                "type_hint": "str",
+                "description": "Parameter code",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "tool_name",
+                "type_hint": "str",
+                "description": "Parameter tool_name",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "internal_file_tools",
+            "method_name": "save_implementation",
+            "async_tool": false
+          },
+          "internal_file_tools.save_tests": {
+            "name": "save_tests",
+            "description": "Save generated test code to file.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "code",
+                "type_hint": "str",
+                "description": "Parameter code",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "tool_name",
+                "type_hint": "str",
+                "description": "Parameter tool_name",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "internal_file_tools",
+            "method_name": "save_tests",
+            "async_tool": false
+          },
+          "datetime_tools": {
+            "name": "datetime_tools",
+            "description": "Tools for date and time operations.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "args",
+                "type_hint": "object",
+                "description": "Parameter args",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "kwargs",
+                "type_hint": "object",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {},
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "datetime_tools.format_datetime": {
+            "name": "datetime_tools.format_datetime",
+            "description": "Format a datetime object using the specified format string.",
+            "tool_type": "python_function",
+            "parameters": [
+              {
+                "name": "date_obj",
+                "type_hint": "datetime",
+                "description": "The datetime object to format",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "format_string",
+                "type_hint": "str",
+                "description": "The format string to use (default: '%Y-%m-%d %H:%M:%S')",
+                "default": "%Y-%m-%d %H:%M:%S",
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "The formatted date string"
+            },
+            "original_obj": {},
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "datetime_tools.get_current_datetime": {
+            "name": "datetime_tools.get_current_datetime",
+            "description": "Return the current date and time in a human-readable format.",
+            "tool_type": "python_function",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "The current date and time in the format 'YYYY-MM-DD HH:MM:SS'"
+            },
+            "original_obj": {},
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "datetime_tools.get_date_with_offset": {
+            "name": "datetime_tools.get_date_with_offset",
+            "description": "Get a date offset from the current date.",
+            "tool_type": "python_function",
+            "parameters": [
+              {
+                "name": "days",
+                "type_hint": "int",
+                "description": "Number of days to add (or subtract if negative)",
+                "default": 0,
+                "required": false
+              },
+              {
+                "name": "months",
+                "type_hint": "int",
+                "description": "Number of months to add (or subtract if negative)",
+                "default": 0,
+                "required": false
+              },
+              {
+                "name": "years",
+                "type_hint": "int",
+                "description": "Number of years to add (or subtract if negative)",
+                "default": 0,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "The calculated date in the format 'YYYY-MM-DD'"
+            },
+            "original_obj": {},
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "datetime_tools.is_future_date": {
+            "name": "datetime_tools.is_future_date",
+            "description": "Check if a date is in the future.",
+            "tool_type": "python_function",
+            "parameters": [
+              {
+                "name": "date_string",
+                "type_hint": "str",
+                "description": "Date string in format 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "bool",
+              "description": "True if the date is in the future, False otherwise"
+            },
+            "original_obj": {},
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "system_monitor": {
+            "name": "system_monitor",
+            "description": "Tools for monitoring system resources.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "args",
+                "type_hint": "object",
+                "description": "Parameter args",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "kwargs",
+                "type_hint": "object",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {},
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "system_monitor.get_all_system_stats": {
+            "name": "get_all_system_stats",
+            "description": "Get comprehensive system statistics.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing all system statistics"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_all_system_stats",
+            "async_tool": false
+          },
+          "system_monitor.get_cpu_usage": {
+            "name": "get_cpu_usage",
+            "description": "Get current CPU usage information.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing CPU usage percentages (overall and per-core)"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_cpu_usage",
+            "async_tool": false
+          },
+          "system_monitor.get_detailed_os_info": {
+            "name": "get_detailed_os_info",
+            "description": "Get detailed operating system information.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing detailed OS information"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_detailed_os_info",
+            "async_tool": false
+          },
+          "system_monitor.get_disk_usage": {
+            "name": "get_disk_usage",
+            "description": "Get disk usage information for a specific path or all mounted disks.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "path",
+                "type_hint": "typing.Optional[str]",
+                "description": "Path to check disk usage for. If None, returns info for all mounted disks.",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing disk usage information in GB and percentages"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_disk_usage",
+            "async_tool": false
+          },
+          "system_monitor.get_memory_usage": {
+            "name": "get_memory_usage",
+            "description": "Get current memory usage information.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing memory usage stats in GB and percentages"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_memory_usage",
+            "async_tool": false
+          },
+          "system_monitor.get_network_stats": {
+            "name": "get_network_stats",
+            "description": "Get network interface statistics.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing network interface statistics"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_network_stats",
+            "async_tool": false
+          },
+          "system_monitor.get_process_list": {
+            "name": "get_process_list",
+            "description": "Get list of top processes sorted by memory usage.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "top_n",
+                "type_hint": "int",
+                "description": "Number of top processes to return",
+                "default": 10,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "List of dictionaries containing process information"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_process_list",
+            "async_tool": false
+          },
+          "system_monitor.get_system_info": {
+            "name": "get_system_info",
+            "description": "Get general system information.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing system information"
+            },
+            "original_obj": {},
+            "class_name": "system_monitor",
+            "method_name": "get_system_info",
+            "async_tool": false
+          },
+          "network_tools": {
+            "name": "network_tools",
+            "description": "Tools for network diagnostics and security.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "args",
+                "type_hint": "object",
+                "description": "Parameter args",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "kwargs",
+                "type_hint": "object",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {},
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "network_tools.check_domain_availability": {
+            "name": "check_domain_availability",
+            "description": "Check if a domain is available for registration.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "domain",
+                "type_hint": "str",
+                "description": "Domain name to check",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing domain availability information"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "check_domain_availability",
+            "async_tool": false
+          },
+          "network_tools.check_port": {
+            "name": "check_port",
+            "description": "Check if a specific port is open on a host.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "host",
+                "type_hint": "str",
+                "description": "Hostname or IP address",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "port",
+                "type_hint": "int",
+                "description": "Port number to check",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "timeout",
+                "type_hint": "int",
+                "description": "Timeout in seconds",
+                "default": 5,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing port status"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "check_port",
+            "async_tool": false
+          },
+          "network_tools.check_ssl_certificate": {
+            "name": "check_ssl_certificate",
+            "description": "Check SSL certificate information for a host.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "host",
+                "type_hint": "str",
+                "description": "Hostname or IP address",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "port",
+                "type_hint": "int",
+                "description": "Port number (default: 443)",
+                "default": 443,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing SSL certificate information"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "check_ssl_certificate",
+            "async_tool": false
+          },
+          "network_tools.get_dns_records": {
+            "name": "get_dns_records",
+            "description": "Get DNS records for a domain.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "domain",
+                "type_hint": "str",
+                "description": "Domain name to query",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "record_type",
+                "type_hint": "str",
+                "description": "Type of DNS record (A, AAAA, MX, TXT, NS, etc.)",
+                "default": "A",
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "List of dictionaries containing DNS records"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "get_dns_records",
+            "async_tool": false
+          },
+          "network_tools.get_ip_info": {
+            "name": "get_ip_info",
+            "description": "Get information about an IP address using external IP geolocation API.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "ip",
+                "type_hint": "str",
+                "description": "IP address to lookup",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing IP information"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "get_ip_info",
+            "async_tool": false
+          },
+          "network_tools.get_my_ip": {
+            "name": "get_my_ip",
+            "description": "Get the public IP address of the current system.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing the public IP address"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "get_my_ip",
+            "async_tool": false
+          },
+          "network_tools.ping_host": {
+            "name": "ping_host",
+            "description": "Ping a host and return results.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "host",
+                "type_hint": "str",
+                "description": "Hostname or IP address to ping",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "count",
+                "type_hint": "int",
+                "description": "Number of ping packets to send",
+                "default": 4,
+                "required": false
+              },
+              {
+                "name": "timeout",
+                "type_hint": "int",
+                "description": "Timeout in seconds",
+                "default": 5,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing ping statistics"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "ping_host",
+            "async_tool": false
+          },
+          "network_tools.reverse_dns_lookup": {
+            "name": "reverse_dns_lookup",
+            "description": "Perform a reverse DNS lookup on an IP address.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "ip",
+                "type_hint": "str",
+                "description": "IP address to lookup",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing reverse DNS information"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "reverse_dns_lookup",
+            "async_tool": false
+          },
+          "network_tools.run_dns_speed_test": {
+            "name": "run_dns_speed_test",
+            "description": "Test the response time of DNS servers.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "dns_servers",
+                "type_hint": "typing.List[str]",
+                "description": "List of DNS servers to test. If None, uses common public DNS servers.",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "List of dictionaries containing DNS server response times"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "run_dns_speed_test",
+            "async_tool": false
+          },
+          "network_tools.scan_common_ports": {
+            "name": "scan_common_ports",
+            "description": "Scan common ports on a host.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "host",
+                "type_hint": "str",
+                "description": "Hostname or IP address",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "timeout",
+                "type_hint": "int",
+                "description": "Timeout in seconds per port",
+                "default": 2,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "List of dictionaries containing port scan results"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "scan_common_ports",
+            "async_tool": false
+          },
+          "network_tools.traceroute": {
+            "name": "traceroute",
+            "description": "Perform a traceroute to a host.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "host",
+                "type_hint": "str",
+                "description": "Hostname or IP address to trace",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "max_hops",
+                "type_hint": "int",
+                "description": "Maximum number of hops",
+                "default": 30,
+                "required": false
+              },
+              {
+                "name": "timeout",
+                "type_hint": "int",
+                "description": "Timeout in seconds",
+                "default": 5,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "List of dictionaries representing each hop in the traceroute"
+            },
+            "original_obj": {},
+            "class_name": "network_tools",
+            "method_name": "traceroute",
+            "async_tool": false
+          },
+          "database_tools": {
+            "name": "database_tools",
+            "description": "Tools for interacting with databases.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "connection_string",
+                "type_hint": "Optional",
+                "description": "Parameter connection_string",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "connection_string": null
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "database_tools.delete_saved_connection": {
+            "name": "delete_saved_connection",
+            "description": "Delete a saved database connection.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "connection_id",
+                "type_hint": "str",
+                "description": "ID of the connection to delete",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing operation status"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "delete_saved_connection",
+            "async_tool": false
+          },
+          "database_tools.execute_query": {
+            "name": "execute_query",
+            "description": "Execute a SQL query and return the results.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "query",
+                "type_hint": "str",
+                "description": "SQL query string",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "params",
+                "type_hint": "typing.Optional[typing.Dict[str, typing.Any]]",
+                "description": "Optional parameters for the query",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing query results"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "execute_query",
+            "async_tool": false
+          },
+          "database_tools.execute_transaction": {
+            "name": "execute_transaction",
+            "description": "Execute multiple SQL queries as a transaction.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "queries",
+                "type_hint": "typing.List[str]",
+                "description": "List of SQL query strings",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "params_list",
+                "type_hint": "typing.Optional[typing.List[typing.Dict[str, typing.Any]]]",
+                "description": "Optional list of parameter dictionaries for each query",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing transaction results"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "execute_transaction",
+            "async_tool": false
+          },
+          "database_tools.export_query_results": {
+            "name": "export_query_results",
+            "description": "Execute a query and export the results to a file.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "query",
+                "type_hint": "str",
+                "description": "SQL query string",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "params",
+                "type_hint": "typing.Optional[typing.Dict[str, typing.Any]]",
+                "description": "Optional parameters for the query",
+                "default": null,
+                "required": false
+              },
+              {
+                "name": "file_path",
+                "type_hint": "str",
+                "description": "Path to save the exported file (or None to return data)",
+                "default": null,
+                "required": false
+              },
+              {
+                "name": "format",
+                "type_hint": "str",
+                "description": "Export format ('csv', 'json', 'excel', 'html', 'parquet')",
+                "default": "csv",
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing export status"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "export_query_results",
+            "async_tool": false
+          },
+          "database_tools.get_table_preview": {
+            "name": "get_table_preview",
+            "description": "Get a preview of the data in a table.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "table_name",
+                "type_hint": "str",
+                "description": "Name of the table",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "schema",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional schema name",
+                "default": null,
+                "required": false
+              },
+              {
+                "name": "limit",
+                "type_hint": "int",
+                "description": "Maximum number of rows to return (default: 10)",
+                "default": 10,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing table data preview"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "get_table_preview",
+            "async_tool": false
+          },
+          "database_tools.get_table_row_count": {
+            "name": "get_table_row_count",
+            "description": "Get the number of rows in a table.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "table_name",
+                "type_hint": "str",
+                "description": "Name of the table",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "schema",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional schema name",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing row count information"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "get_table_row_count",
+            "async_tool": false
+          },
+          "database_tools.get_table_schema": {
+            "name": "get_table_schema",
+            "description": "Get the schema of a table.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "table_name",
+                "type_hint": "str",
+                "description": "Name of the table",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "schema",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional schema name",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing table schema information"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "get_table_schema",
+            "async_tool": false
+          },
+          "database_tools.list_saved_connections": {
+            "name": "list_saved_connections",
+            "description": "List all saved database connections.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing list of saved connections"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "list_saved_connections",
+            "async_tool": false
+          },
+          "database_tools.list_tables": {
+            "name": "list_tables",
+            "description": "List all tables in the database.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "schema",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional schema name to filter tables",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing list of tables"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "list_tables",
+            "async_tool": false
+          },
+          "database_tools.save_connection": {
+            "name": "save_connection",
+            "description": "Save a database connection to configuration.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "connection_id",
+                "type_hint": "str",
+                "description": "ID to use for this connection",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "connection_string",
+                "type_hint": "str",
+                "description": "JDBC connection string",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing operation status"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "save_connection",
+            "async_tool": false
+          },
+          "database_tools.set_connection": {
+            "name": "set_connection",
+            "description": "Set the database connection string or ID.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "connection_string_or_id",
+                "type_hint": "str",
+                "description": "JDBC connection string or connection ID from configuration",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing connection information"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "set_connection",
+            "async_tool": false
+          },
+          "database_tools.test_connection": {
+            "name": "test_connection",
+            "description": "Test a database connection.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "connection_string_or_id",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional connection string or ID to test",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing connection test results"
+            },
+            "original_obj": {},
+            "class_name": "database_tools",
+            "method_name": "test_connection",
+            "async_tool": false
+          },
+          "weather": {
+            "name": "weather",
+            "description": "Tool for fetching weather information for a location.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "api_base_url": "https://weatherapi-com.p.rapidapi.com/current.json",
+              "headers": {
+                "X-RapidAPI-Key": "YOUR_RAPIDAPI_KEY",
+                "X-RapidAPI-Host": "weatherapi-com.p.rapidapi.com"
+              }
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "weather.get_forecast": {
+            "name": "get_forecast",
+            "description": "Get weather forecast for a specified location.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "city",
+                "type_hint": "str",
+                "description": "The name of the city",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "country",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional country code (e.g., 'US', 'GB', 'JP')",
+                "default": null,
+                "required": false
+              },
+              {
+                "name": "days",
+                "type_hint": "int",
+                "description": "Number of days for forecast (max 3 for the free tier)",
+                "default": 3,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing forecast information"
+            },
+            "original_obj": {},
+            "class_name": "weather",
+            "method_name": "get_forecast",
+            "async_tool": false
+          },
+          "weather.get_weather": {
+            "name": "get_weather",
+            "description": "Get current weather information for a specified location.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "city",
+                "type_hint": "str",
+                "description": "The name of the city",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "country",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional country code (e.g., 'US', 'GB', 'JP')",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing weather information:\n- temperature: Current temperature in Celsius\n- feels_like: How it feels like in Celsius\n- description: Weather description\n- humidity: Humidity percentage\n- wind_speed: Wind speed in m/s\n- location: Full location name\n- timestamp: Time when data was fetched"
+            },
+            "original_obj": {},
+            "class_name": "weather",
+            "method_name": "get_weather",
+            "async_tool": false
+          },
+          "PyExec": {
+            "name": "PyExec",
+            "description": "Tool for executing Python code.\n\nThis tool provides functionality for running Python scripts and code snippets,\nwith support for command-line arguments. It captures and returns the standard\noutput from the execution.\n\nMethods:\n    run_script: Execute a Python script file with optional arguments\n    run_code: Execute Python code from a string with optional arguments",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "python_executable",
+                "type_hint": "str",
+                "description": "Parameter python_executable",
+                "default": "python",
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "python_executable": "python"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "PyExec.run_code": {
+            "name": "run_code",
+            "description": "Execute Python code from a string with optional arguments.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "code_str",
+                "type_hint": "str",
+                "description": "Python code to execute as a string",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "argv",
+                "type_hint": "typing.Optional[typing.List[str]]",
+                "description": "Optional list of command-line arguments to pass to the code",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Union",
+              "description": "A string containing the combined stdout and stderr output, formatted for readability"
+            },
+            "original_obj": {},
+            "class_name": "PyExec",
+            "method_name": "run_code",
+            "async_tool": false
+          },
+          "PyExec.run_script": {
+            "name": "run_script",
+            "description": "Execute a Python script file with optional arguments.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "filepath",
+                "type_hint": "str",
+                "description": "Path to the Python script file to execute",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "argv",
+                "type_hint": "typing.Optional[typing.List[str]]",
+                "description": "Optional list of command-line arguments to pass to the script",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Union",
+              "description": "A string containing the combined stdout and stderr output, formatted for readability"
+            },
+            "original_obj": {},
+            "class_name": "PyExec",
+            "method_name": "run_script",
+            "async_tool": false
+          },
+          "internal_credentials_tools": {
+            "name": "internal_credentials_tools",
+            "description": "Tool for managing project credentials.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "env_path",
+                "type_hint": "str",
+                "description": "Parameter env_path",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "env_path": "/Users/mb/projects/genbrain/cerebrum/src/.env"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "internal_credentials_tools.load_credentials": {
+            "name": "load_credentials",
+            "description": "Load credentials from .env file.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing credentials\n    "
+            },
+            "original_obj": {},
+            "class_name": "internal_credentials_tools",
+            "method_name": "load_credentials",
+            "async_tool": true
+          },
+          "internal_credentials_tools.validate_credentials": {
+            "name": "validate_credentials",
+            "description": "Validate that required credentials are present.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "credentials",
+                "type_hint": "typing.Dict[str, str]",
+                "description": "Dictionary of credentials to validate",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing validation status\n    "
+            },
+            "original_obj": {},
+            "class_name": "internal_credentials_tools",
+            "method_name": "validate_credentials",
+            "async_tool": true
+          },
+          "internal_testing_tools": {
+            "name": "internal_testing_tools",
+            "description": "Tool for running tests and validating coverage.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "test_runner": {
+                "stream": {
+                  "stream": {
+                    "mode": "w"
+                  }
+                },
+                "descriptions": true,
+                "verbosity": 2,
+                "failfast": false,
+                "buffer": false,
+                "tb_locals": false,
+                "warnings": null
+              }
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "internal_testing_tools.run_unit_tests": {
+            "name": "run_unit_tests",
+            "description": "Run unit tests from a file.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "test_file_path",
+                "type_hint": "str",
+                "description": "Path to the test file",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing test results\n    "
+            },
+            "original_obj": {},
+            "class_name": "internal_testing_tools",
+            "method_name": "run_unit_tests",
+            "async_tool": true
+          },
+          "internal_testing_tools.validate_test_coverage": {
+            "name": "validate_test_coverage",
+            "description": "Calculate test coverage.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "test_file_path",
+                "type_hint": "str",
+                "description": "Path to the test file",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing coverage results"
+            },
+            "original_obj": {},
+            "class_name": "internal_testing_tools",
+            "method_name": "validate_test_coverage",
+            "async_tool": false
+          },
+          "internal_proxy_tools": {
+            "name": "internal_proxy_tools",
+            "description": "Tool for managing dynamic tool registration.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "registered_tools": "set()"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "internal_proxy_tools.register_tool": {
+            "name": "register_tool",
+            "description": "Register a tool with the global CurriedProxy.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "tool_name",
+                "type_hint": "str",
+                "description": "Name to register the tool under",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "tool_instance",
+                "type_hint": "typing.Any",
+                "description": "The tool instance to register",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing registration status"
+            },
+            "original_obj": {},
+            "class_name": "internal_proxy_tools",
+            "method_name": "register_tool",
+            "async_tool": true
+          },
+          "internal_persistence_tools": {
+            "name": "internal_persistence_tools",
+            "description": "Tool for managing persistence operations.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "persistence_model",
+                "type_hint": "Optional",
+                "description": "Parameter persistence_model",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "persistence_model": null
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "internal_persistence_tools.save_tool": {
+            "name": "save_tool",
+            "description": "Save a Tool model to the persistence model.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "tool_model",
+                "type_hint": "src.server.models.toolset.Tool",
+                "description": "The Tool model to save",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing status and saved tool"
+            },
+            "original_obj": {},
+            "class_name": "internal_persistence_tools",
+            "method_name": "save_tool",
+            "async_tool": false
+          },
+          "WebsiteSearchTool": {
+            "name": "WebsiteSearchTool",
+            "description": "Tool Name: Search in a specific website\nTool Arguments: {'search_query': {'description': 'Mandatory search query you want to use to search a specific website', 'type': 'str'}, 'website': {'description': 'Mandatory valid website URL you want to search on', 'type': 'str'}}\nTool Description: A tool that can be used to semantic search a query from a specific URL content.",
+            "tool_type": "crewai_tool",
+            "parameters": [
+              {
+                "name": "search_query",
+                "type_hint": "str",
+                "description": "Mandatory search query you want to use to search a specific website",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "website",
+                "type_hint": "str",
+                "description": "Mandatory valid website URL you want to search on",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "Result of the tool execution"
+            },
+            "original_obj": {
+              "name": "Search in a specific website",
+              "description": "Tool Name: Search in a specific website\nTool Arguments: {'search_query': {'description': 'Mandatory search query you want to use to search a specific website', 'type': 'str'}, 'website': {'description': 'Mandatory valid website URL you want to search on', 'type': 'str'}}\nTool Description: A tool that can be used to semantic search a query from a specific URL content.",
+              "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>",
+              "description_updated": false,
+              "cache_function": {},
+              "result_as_answer": false,
+              "summarize": false,
+              "adapter": {},
+              "config": null
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "SerperDevTool": {
+            "name": "SerperDevTool",
+            "description": "A mock of SerperDevTool that maintains the same interface.",
+            "tool_type": "python_function",
+            "parameters": [
+              {
+                "name": "kwargs",
+                "type_hint": "object",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "object",
+              "description": "Return value"
+            },
+            "original_obj": {
+              "name": "Serper.dev",
+              "description": "Search the web using Serper.dev. Use parameter 'search_query' for your search.",
+              "required_args": {
+                "search_query": "str"
+              },
+              "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": true
+          },
+          "FileReadTool": {
+            "name": "FileReadTool",
+            "description": "Tool Name: Read a file's content\nTool Arguments: {'file_path': {'description': 'Mandatory file full path to read the file', 'type': 'str'}}\nTool Description: A tool that reads the content of a file. To use this tool, provide a 'file_path' parameter with the path to the file you want to read.",
+            "tool_type": "crewai_tool",
+            "parameters": [
+              {
+                "name": "file_path",
+                "type_hint": "str",
+                "description": "Mandatory file full path to read the file",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "Result of the tool execution"
+            },
+            "original_obj": {
+              "name": "Read a file's content",
+              "description": "Tool Name: Read a file's content\nTool Arguments: {'file_path': {'description': 'Mandatory file full path to read the file', 'type': 'str'}}\nTool Description: A tool that reads the content of a file. To use this tool, provide a 'file_path' parameter with the path to the file you want to read.",
+              "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>",
+              "description_updated": false,
+              "cache_function": {},
+              "result_as_answer": false,
+              "file_path": null
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "WebScraperTool": {
+            "name": "WebScraperTool",
+            "description": "A tool for scraping web content with JavaScript rendering support.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "allowed_domains",
+                "type_hint": "Optional",
+                "description": "Parameter allowed_domains",
+                "default": null,
+                "required": false
+              },
+              {
+                "name": "max_depth",
+                "type_hint": "int",
+                "description": "Parameter max_depth",
+                "default": 3,
+                "required": false
+              },
+              {
+                "name": "max_pages",
+                "type_hint": "int",
+                "description": "Parameter max_pages",
+                "default": 100,
+                "required": false
+              },
+              {
+                "name": "headless",
+                "type_hint": "bool",
+                "description": "Parameter headless",
+                "default": true,
+                "required": false
+              },
+              {
+                "name": "observability",
+                "type_hint": "Optional",
+                "description": "Parameter observability",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "allowed_domains": null,
+              "max_depth": 3,
+              "max_pages": 100,
+              "headless": true,
+              "observability": null,
+              "rate_limiter": {
+                "delay": 1.0,
+                "last_request_time": 0.0
+              },
+              "last_request_time": 0,
+              "url_pattern": null
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "WebScraperTool.get_urls_to_scrape": {
+            "name": "get_urls_to_scrape",
+            "description": "Get all URLs to scrape starting from a given URL.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "start_url",
+                "type_hint": "str",
+                "description": "Parameter start_url",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "WebScraperTool",
+            "method_name": "get_urls_to_scrape",
+            "async_tool": true
+          },
+          "WebScraperTool.scrape_page": {
+            "name": "scrape_page",
+            "description": "Scrape a single page.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "url",
+                "type_hint": "str",
+                "description": "Parameter url",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "metadata_selectors",
+                "type_hint": "typing.Optional[typing.Dict[str, str]]",
+                "description": "Parameter metadata_selectors",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "WebScraperTool",
+            "method_name": "scrape_page",
+            "async_tool": true
+          },
+          "WebScraperTool.scrape_site": {
+            "name": "scrape_site",
+            "description": "Scrape multiple pages starting from a given URL.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "start_url",
+                "type_hint": "str",
+                "description": "Parameter start_url",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "selectors",
+                "type_hint": "typing.Optional[typing.Dict[str, str]]",
+                "description": "Parameter selectors",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "WebScraperTool",
+            "method_name": "scrape_site",
+            "async_tool": true
+          },
+          "FileTool": {
+            "name": "FileTool",
+            "description": "A tool for handling file operations like saving and reading files.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "data",
+                "type_hint": "Any",
+                "description": "Parameter data",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "name": "file_tool",
+              "description": "Tool Name: file_tool\nTool Arguments: {'file_path': {'description': None, 'type': 'str'}, 'file_content': {'description': None, 'type': 'str'}}\nTool Description: Saves and reads files",
+              "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>",
+              "description_updated": false,
+              "cache_function": {},
+              "result_as_answer": false
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "MicroservicesTool": {
+            "name": "MicroservicesTool",
+            "description": "Tool for managing microservices configuration and information.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "config_path",
+                "type_hint": "Optional",
+                "description": "Parameter config_path",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "config_path": "config/microservices.yaml",
+              "config": {
+                "microservices": {
+                  "auth-service": {
+                    "repository": "GenBrainAI/auth-service",
+                    "terraform_path": "terraform/network-policies.tf"
+                  },
+                  "user-service": {
+                    "repository": "GenBrainAI/user-service",
+                    "terraform_path": "terraform/network-policies.tf"
+                  }
+                }
+              }
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "MicroservicesTool.add_microservice": {
+            "name": "add_microservice",
+            "description": "Add a new microservice to the configuration.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "name",
+                "type_hint": "str",
+                "description": "Name of the new microservice",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "repository",
+                "type_hint": "str",
+                "description": "GitHub repository path for the microservice",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "terraform_path",
+                "type_hint": "str",
+                "description": "Path to the terraform configuration file",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "None",
+              "description": "None"
+            },
+            "original_obj": {},
+            "class_name": "MicroservicesTool",
+            "method_name": "add_microservice",
+            "async_tool": false
+          },
+          "MicroservicesTool.get_repository": {
+            "name": "get_repository",
+            "description": "Get the GitHub repository for a microservice.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "microservice_name",
+                "type_hint": "str",
+                "description": "Name of the microservice to look up",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "String containing the repository path"
+            },
+            "original_obj": {},
+            "class_name": "MicroservicesTool",
+            "method_name": "get_repository",
+            "async_tool": false
+          },
+          "MicroservicesTool.get_terraform_path": {
+            "name": "get_terraform_path",
+            "description": "Get the terraform configuration path for a microservice.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "microservice_name",
+                "type_hint": "str",
+                "description": "Name of the microservice to look up",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "String containing the terraform configuration path"
+            },
+            "original_obj": {},
+            "class_name": "MicroservicesTool",
+            "method_name": "get_terraform_path",
+            "async_tool": false
+          },
+          "MicroservicesTool.list_microservices": {
+            "name": "list_microservices",
+            "description": "List all available microservices.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "List of strings containing all microservice names"
+            },
+            "original_obj": {},
+            "class_name": "MicroservicesTool",
+            "method_name": "list_microservices",
+            "async_tool": false
+          },
+          "SMSTool": {
+            "name": "SMSTool",
+            "description": "",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "output_dir",
+                "type_hint": "str",
+                "description": "Parameter output_dir",
+                "default": "sms_logs",
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "output_dir": "sms_logs"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "SMSTool.send_application_success_sms": {
+            "name": "send_application_success_sms",
+            "description": "Sends a formatted SMS for successful job applications.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "phone_number",
+                "type_hint": "str",
+                "description": "The recipient's phone number",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "company_name",
+                "type_hint": "str",
+                "description": "Name of the company that accepted the application",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "position",
+                "type_hint": "str",
+                "description": "Job position title that was applied for",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "contact_person",
+                "type_hint": "str",
+                "description": "Optional contact person name at the company",
+                "default": null,
+                "required": false
+              },
+              {
+                "name": "next_steps",
+                "type_hint": "str",
+                "description": "Optional information about next steps in the process",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "String confirmation message with the log file path"
+            },
+            "original_obj": {},
+            "class_name": "SMSTool",
+            "method_name": "send_application_success_sms",
+            "async_tool": true
+          },
+          "SMSTool.send_sms": {
+            "name": "send_sms",
+            "description": "Simulates sending an SMS by writing to a file.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "phone_number",
+                "type_hint": "str",
+                "description": "The recipient's phone number",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "message",
+                "type_hint": "str",
+                "description": "The message content to be sent",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "String confirmation message with the log file path"
+            },
+            "original_obj": {},
+            "class_name": "SMSTool",
+            "method_name": "send_sms",
+            "async_tool": true
+          },
+          "URLTools": {
+            "name": "URLTools",
+            "description": "Tools for URL operations and web scraping.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "rate_limit",
+                "type_hint": "int",
+                "description": "Parameter rate_limit",
+                "default": 10,
+                "required": false
+              },
+              {
+                "name": "respect_robots",
+                "type_hint": "bool",
+                "description": "Parameter respect_robots",
+                "default": true,
+                "required": false
+              },
+              {
+                "name": "allowed_domains",
+                "type_hint": "Optional",
+                "description": "Parameter allowed_domains",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Instance object"
+            },
+            "original_obj": {
+              "rate_limit": 10,
+              "respect_robots": true,
+              "allowed_domains": []
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          },
+          "URLTools.close": {
+            "name": "close",
+            "description": "Close the aiohttp session.",
+            "tool_type": "class_method",
+            "parameters": [],
+            "schema": null,
+            "returns": {
+              "type_hint": "Any",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "URLTools",
+            "method_name": "close",
+            "async_tool": true
+          },
+          "URLTools.extract_code_blocks": {
+            "name": "extract_code_blocks",
+            "description": "Extract code blocks from HTML or Markdown content.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "content",
+                "type_hint": "str",
+                "description": "Parameter content",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "List",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "URLTools",
+            "method_name": "extract_code_blocks",
+            "async_tool": true
+          },
+          "URLTools.fetch_documentation": {
+            "name": "fetch_documentation",
+            "description": "Fetch documentation from URL.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "url",
+                "type_hint": "str",
+                "description": "The URL to fetch documentation from.",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "dict",
+              "description": "A dictionary containing the status, message, and content."
+            },
+            "original_obj": {},
+            "class_name": "URLTools",
+            "method_name": "fetch_documentation",
+            "async_tool": true
+          },
+          "URLTools.get_data_from_url": {
+            "name": "get_data_from_url",
+            "description": "Fetch data from a URL with optional JavaScript rendering.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "url",
+                "type_hint": "str",
+                "description": "URL to fetch",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "use_js",
+                "type_hint": "bool",
+                "description": "Whether to use JavaScript rendering",
+                "default": false,
+                "required": false
+              },
+              {
+                "name": "selectors",
+                "type_hint": "typing.Optional[typing.Dict[str, str]]",
+                "description": "Optional CSS selectors to extract specific content",
+                "default": null,
+                "required": false
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing content and metadata"
+            },
+            "original_obj": {},
+            "class_name": "URLTools",
+            "method_name": "get_data_from_url",
+            "async_tool": true
+          },
+          "URLTools.get_documentation": {
+            "name": "get_documentation",
+            "description": "Specialized method for fetching documentation pages.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "url",
+                "type_hint": "str",
+                "description": "Documentation URL to fetch",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "Dict",
+              "description": "Dictionary containing parsed documentation"
+            },
+            "original_obj": {},
+            "class_name": "URLTools",
+            "method_name": "get_documentation",
+            "async_tool": true
+          },
+          "human_input.console_run": {
+            "name": "console_run",
+            "description": "Console-based implementation to get input from a human via the terminal.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "question",
+                "type_hint": "str",
+                "description": "The question to ask the human",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "kwargs",
+                "type_hint": "typing.Any",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "The human's response"
+            },
+            "original_obj": {},
+            "class_name": "human_input",
+            "method_name": "console_run",
+            "async_tool": false
+          },
+          "human_input.streamlit_run": {
+            "name": "streamlit_run",
+            "description": "Streamlit-specific implementation to get input from a human via the UI.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "question",
+                "type_hint": "str",
+                "description": "The question to ask the human",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "session_id",
+                "type_hint": "typing.Optional[str]",
+                "description": "Optional session ID to track which conversation this is part of",
+                "default": null,
+                "required": false
+              },
+              {
+                "name": "kwargs",
+                "type_hint": "typing.Any",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "The human's response when provided"
+            },
+            "original_obj": {},
+            "class_name": "human_input",
+            "method_name": "streamlit_run",
+            "async_tool": false
+          },
+          "human_input.submit_response": {
+            "name": "submit_response",
+            "description": "Submit a response to the waiting question.",
+            "tool_type": "class_method",
+            "parameters": [
+              {
+                "name": "response",
+                "type_hint": "str",
+                "description": "The human's response to the question",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "None",
+              "description": "Method return value"
+            },
+            "original_obj": {},
+            "class_name": "human_input",
+            "method_name": "submit_response",
+            "async_tool": false
+          },
+          "brave_search": {
+            "name": "brave_search",
+            "description": "A mock of SerperDevTool that maintains the same interface.",
+            "tool_type": "python_function",
+            "parameters": [
+              {
+                "name": "kwargs",
+                "type_hint": "object",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "object",
+              "description": "Return value"
+            },
+            "original_obj": {
+              "name": "Brave Search",
+              "description": "Search the web using Brave Search. Use parameter 'search_query' for your search.",
+              "required_args": {
+                "search_query": "str"
+              },
+              "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": true
+          },
+          "web_search": {
+            "name": "web_search",
+            "description": "A mock of SerperDevTool that maintains the same interface.",
+            "tool_type": "python_function",
+            "parameters": [
+              {
+                "name": "kwargs",
+                "type_hint": "object",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "object",
+              "description": "Return value"
+            },
+            "original_obj": {
+              "name": "Web Search",
+              "description": "Search the web using Web Search. Use parameter 'search_query' for your search.",
+              "required_args": {
+                "search_query": "str"
+              },
+              "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": true
+          },
+          "human_input": {
+            "name": "human_input",
+            "description": "Tool for getting input from a human user.\n\nThis tool allows AI agents to request information from a human user,\npausing execution until the human responds.",
+            "tool_type": "python_function",
+            "parameters": [
+              {
+                "name": "question",
+                "type_hint": "str",
+                "description": "Parameter question",
+                "default": null,
+                "required": true
+              },
+              {
+                "name": "kwargs",
+                "type_hint": "object",
+                "description": "Parameter kwargs",
+                "default": null,
+                "required": true
+              }
+            ],
+            "schema": null,
+            "returns": {
+              "type_hint": "str",
+              "description": "Return value"
+            },
+            "original_obj": {
+              "name": "human_input",
+              "description": "Ask the human user for input when you need more information or clarification.",
+              "required_args": {
+                "question": "str"
+              },
+              "response_queue": {
+                "maxsize": 0,
+                "queue": "deque([])",
+                "mutex": "<unlocked _thread.lock object at 0x14065d6c0>",
+                "not_empty": {
+                  "acquire": "<built-in method acquire of _thread.lock object at 0x14065d6c0>",
+                  "release": "<built-in method release of _thread.lock object at 0x14065d6c0>"
+                },
+                "not_full": {
+                  "acquire": "<built-in method acquire of _thread.lock object at 0x14065d6c0>",
+                  "release": "<built-in method release of _thread.lock object at 0x14065d6c0>"
+                },
+                "all_tasks_done": {
+                  "acquire": "<built-in method acquire of _thread.lock object at 0x14065d6c0>",
+                  "release": "<built-in method release of _thread.lock object at 0x14065d6c0>"
+                },
+                "unfinished_tasks": 0
+              },
+              "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>"
+            },
+            "class_name": null,
+            "method_name": null,
+            "async_tool": false
+          }
+        }
+      },
+      "name_counter": {},
+      "name": "Concert Travel Planner Tools"
+    }
+  },
+  "task_flows": {}
 }

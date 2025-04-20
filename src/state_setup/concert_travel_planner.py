@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from uuid import UUID, uuid4
 import argparse
+import asyncio
 
 # Ensure src is in the path so imports work correctly
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,6 +38,7 @@ from src.server.persistence.persistence_model_factory import PersistenceModelFac
 from src.server.models.message import Message
 from src.server.tools.tools_catalog import tools_catalog
 from src.server.tools.general_tools.datetime_tools import register_datetime_tools
+from src.server.tools.human_tools import human_input_tool
 
 # Configure logging
 logging.basicConfig(
@@ -137,9 +139,6 @@ def create_concert_travel_planner_state():
             # Return the mock search result
             return f"Mock search results for: {search_query}"
             
-    # Get the tools catalog
-    from src.server.tools.tools_catalog import tools_catalog
-    
     # Register the search tools directly with the tools catalog
     brave_search_tool = MockSearchTool("Brave Search")
     web_search_tool = MockSearchTool("Web Search")
@@ -149,14 +148,16 @@ def create_concert_travel_planner_state():
     tools_catalog.register_instance(brave_search_tool, "brave_search")
     tools_catalog.register_instance(web_search_tool, "web_search")
     tools_catalog.register_instance(serper_tool, "SerperDevTool")
+    tools_catalog.register_instance(human_input_tool, "human_input")
     
     # Add tools to the proxy
     proxy.add_tool("brave_search", brave_search_tool)
     proxy.add_tool("web_search", web_search_tool)
     proxy.add_tool("SerperDevTool", serper_tool)
+    proxy.add_tool("human_input", human_input_tool)
     
     # Store the allowed tools as a property of the crewai_config
-    allowed_tools = ["brave_search", "web_search", "delegate", "datetime_tools"]
+    allowed_tools = ["brave_search", "web_search", "delegate", "datetime_tools", "human_input"]
     
     # Register datetime tools
     datetime_tool_names = register_datetime_tools(tools_catalog)
@@ -170,7 +171,7 @@ def create_concert_travel_planner_state():
     
     # Debug: Check what's in the tools catalog
     print("\n🔍 Verifying tools are correctly registered:")
-    for tool_name in ["brave_search", "web_search", "datetime_tools"]:
+    for tool_name in ["brave_search", "web_search", "datetime_tools", "human_input"]:
         tool_metadata = tools_catalog.get_tool(tool_name)
         if tool_metadata:
             print(f"  ✅ {tool_name} found in tools_catalog")
@@ -190,7 +191,7 @@ def create_concert_travel_planner_state():
         
     # DEBUG: Test exporting to CrewAI
     print("\n🔧 Testing export_to_crewai:")
-    crewai_tools = proxy.export_to_crewai(allowed_tools=allowed_tools)
+    crewai_tools = asyncio.run(proxy.export_to_crewai(allowed_tools=allowed_tools))
     print(f"🔢 Total CrewAI tools exported: {len(crewai_tools)}")
     for tool in crewai_tools:
         print(f"  - {tool.name}")
@@ -261,12 +262,18 @@ def create_concert_travel_planner_state():
         description="Get current date and time information"
     )
     
+    # Add human input tool for agents
+    human_input_agent_tool = AgentTool(
+        name="human_input",
+        description="Ask the human user for input when you need more information or clarification."
+    )
+    
     # Define agent roles with explicit tool usage instructions
     concert_planner = AgentModel(
         role="Concert Planner",
         goal="Find the best concerts matching the user's preferences",
         backstory="You are an experienced concert finder with deep knowledge of venues, artists, and performances across the globe. You excel at matching people with perfect concert experiences based on their music preferences. IMPORTANT: When using search tools like brave_search, you must format your query as {\"search_query\": \"your search terms\"}. Always extract information about preferences directly from user messages.",
-        tools=[brave_search_tool, web_search_tool, datetime_tool],
+        tools=[brave_search_tool, web_search_tool, datetime_tool, human_input_agent_tool],
         verbose=True
     )
     
@@ -274,7 +281,7 @@ def create_concert_travel_planner_state():
         role="Travel Agent",
         goal="Plan the best travel arrangements for concert attendees",
         backstory="You are a travel expert with years of experience planning trips around music events. You know the best ways to get to venues, where to stay, and how to make the trip smooth and enjoyable. IMPORTANT: When using search tools like brave_search, you must format your query as {\"search_query\": \"your search terms\"}. Always extract information about preferences directly from user messages.",
-        tools=[brave_search_tool, web_search_tool, datetime_tool],
+        tools=[brave_search_tool, web_search_tool, datetime_tool, human_input_agent_tool],
         verbose=True
     )
     
@@ -282,7 +289,7 @@ def create_concert_travel_planner_state():
         role="Local Expert",
         goal="Provide insider information about concert venues and local attractions",
         backstory="You have visited countless concert venues worldwide and know the best spots in each city. From where to get the best pre-show dinner to the perfect places to celebrate after the concert. IMPORTANT: When using search tools like brave_search, you must format your query as {\"search_query\": \"your search terms\"}. Always extract information about preferences directly from user messages.",
-        tools=[brave_search_tool, web_search_tool, datetime_tool],
+        tools=[brave_search_tool, web_search_tool, datetime_tool, human_input_agent_tool],
         verbose=True
     )
     
@@ -297,9 +304,22 @@ CRITICAL SYSTEM INSTRUCTIONS:
 3. Example correct usage: search({'search_query': 'upcoming concerts in Tokyo'})
 4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL
 
-The user is interested in traveling to see live music. Ask them where they're planning to travel and what type of music they enjoy. Then find upcoming concerts and festivals in that location that match their preferences. Include dates, venues, ticket prices, and featured artists where available.
+5. To interact with the human user, use the human_input tool like this:
+   human_input("What type of music do you enjoy?")
+   Always ask one clear question at a time.
+   Wait for the human's response before proceeding.
+   If the human doesn't provide enough details, ask follow-up questions.
 
-Use datetime_tools to get the current date for relevant event searches.""",
+The user is interested in traveling to see live music. First, use the human_input tool to ask where they're planning to travel and what type of music they enjoy. Then find upcoming concerts and festivals in that location that match their preferences. Include dates, venues, ticket prices, and featured artists where available.
+
+Use datetime_tools to get the current date for relevant event searches.
+
+IMPORTANT: Make sure to use the human_input tool to gather specific preferences before searching, such as:
+- Specific music genres they enjoy
+- Preferred dates for attending concerts
+- Budget considerations for tickets
+- Whether they prefer small venues or large festivals
+- Any specific artists they hope to see""",
         expected_output="A list of relevant concerts and music festivals at the user's chosen destination, with information about date, venue, price, and participating artists.",
         agent_role="Concert Planner",
         human_input=True
@@ -315,11 +335,24 @@ CRITICAL SYSTEM INSTRUCTIONS:
 3. Example correct usage: search({'search_query': 'hotels near Madison Square Garden'})
 4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL
 
-First, gather essential information about the concert location and date from the Concert Planner. Then, plan the ideal travel experience including:
+5. To interact with the human user, use the human_input tool like this:
+   human_input("Do you prefer budget accommodations or luxury hotels?")
+   Always ask one clear question at a time.
+   Wait for the human's response before proceeding.
+   If the human doesn't provide enough details, ask follow-up questions.
+
+First, gather essential information about the concert location and date from the Concert Planner. Then, use the human_input tool to ask about travel preferences before planning the ideal travel experience, including:
 - Transportation options to the destination (flights, trains, etc.)
 - Local transportation in the area
 - Accommodation recommendations near the venue
 - Pre and post-concert activities that complement the music experience
+
+IMPORTANT: Make sure to use the human_input tool to ask about specific travel preferences such as:
+- Budget constraints for accommodations and transportation
+- Preferred transportation methods (flight, train, car, etc.)
+- Whether they prefer staying close to the venue or in a different area
+- Interest in specific activities before or after the concert
+- Any accessibility requirements or special considerations
 
 Consider the traveler's preferences and budget when making recommendations.
 
@@ -339,7 +372,20 @@ CRITICAL SYSTEM INSTRUCTIONS:
 3. Example correct usage: search({'search_query': 'best seats at Radio City Music Hall'})
 4. Example INCORRECT usage: search('search_query') <- THIS WILL FAIL
 
-Based on the concert or festival selected by the user, provide insider tips such as:
+5. To interact with the human user, use the human_input tool like this:
+   human_input("Do you prefer quiet bars or lively clubs for after the concert?")
+   Always ask one clear question at a time.
+   Wait for the human's response before proceeding.
+   If the human doesn't provide enough details, ask follow-up questions.
+
+Based on the concert or festival selected by the user, provide insider tips. Use the human_input tool to ask about their specific interests and preferences for the venue experience, such as:
+- If they want recommendations for the best seating/viewing areas
+- What kind of pre-show or after-party experiences they're interested in
+- Food preferences for dining options near the venue
+- Interest in local cultural experiences related to the music scene
+- Any safety concerns they might have about the venue area
+
+After gathering their preferences, provide customized insider tips such as:
 - The best seating areas or viewing spots at the venue
 - Pre-show or after-party locations frequented by locals
 - Local transportation advice for getting to/from the venue
@@ -361,8 +407,41 @@ Use datetime_tools to check if specific recommendations are relevant based on cu
         process=Process.sequential,
         agents=[concert_planner, travel_agent, local_expert],
         tasks=[concert_task, travel_task, local_task],
-        allowed_tools=allowed_tools
+        allowed_tools=allowed_tools  # This includes "human_input" tool
     )
+    
+    # Add detailed comments about human tool integration
+    """
+    === HUMAN TOOL INTEGRATION NOTES ===
+    
+    The human_input tool allows agents to interact directly with users during task execution:
+    
+    1. Tool Registration:
+        - The human_input_tool is imported from src.server.tools.human_tools
+        - It's registered in the tools_catalog with register_instance()
+        - It's added to the curried_proxy with add_tool()
+        - It's included in the allowed_tools list
+    
+    2. Agent Configuration:
+        - Each agent has the human_input_agent_tool in their tools list
+        - This ensures they can access the tool during execution
+    
+    3. Task Configuration:
+        - Each task has human_input=True to enable human interaction
+        - Task descriptions include explicit instructions on how to use the human_input tool
+        - Examples guide agents to ask one clear question at a time
+    
+    4. How it works:
+        - When an agent calls human_input("What's your question?"), execution pauses
+        - The question is displayed to the user in the UI
+        - The user can enter their response
+        - Execution continues with the agent receiving the user's response
+    
+    5. CrewAI Integration:
+        - The crew_runner.py module handles the integration with CrewAI
+        - It checks for task.human_input and registers the tool accordingly
+        - It adds human_input to allowed_tools in the CrewAI config
+    """
     
     # Create the crew configuration
     crewai_config_id = str(uuid4())
@@ -534,6 +613,30 @@ Be enthusiastic and help the user find their perfect festival experience!"""
     )
     persistence_model.tasks.create(recommend_task)
     logger.info(f"Created task: {recommend_task.name} (ID: {recommend_task.id})")
+    
+    # Add debug code to verify human_input tool is registered
+    print("\n🔍 Verifying human_input tool is correctly registered:")
+    human_tool_metadata = tools_catalog.get_tool("human_input")
+    if human_tool_metadata:
+        print(f"  ✅ human_input found in tools_catalog")
+        print(f"    Description: {human_tool_metadata.description}")
+        human_tool = tools_catalog.get_tool_instance("human_input")
+        if human_tool:
+            print(f"  ✅ human_input tool instance retrieved")
+    else:
+        print(f"  ❌ human_input NOT found in tools_catalog")
+
+    # Verify human_input tool is in the curried proxy
+    if "human_input" in proxy.tool_names:
+        print(f"  ✅ human_input found in CurriedProxy")
+    else:
+        print(f"  ❌ human_input NOT found in CurriedProxy")
+
+    # Verify human_input is in allowed_tools
+    if "human_input" in allowed_tools:
+        print(f"  ✅ human_input found in allowed_tools")
+    else:
+        print(f"  ❌ human_input NOT found in allowed_tools")
     
     # 4. Save the state to a file
     logger.info("Saving state to file...")

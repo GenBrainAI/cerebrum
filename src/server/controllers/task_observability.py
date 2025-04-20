@@ -257,4 +257,8 @@ class TaskObservabilityManager:
                 f"Error during execution: {str(exc_val)}",
                 ObservabilityLevel.ERROR,
                 metadata={"error_type": exc_type.__name__}
-            ) 
+            )
+
+    def get_data(self) -> List[Dict[str, Any]]:
+        """Return all observability data entries as list of dicts."""
+        return self.get_all_entries() 

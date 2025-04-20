@@ -1,10 +1,10 @@
 {
-  "last_used_state": "concert_travel_planner_state",
-  "last_tm_id": "80a24ba1-5a9c-46a3-ab19-1c2016afde33",
-  "last_task_id": "a1fbedc4-f54b-41f4-90d5-8103bd8f53c0",
-  "last_updated": "2025-04-07T22:23:15.997445",
-  "last_task_manager_id": "80a24ba1-5a9c-46a3-ab19-1c2016afde33",
-  "crewai_config_id": "abc90a96-a1e6-4a8f-815c-af2f40f37f14",
-  "curried_proxy_id": "8ad16632-b99d-490a-9356-9eeb60e68386",
+  "last_used_state": "weather",
+  "last_tm_id": "7cdb9015-d721-4103-bac7-905126c7c89b",
+  "last_task_id": "4346c1f9-ce40-44bc-8028-0c1ac556a30f",
+  "last_updated": "2025-04-20T12:32:42.103139",
+  "last_task_manager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+  "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+  "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
   "state_file": "state/concert_travel_planner_state.json"
 }

@@ -14,10 +14,12 @@ import inspect
 import sys
 import importlib
 import aiohttp
+from pathlib import Path
 
 from ..models.task import Task
 from ..models.tasks_manager import TasksManager
 from ..models.message import Message
+from ..models.curried_proxy_info import ToolInfo
 from ..persistence.persistence_model import PersistenceModelBase
 from ..controllers.prompt_transformer import PromptTransformer, MessageTransformer
 from ..controllers.tools_operator import ToolsOperator
@@ -28,11 +30,10 @@ from ..controllers.task_sequence_controller import TaskSequenceController
 from ..controllers.task_context import TaskContext
 from ..persistence.persistence_model_factory import PersistenceModelFactory
 
-
 from ..context.context_provider import ContextProvider
 from ..context.context_analytics import ContextAnalytics
 from ..controllers.task_tree_flow import TaskNode
-from .task_observability import TaskObservabilityManager, ObservabilityLevel
+from ..controllers.task_observability import TaskObservabilityManager, ObservabilityLevel
 from ..plugins.plugin_manager import PluginManager
 
 logger = logging.getLogger(__name__)
@@ -780,6 +781,13 @@ class TaskRunner:
 
             # Get the curried proxy for tool access
             curried_proxy = self._get_or_create_curried_proxy(task, tasksmanager)
+            if not curried_proxy:
+                error_msg = "Failed to get or create curried proxy"
+                logger.error(error_msg)
+                observability.add_entry(error_msg, ObservabilityLevel.ERROR)
+                result["status"] = "error"
+                result["error"] = error_msg
+                return result
 
             # Call the completion method
             logger.info(
@@ -836,72 +844,307 @@ class TaskRunner:
         manager: TasksManager,
         running_extra_params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Execute a CrewAI task."""
+        """Run a task using the CrewAI framework.
+        
+        Args:
+            task: The task to run
+            manager: The task manager
+            running_extra_params: Additional parameters for running the task
+            
+        Returns:
+            The result of the task execution
+        """
+        result = {}
+        crew_ai_config_id = task.crewai_config_id
+        logger.info(f"Starting CrewAI task execution for {task.name}")
+        
+        # Initialize basic response structure
+        result["task_id"] = task.id
+        result["task_name"] = task.name
+        result["status"] = "running"
+        
+        # Set up observability
+        observability = self._initialize_observability(task.id)
+        observability.start_capture()
+        observability.add_entry("Starting CrewAI task execution", ObservabilityLevel.INFO)
+        
         try:
-            logger.info(f"\n🤖 Running CrewAI task: {task.id}")
-
-            # Check if crewai_config_id exists
-            if not task.crewai_config_id:
-                raise TaskExecutionError("CrewAI config ID not found in task")
-
-            # Get CrewAI config
-            crewai_config = self.persistence_model.crewai_config.read(
-                task.crewai_config_id)
-            if not crewai_config:
-                raise TaskExecutionError(
-                    f"CrewAI config not found with ID: {task.crewai_config_id}")
-
-            # Get curried proxy
-            curried_proxy = None
-            if task.curried_proxy_id:
-                curried_proxy = self.persistence_model.curried_proxies.read(
-                    task.curried_proxy_id)
-                if not curried_proxy:
-                    raise TaskExecutionError(
-                        f"Curried proxy not found with ID: {task.curried_proxy_id}")
-
-            # Get the CrewAI plugin
-            if not self.plugin_manager:
-                await self.initialize()
-            plugin = self.plugin_manager.get_plugin("crewai")
-            if not plugin:
-                raise TaskExecutionError("CrewAI plugin not found")
-
-            # Prepare task input
-            task_input = running_extra_params or {}
-
-            # Run the task
-            try:
-                result = await plugin.run_task(
-                    task=task,
-                    curried_proxy=curried_proxy,
-                    inputs=task_input,
-                    persistence_model=self.persistence_model
-                )
-                return {
-                    "status": "completed",
-                    "response": result,
-                    "error": None
-                }
-            except Exception as e:
-                error_msg = f"CrewAI task execution failed: {str(e)}"
+            # Get the CrewAI configuration
+            crew_ai_config = self.persistence_model.crewai_config.read(crew_ai_config_id)
+            if not crew_ai_config:
+                error_msg = f"CrewAI configuration with ID {crew_ai_config_id} not found"
                 logger.error(error_msg)
-                logger.exception(e)
-                return {
-                    "status": "failed",
-                    "error": error_msg,
-                    "response": error_msg
-                }
+                observability.add_entry(error_msg, ObservabilityLevel.ERROR)
+                result["status"] = "error"
+                result["error"] = error_msg
+                return result
+            
+            # Get the curried proxy
+            curried_proxy = self._get_or_create_curried_proxy(task, manager)
+            if not curried_proxy:
+                error_msg = "Failed to get or create curried proxy"
+                logger.error(error_msg)
+                observability.add_entry(error_msg, ObservabilityLevel.ERROR)
+                result["status"] = "error"
+                result["error"] = error_msg
+                return result
+            
+            # Get allowed tools from CrewAI config
+            allowed_tools = crew_ai_config.create_crew.allowed_tools
+            
+            observability.add_entry(f"Using allowed tools: {allowed_tools}", ObservabilityLevel.INFO)
+            
+            # Setup human input if needed
+            # Safely check for human_input attribute
+            has_human_input = hasattr(task, 'human_input') and task.human_input
+            
+            if has_human_input:
+                import sys
+                import streamlit as st
+                from src.server.tools.human_tools import HumanInputTool, human_input_tool
+                
+                # Get the original _run method
+                original_run = HumanInputTool._run
+                
+                # Check if we're in a Streamlit context or console
+                if 'streamlit' in sys.modules and hasattr(st, 'session_state'):
+                    # Use the Streamlit implementation
+                    observability.add_entry("Using Streamlit-based human input tool", ObservabilityLevel.INFO)
+                    human_input_tool._run = human_input_tool.streamlit_run
+                else:
+                    # Use the console implementation
+                    observability.add_entry("Using console-based human input tool", ObservabilityLevel.INFO)
+                    human_input_tool._run = human_input_tool.console_run
+                
+                # Ensure human_input is in allowed_tools
+                if "human_input" not in allowed_tools:
+                    allowed_tools.append("human_input")
+            
+            # Process the input parameters
+            input_params = running_extra_params or {}
+            sanitized_params = self._sanitize_crewai_input(input_params)
+            
+            # Get contexts for the task
+            user_prompt = sanitized_params.get("prompt", "")
+            contexts = self._get_contexts_for_task(task)
+            
+            # Export curried tools to CrewAI
+            observability.add_entry("Exporting tools to CrewAI", ObservabilityLevel.INFO)
+            crewai_tools = await curried_proxy.export_to_crewai(allowed_tools=allowed_tools)
+            
+            # If crewai_tools is empty but allowed_tools is not, log a warning
+            if not crewai_tools and allowed_tools:
+                observability.add_entry(
+                    f"Warning: No tools were exported despite allowed tools: {allowed_tools}",
+                    ObservabilityLevel.WARNING
+                )
+            
+            if crewai_tools:
+                observability.add_entry(f"Exported {len(crewai_tools)} tools to CrewAI", ObservabilityLevel.INFO)
+                for tool in crewai_tools:
+                    observability.add_entry(f"Exported tool: {tool.name}", ObservabilityLevel.DEBUG)
+            
+            # Import necessary CrewAI classes
+            from crewai import Agent, Crew, Process, Task as CrewAITask
+            
+            # Create agents
+            logger.info("Creating CrewAI agents")
+            observability.add_entry("Creating CrewAI agents", ObservabilityLevel.INFO)
+            agents = []
+            
+            for agent_model in crew_ai_config.create_crew.agents:
+                # Generate agent-specific tools
+                agent_tools = []
+                
+                # Filter tools for this agent
+                if agent_model.tools:
+                    tool_names = [tool.name for tool in agent_model.tools]
+                    agent_tools = [tool for tool in crewai_tools if tool.name in tool_names]
+                
+                # Create the agent
+                agent = Agent(
+                    role=agent_model.role,
+                    goal=agent_model.goal,
+                    backstory=agent_model.backstory,
+                    verbose=agent_model.verbose,
+                    allow_delegation=agent_model.allow_delegation,
+                    tools=agent_tools
+                )
+                agents.append(agent)
+                
+                observability.add_entry(
+                    f"Created agent: {agent_model.role} with {len(agent_tools)} tools",
+                    ObservabilityLevel.INFO
+                )
+            
+            # Create tasks
+            logger.info("Creating CrewAI tasks")
+            observability.add_entry("Creating CrewAI tasks", ObservabilityLevel.INFO)
+            crewai_tasks = []
+            
+            for task_model in crew_ai_config.create_crew.tasks:
+                # Create the task
+                crewai_task = CrewAITask(
+                    description=task_model.description,
+                    expected_output=task_model.expected_output,
+                    agent=next((a for a in agents if a.role == task_model.agent_role), None),
+                    human_input=task_model.human_input,
+                    context=[]  # Will fill with actual contexts
+                )
+                crewai_tasks.append(crewai_task)
+                
+                observability.add_entry(
+                    f"Created task for agent: {task_model.agent_role}, human_input={task_model.human_input}",
+                    ObservabilityLevel.INFO
+                )
+            
+            # Create the crew
+            logger.info("Creating CrewAI crew")
+            observability.add_entry("Creating CrewAI crew", ObservabilityLevel.INFO)
+            
+            # Map the process string to the enum
+            process = Process.sequential
+            if crew_ai_config.create_crew.process == "hierarchical":
+                process = Process.hierarchical
+            elif crew_ai_config.create_crew.process == "parallel":
+                process = Process.parallel
+            
+            crew = Crew(
+                agents=agents,
+                tasks=crewai_tasks,
+                verbose=True,
+                process=process
+            )
+            
+            # Run the crew
+            logger.info("Running CrewAI crew")
+            observability.add_entry("Running CrewAI crew", ObservabilityLevel.INFO)
+            
+            # Add task parameters or user input to context if available
+            if user_prompt:
+                observability.add_entry(f"Adding user prompt to context: {user_prompt[:100]}...", ObservabilityLevel.INFO)
+                # Add to all tasks for now - could be more specific later
+                for crewai_task in crewai_tasks:
+                    crewai_task.context = [user_prompt]
+            
+            # Ensure 'search_query' is populated in sanitized_params if user_query exists
+            if 'user_query' in running_extra_params and 'search_query' not in sanitized_params:
+                sanitized_params['search_query'] = running_extra_params['user_query']
+                observability.add_entry(f"Added search_query based on user_query: {sanitized_params['search_query'][:100]}...", ObservabilityLevel.DEBUG)
+            elif 'search_query' not in sanitized_params:
+                # If no user_query, provide a default empty string to avoid KeyError with {search_query} template
+                logger.warning("No 'user_query' found in input params to map to 'search_query'. CrewAI task description might fail if it expects {search_query}.")
+                sanitized_params['search_query'] = ""  
+                observability.add_entry("Setting default empty string for search_query to prevent template error", ObservabilityLevel.INFO)
+                logger.info("🔧 DEBUG: Setting default empty string for search_query parameter to prevent template error")
+
+            # Special fix for the case where the template contains ''search_query'' (with quotes)
+            sanitized_params["'search_query'"] = sanitized_params.get('search_query', "")
+            # Add more variants to handle all possible template formats
+            sanitized_params['"search_query"'] = sanitized_params.get('search_query', "")
+            sanitized_params["''search_query''"] = sanitized_params.get('search_query', "")
+            sanitized_params['""search_query""'] = sanitized_params.get('search_query', "")
+            sanitized_params['search_query'] = sanitized_params.get('search_query', "")
+            logger.info("🔧 DEBUG: Added special parameter variants to handle all possible template formatting issues")
+            observability.add_entry("Added multiple parameter variants to handle template edge cases", ObservabilityLevel.INFO)
+
+            # === DEBUGGING: Print sanitized_params before kickoff ===
+            logger.info(f"🔍 DEBUG: Sanitized Params before kickoff: {json.dumps(sanitized_params, indent=2, default=str)}")
+            observability.add_entry(f"Params for kickoff: {sanitized_params}", ObservabilityLevel.DEBUG)
+            # =====================================================
+            
+            # Add debugging for task descriptions to identify template issues
+            logger.info(f"🔍 DEBUG: Examining {len(crewai_tasks)} CrewAI tasks for template issues:")
+            for i, crewai_task in enumerate(crewai_tasks):
+                logger.info(f"🔍 Task {i+1} description: {crewai_task.description[:100]}...")
+                
+                # Check for and fix positional placeholders (like {} or {0})
+                import re
+                
+                # Store original description for logging
+                original_description = crewai_task.description
+                
+                # Fix positional placeholders - replace {} with {placeholder} and {0}, {1}, etc. with {placeholder0}, {placeholder1}, etc.
+                positional_pattern = r'(?<!\{)\{\s*\}(?!\})'  # Matches {} but not {{}} (escaped braces)
+                if re.search(positional_pattern, crewai_task.description):
+                    logger.warning(f"⚠️ Task {i+1} contains unnamed positional placeholder {{}}")
+                    crewai_task.description = re.sub(positional_pattern, '{placeholder}', crewai_task.description)
+                    # Add placeholder to sanitized_params
+                    sanitized_params['placeholder'] = ""
+                    logger.info(f"✅ Fixed unnamed positional placeholder in task {i+1}")
+                
+                # Fix indexed positional placeholders like {0}, {1}, etc.
+                indexed_pattern = r'(?<!\{)\{\s*(\d+)\s*\}(?!\})'  # Matches {0}, {1}, etc. but not {{}}, {{0}}, etc.
+                for match in re.finditer(indexed_pattern, original_description):
+                    index = match.group(1)
+                    logger.warning(f"⚠️ Task {i+1} contains indexed positional placeholder {{{index}}}")
+                    placeholder_name = f"placeholder{index}"
+                    crewai_task.description = re.sub(r'(?<!\{)\{\s*' + index + r'\s*\}(?!\})', 
+                                                     '{' + placeholder_name + '}', 
+                                                     crewai_task.description)
+                    # Add placeholder to sanitized_params
+                    sanitized_params[placeholder_name] = ""
+                    logger.info(f"✅ Fixed indexed positional placeholder {{{index}}} in task {i+1}")
+                
+                # Log if description was changed
+                if original_description != crewai_task.description:
+                    logger.info(f"🛠️ Task description was modified to fix format placeholders")
+                
+                # Check for and fix quoted search_query template variables
+                if "'{search_query}'" in crewai_task.description or '"{search_query}"' in crewai_task.description:
+                    logger.warning(f"⚠️ Task {i+1} contains quoted search_query template variables!")
+                    # Try to fix the description directly
+                    fixed_description = crewai_task.description
+                    fixed_description = fixed_description.replace("'{search_query}'", "{search_query}")
+                    fixed_description = fixed_description.replace('"{search_query}"', "{search_query}")
+                    fixed_description = fixed_description.replace("''search_query''", "{search_query}")
+                    fixed_description = fixed_description.replace('""search_query""', "{search_query}")
+                    if fixed_description != crewai_task.description:
+                        logger.info(f"✅ Fixed quoted template variables in task {i+1}")
+                        crewai_task.description = fixed_description
+                
+                observability.add_entry(f"Examined task {i+1} description for template issues", ObservabilityLevel.DEBUG)
+
+            # Execute the crew
+            result_text = crew.kickoff(inputs=sanitized_params)
+            
+            # Restore original human input tool if needed
+            if has_human_input:
+                human_input_tool._run = original_run
+            
+            logger.info("CrewAI execution completed successfully")
+            observability.add_entry("CrewAI execution completed successfully", ObservabilityLevel.INFO)
+            
+            # Prepare the response
+            result["status"] = "success"
+            result["result"] = result_text
+            
+            # Add execution statistics
+            observability.add_execution_stats({
+                "tool_count": len(crewai_tools),
+                "agent_count": len(agents),
+                "task_count": len(crewai_tasks),
+                "process": process.name
+            })
 
         except Exception as e:
-            error_msg = f"Error in CrewAI task execution: {str(e)}"
+            error_msg = f"Error running CrewAI task: {str(e)}"
             logger.error(error_msg)
             logger.exception(e)
-            return {
-                "status": "failed",
-                "error": error_msg,
-                "response": error_msg
-            }
+            observability.add_entry(error_msg, ObservabilityLevel.ERROR)
+            result["status"] = "error"
+            result["error"] = error_msg
+            
+            # Restore original human input tool if needed - safely check again
+            if hasattr(task, 'human_input') and task.human_input:
+                human_input_tool._run = original_run
+
+        finally:
+            # Finalize observability
+            observability.add_state_update("running", result["status"])
+            observability.stop_capture()
+        
+        return result
 
     def _sanitize_crewai_input(self, input_params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -918,7 +1161,28 @@ class TaskRunner:
         for key, value in input_params.items():
             # Handle messages specially
             if key == 'messages':
-                sanitized[key] = self._validate_messages(value, "crewai input")
+                # First convert dict messages to Message objects
+                try:
+                    from ..models.message import Message
+                    converted_messages = []
+                    
+                    for msg in value:
+                        if isinstance(msg, dict):
+                            # Convert dict to Message object
+                            converted_messages.append(Message(**msg))
+                        elif hasattr(msg, 'role') and hasattr(msg, 'content'):
+                            # Already a Message-like object
+                            converted_messages.append(msg)
+                        else:
+                            # Log but skip invalid messages
+                            logger.warning(f"Skipping invalid message in CrewAI input: {type(msg)}")
+                    
+                    # Now validate the converted messages
+                    sanitized[key] = self._validate_messages(converted_messages, "crewai input")
+                except Exception as e:
+                    logger.error(f"Error converting messages for CrewAI: {str(e)}")
+                    # Fall back to string representation of messages
+                    sanitized[key] = str(value)
             else:
                 # Sanitize other values
                 sanitized[key] = self._sanitize_for_crewai(value)
@@ -938,8 +1202,8 @@ class TaskRunner:
             if not query:
                 return []
 
-            # Get contexts using context provider
-            contexts = self.context_provider.get_contexts(query)
+            # Get contexts using context provider, passing the task_id
+            contexts = self.context_provider.get_contexts(query, task_id=task.id)
 
             # Add contexts to task
             for context in contexts:

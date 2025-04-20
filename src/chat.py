@@ -387,7 +387,6 @@ def render_state_management():
                             result = load_state(state_to_load)
                             st.session_state.state_loaded = True
                             print(f"  Auto-load result: {result}")
-                            st.rerun()
                         except Exception as e:
                             print(f"❌ Error auto-loading state: {str(e)}")
                             st.session_state.state_error_message = f"Error loading state: {str(e)}"
@@ -1743,503 +1742,105 @@ def render_chat_management_sidebar():
                         print(f"❌ Error reading task {selected_task_id}: {e}")
 
 async def render_main_chat():
-    """Render the main chat interface with context information."""
-    from src.server.models.task import Task  # Add this import at the top
+    """Render the main chat interface."""
+    # Get the current tasksmanager and task
+    tasksmanager_id = st.session_state.current_tasksmanager_id
+    task_id = st.session_state.current_task_id
+    session_id = st.session_state.current_session_id
     
-    print("\n🔄 Starting render_main_chat")
-    persistence_model = st.session_state.persistence_model
-    
-    tasksmanagers = get_available_tasksmanagers()
-    
-    if st.session_state.current_tasksmanager_id is None:
-        st.info("Please create a new chat or select an existing one to begin.")
+    if not tasksmanager_id or not task_id:
+        st.info("Please select a task from the sidebar to start chatting.")
         return
 
-    current_tm = next((tm for tm in tasksmanagers 
-                      if tm.id == st.session_state.current_tasksmanager_id), None)
+    # If we have a framework-specific rendering, use that
+    task = st.session_state.persistence_model.tasks.read(task_id)
     
-    # Initialize chat view mode if not set
-    if 'chat_view_mode' not in st.session_state:
-        st.session_state.chat_view_mode = 'chat'
+    # Initialize message history if empty
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
     
-    # Add view mode toggle
-    col1, col2, col3, spacer = st.columns([0.1, 0.1, 0.1, 0.7])
-    with col1:
-        if st.button("💬", help="Switch to chat view", key="switch_to_chat"):
-            # Save current messages if they exist before switching views
-            if st.session_state.messages and st.session_state.current_task_id and st.session_state.current_session_id:
-                save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+    # Chat title
+    st.markdown(f"## {task.name}")
+    st.markdown(f"*{task.description}*")
+    
+    # Display task system message if available
+    system_messages = get_task_system_messages(task_id)
+    if system_messages and not st.session_state.messages:
+        with st.expander("Task System Prompt", expanded=False):
+            for msg in system_messages:
+                st.markdown(f"**{msg['role'].capitalize()}**")
+                st.markdown(msg['content'])
+    
+    # Check for or create a session for this task
+    if not session_id:
+        session_id = create_new_session(task_id)
+        st.session_state.current_session_id = session_id
+        print(f"Created new session: {session_id}")
+    
+    # Load chat messages from session if available
+    session_messages = get_session_messages(task_id, session_id)
+    if session_messages and not st.session_state.messages:
+        st.session_state.messages = session_messages
+        print(f"Loaded {len(session_messages)} messages from session")
+    
+    # Display chat messages
+    for i, message in enumerate(st.session_state.messages):
+        role = message.get("role", "")
+        content = message.get("content", "")
+        
+        with st.chat_message(role):
+            st.markdown(content)
+    
+    # Human input component for CrewAI tasks
+    from src.server.views.components.human_input_component import render_human_input_component
+    if task.framework == "crewai":
+        # If CrewAI is waiting for human input, show the component
+        from src.server.tools.human_tools import human_input_tool # Import the instance
+        if human_input_tool.is_waiting_for_input: # Check the property on the instance
+            with st.container():
+                st.divider()
+                st.subheader("Human Input Requested")
+                render_human_input_component(session_id=session_id)
+                st.divider()
+    
+    # Input prompt
+    if prompt := st.chat_input("Send a message"):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Display the user message
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Get response from the AI
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
             
-            st.session_state.chat_view_mode = 'chat'
-            st.session_state.show_observability = False
-            st.rerun()
-    with col2:
-        if st.button("📊", help="Switch to observability view", key="switch_to_observability"):
-            # Save current messages if they exist before switching views
-            if st.session_state.messages and st.session_state.current_task_id and st.session_state.current_session_id:
-                save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+        with st.spinner("Thinking..."):
+            try:
+                # Get response from task
+                full_response = await process_message(task_id, prompt)
                 
-            st.session_state.chat_view_mode = 'observability'
-            st.session_state.show_observability = True
-            st.rerun()
-    with col3:
-        if st.button("📁", help="View session info", key="switch_to_session_info"):
-            # Save current messages if they exist before switching views
-            if st.session_state.messages and st.session_state.current_task_id and st.session_state.current_session_id:
-                save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
+                # Update placeholder with full response
+                message_placeholder.markdown(full_response)
                 
-            st.session_state.chat_view_mode = 'session_info'
-            st.rerun()
-    
-    if current_tm:
-        st.title(current_tm.name)
-    
-    # Get current task
-    print(f"\n📋 Current task_id: {st.session_state.current_task_id}")
-    current_task: Optional[Task] = None
-    if st.session_state.current_task_id:
-        task_data = persistence_model.tasks.read(st.session_state.current_task_id)
-        if isinstance(task_data, dict):
-            current_task = Task(**task_data)
-        else:
-            current_task = task_data
-            
-    # Load chat messages for current session (must happen before any view is rendered)
-    if st.session_state.current_task_id and st.session_state.current_session_id:
-        print(f"\n💬 Loading messages for session: {st.session_state.current_session_id}")
-        if not st.session_state.messages:  # Only load if messages are empty
-            st.session_state.messages = load_chat_messages(st.session_state.current_task_id)
-            
-    # Show task sequence info if applicable
-    if current_task and st.session_state.get('is_in_sequence', False) and st.session_state.get('current_sequence_id'):
-        try:
-            # Get sequence info
-            sequence = current_tm.task_sequences.get(st.session_state.current_sequence_id)
-            
-            if sequence:
-                # Create a container for sequence info
-                with st.container():
-                    col1, col2 = st.columns([3, 1])
-                    
-                    with col1:
-                        st.info(f"This task is part of sequence: **{sequence.name}**")
-                        
-                        # Get task names for the sequence
-                        task_names = []
-                        for tid in sequence.task_ids:
-                            task = persistence_model.tasks.read(tid)
-                            if task:
-                                if tid == current_task.id:
-                                    task_names.append(f"**[{task.name}]**")  # Highlight current task
-                                else:
-                                    task_names.append(task.name)
-                                    
-                        # Show task flow
-                        st.caption("Task flow: " + " → ".join(task_names))
-                    
-                    with col2:
-                        # Add button to view all observability data
-                        if st.button("📊 View Task Data", key="view_task_data"):
-                            # Save current messages if they exist before switching views
-                            if st.session_state.messages and st.session_state.current_task_id and st.session_state.current_session_id:
-                                save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
-                                
-                            st.session_state.show_observability = True
-                            st.session_state.chat_view_mode = 'observability'
-                            st.rerun()
-        except Exception as e:
-            st.error(f"Error displaying sequence info: {str(e)}")
-            print(f"❌ Error displaying sequence info: {str(e)}")
-            print(traceback.format_exc())
+                # Add assistant response to chat history
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                
+                # Save messages to session
+                save_session_messages(task_id, session_id, st.session_state.messages)
 
-    # (Chat messages have been loaded at the beginning of the function)
+            except Exception as e:
+                print(f"❌ Error processing message: {str(e)}")
+                message_placeholder.error(f"An error occurred: {str(e)}")
     
-    # Add CSS for proper markdown rendering (for any view)
-    st.markdown("""
-    <style>
-    .chat-message {
-        margin-bottom: 10px;
-    }
-    .chat-message p {
-        margin-bottom: 5px;
-        white-space: pre-wrap;
-    }
-    .chat-message ul, .chat-message ol {
-        margin-left: 20px;
-        margin-bottom: 10px;
-    }
-    .chat-message h1, .chat-message h2, .chat-message h3, .chat-message h4 {
-        margin-top: 10px;
-        margin-bottom: 10px;
-    }
-    .chat-message code {
-        white-space: pre-wrap;
-    }
-    .chat-message pre {
-        white-space: pre-wrap;
-        background-color: #f0f0f0;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 10px;
-    }
-    .stMarkdown {
-        overflow-wrap: break-word;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # OBSERVABILITY VIEW
-    if st.session_state.chat_view_mode == 'observability' and current_task:
-        try:
-            # Create expander for all tasks in sequence if this is part of a sequence
-            st.subheader("Task Execution Observability")
-            
-            # Add a brief explanation
-            st.info("""
-            This view shows detailed observability data for task execution. It tracks:
-            - Execution events and state transitions
-            - Standard output capture
-            - Task statistics and metrics
-            - Sequence execution flows and data handover
-            """)
-            
-            # For sequence tasks, show additional controls
-            if st.session_state.get('is_in_sequence', False) and st.session_state.get('current_sequence_id'):
-                sequence = current_tm.task_sequences.get(st.session_state.current_sequence_id)
-                task_runner = st.session_state.task_runner
-                
-                if sequence:
-                    st.write(f"**Sequence:** {sequence.name}")
-                    st.write(f"**Total Tasks:** {len(sequence.task_ids)}")
-                    
-                    # Create tabs for each task in sequence
-                    task_tabs = st.tabs([f"Task {i+1}: {persistence_model.tasks.read(tid).name}" 
-                                        for i, tid in enumerate(sequence.task_ids)])
-                    
-                    # Get observability data for each task
-                    for i, tid in enumerate(sequence.task_ids):
-                        with task_tabs[i]:
-                            task = persistence_model.tasks.read(tid)
-                            st.write(f"**Task:** {task.name}")
-                            
-                            # Get observability data
-                            observability = task_runner.get_task_observability(tid)
-                            if observability:
-                                observability_data = observability.get_all_entries()
-                                render_task_observability_panel(tid, observability_data)
-                            else:
-                                st.info("No observability data available for this task yet.")
-                    
-                    # Check for sequence observability if we have execution_id
-                    if hasattr(st.session_state, 'current_execution_id'):
-                        try:
-                            execution_id = st.session_state.current_execution_id
-                            # Check if sequence_controller has been initialized properly
-                            if not hasattr(task_runner.sequence_controller, 'sequence_observability_managers'):
-                                st.warning("Sequence observability system not available. Please run a sequence first.")
-                            else:
-                                sequence_observability = task_runner.get_sequence_observability(execution_id)
-                                
-                                if sequence_observability:
-                                    # Add a tab for sequence observability
-                                    st.subheader("Sequence Events Timeline")
-                                    
-                                    # Display sequence events in a pretty format
-                                    sequence_entries = sequence_observability.get('sequence_entries', [])
-                                    if sequence_entries:
-                                        # Create a dataframe for better display
-                                        import pandas as pd
-                                        events_data = []
-                                        
-                                        for entry in sequence_entries:
-                                            timestamp = entry['timestamp'].split('T')[1].split('.')[0]  # Extract time
-                                            event_type = entry.get('metadata', {}).get('event_type', 'unknown')
-                                            message = entry['message']
-                                            
-                                            events_data.append({
-                                                "Time": timestamp,
-                                                "Event Type": event_type,
-                                                "Message": message
-                                            })
-                                        
-                                        if events_data:
-                                            events_df = pd.DataFrame(events_data)
-                                            st.dataframe(events_df, use_container_width=True)
-                                else:
-                                    st.info(f"No sequence observability data available for execution ID: {execution_id}")
-                        except Exception as e:
-                            st.error(f"Error retrieving sequence observability data: {str(e)}")
-                            print(f"❌ Error with sequence observability: {str(e)}")
-                            if hasattr(st.session_state, 'task_runner') and hasattr(st.session_state.task_runner, 'sequence_controller'):
-                                print(f"Task runner has sequence controller: {st.session_state.task_runner.sequence_controller}")
-                                if hasattr(st.session_state.task_runner.sequence_controller, 'sequence_observability_managers'):
-                                    managers = st.session_state.task_runner.sequence_controller.sequence_observability_managers
-                                    print(f"Available execution IDs: {list(managers.keys())}")
-            else:
-                # Just show current task observability
-                task_runner = st.session_state.task_runner
-                observability = task_runner.get_task_observability(current_task.id)
-                if observability:
-                    observability_data = observability.get_all_entries()
-                    render_task_observability_panel(current_task.id, observability_data)
-                else:
-                    st.info("No observability data available for this task yet.")
-                    
-                    # Add a button to generate sample observability data
-                    if st.button("Generate Sample Observability Data", key="gen_sample_data"):
-                        # Create a sample observability manager
-                        from src.server.controllers.task_observability import TaskObservabilityManager, ObservabilityLevel
-                        
-                        # Store in task runner
-                        sample_observability = TaskObservabilityManager(current_task.id)
-                        sample_observability.start_capture()
-                        
-                        # Add sample entries
-                        sample_observability.add_entry("Starting task execution", ObservabilityLevel.INFO)
-                        sample_observability.add_entry("Loading model", ObservabilityLevel.INFO)
-                        sample_observability.add_entry("Model loaded successfully", ObservabilityLevel.INFO)
-                        sample_observability.add_entry("Processing input", ObservabilityLevel.INFO)
-                        sample_observability.add_entry("Warning: Input formatting may affect results", ObservabilityLevel.WARNING)
-                        sample_observability.add_state_update("initializing", "running")
-                        sample_observability.add_entry("Generating response", ObservabilityLevel.INFO)
-                        sample_observability.add_entry("Response generated", ObservabilityLevel.INFO)
-                        sample_observability.add_state_update("running", "completed")
-                        sample_observability.add_execution_stats({
-                            "execution_time_ms": 1250,
-                            "tokens_in": 150,
-                            "tokens_out": 320,
-                            "model": "gpt-4o",
-                            "status": "completed"
-                        })
-                        
-                        # Store in task runner
-                        st.session_state.task_runner._active_observability_managers[current_task.id] = sample_observability
-                        
-                        st.success("Sample observability data generated! Refresh to see it.")
-                        st.rerun()
-                
-            # Add a button to generate sample sequence observability data if needed
-            if (not hasattr(st.session_state, 'current_execution_id') or 
-                not hasattr(task_runner.sequence_controller, 'sequence_observability_managers') or
-                (hasattr(st.session_state, 'current_execution_id') and 
-                 st.session_state.current_execution_id not in task_runner.sequence_controller.sequence_observability_managers)):
-                
-                if st.button("Generate Sample Sequence Data", key="gen_sample_seq_data"):
-                    # Create a sample sequence observability manager
-                    from src.server.controllers.task_sequence_controller import SequenceObservabilityManager
-                    from src.server.controllers.task_observability import TaskObservabilityManager, ObservabilityLevel
-                    
-                    # Generate a sample execution ID
-                    import uuid
-                    execution_id = f"sample_seq_{uuid.uuid4().hex[:8]}"
-                    st.session_state.current_execution_id = execution_id
-                    
-                    # Get task IDs from sequence if we have one, otherwise create dummy IDs
-                    task_ids = []
-                    if st.session_state.get('is_in_sequence', False) and st.session_state.get('current_sequence_id'):
-                        sequence = current_tm.task_sequences.get(st.session_state.current_sequence_id)
-                        if sequence:
-                            task_ids = sequence.task_ids
-                    else:
-                        # Create dummy task IDs for sample
-                        task_ids = [current_task.id, "sample_task_1", "sample_task_2"]
-                    
-                    # Initialize sequence observability manager
-                    sequence_observability = SequenceObservabilityManager(execution_id, task_ids)
-                    
-                    # Add sample sequence events
-                    sequence_observability.emit_sequence_event("sequence_start", f"Started sequence execution with {len(task_ids)} tasks")
-                    sequence_observability.emit_sequence_event("task_start", f"Starting first task: {task_ids[0]}")
-                    sequence_observability.emit_task_transition(None, task_ids[0], {"messages", "user_query", "tools"})
-                    sequence_observability.emit_sequence_event("task_complete", f"Completed task: {task_ids[0]}")
-                    
-                    if len(task_ids) > 1:
-                        sequence_observability.emit_sequence_event("task_start", f"Starting task: {task_ids[1]}")
-                        sequence_observability.emit_task_transition(task_ids[0], task_ids[1], {"messages", "previous_result", "context"})
-                        sequence_observability.emit_sequence_event("task_complete", f"Completed task: {task_ids[1]}")
-                    
-                    if len(task_ids) > 2:
-                        sequence_observability.emit_sequence_event("task_start", f"Starting task: {task_ids[2]}")
-                        sequence_observability.emit_task_transition(task_ids[1], task_ids[2], {"messages", "previous_results", "context", "analysis"})
-                        sequence_observability.emit_sequence_event("task_complete", f"Completed task: {task_ids[2]}")
-                    
-                    sequence_observability.emit_sequence_event("sequence_complete", "Sequence execution completed successfully")
-                    
-                    # Register with task runner
-                    task_runner.sequence_controller.sequence_observability_managers[execution_id] = sequence_observability
-                    
-                    st.success("Sample sequence observability data generated! Refresh to see it.")
-                    st.rerun()
-                
-        except Exception as e:
-            st.error(f"Error displaying observability data: {str(e)}")
-            print(f"❌ Error displaying observability: {str(e)}")
-            print(traceback.format_exc())
-    
-    # SESSION INFO VIEW
-    elif st.session_state.chat_view_mode == 'session_info' and current_task:
-        try:
-            st.subheader("Session Information")
-            
-            # Show task information
-            st.write("### Task Details")
-            task_info = {
-                "ID": current_task.id,
-                "Name": current_task.name,
-                "Description": current_task.description if hasattr(current_task, "description") else "No description",
-                "Status": current_task.status if hasattr(current_task, "status") else "Unknown",
-                "TaskManager ID": current_task.tasksmanager_id,
-                "Session ID": st.session_state.current_session_id,
-            }
-            
-            # Display as a table
-            import pandas as pd
-            task_df = pd.DataFrame([task_info]).T.reset_index()
-            task_df.columns = ["Property", "Value"]
-            st.table(task_df)
-            
-            # Show model information
-            st.write("### Model Configuration")
-            
-            # Get model from tasksmanager
-            model_info = {}
-            if hasattr(current_tm, "model"):
-                model_info["Model"] = current_tm.model
-            if hasattr(current_tm, "temperature"):
-                model_info["Temperature"] = current_tm.temperature
-            if hasattr(current_tm, "max_tokens"):
-                model_info["Max Tokens"] = current_tm.max_tokens
-            
-            if model_info:
-                model_df = pd.DataFrame([model_info]).T.reset_index()
-                model_df.columns = ["Property", "Value"]
-                st.table(model_df)
-            else:
-                st.info("No model configuration available")
-            
-            # If part of a sequence, show sequence info
-            if st.session_state.get('is_in_sequence', False) and st.session_state.get('current_sequence_id'):
-                sequence = current_tm.task_sequences.get(st.session_state.current_sequence_id)
-                if sequence:
-                    st.write("### Sequence Information")
-                    st.write(f"**Sequence Name:** {sequence.name}")
-                    st.write(f"**Sequence ID:** {st.session_state.current_sequence_id}")
-                    
-                    # Show tasks in sequence
-                    st.write("**Tasks in Sequence:**")
-                    sequence_tasks = []
-                    for i, tid in enumerate(sequence.task_ids):
-                        task = persistence_model.tasks.read(tid)
-                        if task:
-                            sequence_tasks.append({
-                                "Position": i+1,
-                                "Task ID": tid,
-                                "Task Name": task.name,
-                                "Current Task": "✓" if tid == current_task.id else ""
-                            })
-                    
-                    if sequence_tasks:
-                        sequence_df = pd.DataFrame(sequence_tasks)
-                        st.table(sequence_df)
-            
-            # Show message stats
-            st.write("### Message Statistics")
-            messages = st.session_state.messages
-            if messages:
-                user_msgs = len([m for m in messages if 
-                                (isinstance(m, dict) and m.get('role') == 'user') or 
-                                (hasattr(m, 'role') and m.role == 'user')])
-                assistant_msgs = len([m for m in messages if
-                                     (isinstance(m, dict) and m.get('role') == 'assistant') or
-                                     (hasattr(m, 'role') and m.role == 'assistant')])
-                system_msgs = len([m for m in messages if
-                                  (isinstance(m, dict) and m.get('role') == 'system') or
-                                  (hasattr(m, 'role') and m.role == 'system')])
-                
-                msg_stats = {
-                    "User Messages": user_msgs,
-                    "Assistant Messages": assistant_msgs,
-                    "System Messages": system_msgs,
-                    "Total Messages": len(messages)
-                }
-                
-                msg_df = pd.DataFrame([msg_stats]).T.reset_index()
-                msg_df.columns = ["Metric", "Count"]
-                st.table(msg_df)
-            else:
-                st.info("No messages in current session")
-            
-        except Exception as e:
-            st.error(f"Error displaying session info: {str(e)}")
-            print(f"❌ Error displaying session info: {str(e)}")
-            print(traceback.format_exc())
-    
-    # CHAT VIEW (default)
-    else:  # chat view mode
-        # Display chat messages
-        if st.session_state.messages is not None:
-            for msg in st.session_state.messages:
-                if msg is None:
-                    continue
-                    
-                # Ensure msg is a Message object
-                if isinstance(msg, dict):
-                    try:
-                        msg = Message(**msg)
-                    except Exception as e:
-                        st.error(f"Error parsing message: {str(e)}")
-                        continue
-                        
-                with st.chat_message(msg.role):
-                    # Use write for better markdown rendering
-                    st.write(msg.content)
-
-        # Chat input with unique key
-        if prompt := st.chat_input("Type your message...", key="main_chat_input"):
-            # Add user message to display
-            with st.chat_message("user"):
-                st.write(prompt)
-
-            # Create and add Message object to state
-            user_message = Message(
-                role="user",
-                content=prompt,
-                file_ids=None,
-                created_at=None,
-                updated_at=None
-            )
-            
-            # Ensure messages list exists
-            if st.session_state.messages is None:
-                st.session_state.messages = []
-            
-            # Add message to session state
-            st.session_state.messages.append(user_message)
-
-            # Get AI response
-            with st.chat_message("assistant"):
-                message_placeholder = st.empty()
-                
-                try:
-                    # Process the message with the new function signature
-                    response_text = await process_message(st.session_state.current_task_id, prompt)
-                    
-                    # Display the response
-                    message_placeholder.write(response_text)
-                    
-                    # Add assistant response to messages - already done in process_message
-                    # Save to local session file
-                    if 'browser_session_id' in st.session_state:
-                        save_local_session(st.session_state.browser_session_id)
-
-                    # Save full state
-                    if st.session_state.state_location:
-                        save_current_state(st.session_state.state_location.state_name)
-
-                except Exception as e:
-                    st.error(f"Error processing request: {str(e)}")
-                    print(f"Error in chat processing: {str(e)}")
-                    print(traceback.format_exc())
+    # Add ability to clear chat history
+    if st.session_state.messages:
+        if st.button("Clear chat history"):
+            st.session_state.messages = []
+            # Remove all messages for this session
+            save_session_messages(task_id, session_id, [])
+            st.experimental_rerun()
 
 async def render_main_content():
     """Render the main content area based on selected view."""
