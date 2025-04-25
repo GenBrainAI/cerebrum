@@ -636,7 +636,7 @@ def save_session_messages(task_id: str, session_id: str, messages: List[Dict]):
         if not hasattr(task, 'chat_sessions') or task.chat_sessions is None:
             task.chat_sessions = {}
         task.chat_sessions[session_id] = [
-            msg.dict() if hasattr(msg, 'dict') else msg for msg in messages
+            msg.model_dump() if hasattr(msg, 'model_dump') else (msg.dict() if hasattr(msg, 'dict') else msg) for msg in messages
         ]
         persistence_model.tasks.update(task_id, task)
 
@@ -646,7 +646,7 @@ def get_session_messages(task_id: str, session_id: str) -> List[Dict]:
     persistence_model = st.session_state.persistence_model
     task = persistence_model.tasks.read(task_id)
     if task:
-        task_dict = task.dict() if hasattr(task, 'dict') else task
+        task_dict = task.model_dump() if hasattr(task, 'model_dump') else (task.dict() if hasattr(task, 'dict') else task)
         if 'chat_sessions' in task_dict:
             return task_dict['chat_sessions'].get(session_id, [])
     return []
@@ -1848,7 +1848,7 @@ async def render_main_content():
         # Save current state before switching views
         if st.session_state.messages and st.session_state.current_task_id:
             save_chat_messages(st.session_state.current_task_id, st.session_state.messages)
-            if st.session_state.state_location:
+            if hasattr(st.session_state, 'state_location') and st.session_state.state_location is not None:
                 save_current_state(st.session_state.state_location.state_name)
         
         # Check if we need to render the human input view
@@ -1984,7 +1984,7 @@ def save_session_state():
     }
     
     # Convert to JSON-serializable format
-    serialized_data = json.dumps(session_data, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
+    serialized_data = json.dumps(session_data, default=lambda x: x.model_dump() if hasattr(x, 'model_dump') else (x.dict() if hasattr(x, 'dict') else str(x)))
 
     # Save to browser storage using Streamlit's experimental_set_query_params
     st.experimental_set_query_params(
@@ -2045,7 +2045,7 @@ def save_local_session(session_id: str = None):
     # Use view-specific session file
     session_file = session_dir / get_session_filename(st.session_state.current_view)
     with open(session_file, 'w') as f:
-        json.dump(session_data, f, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
+        json.dump(session_data, f, default=lambda x: x.model_dump() if hasattr(x, 'model_dump') else (x.dict() if hasattr(x, 'dict') else str(x)))
 
 def load_local_session(session_id: str = None):
     """Load session data from local storage."""
@@ -2161,7 +2161,7 @@ def save_chat_messages(task_id: str, messages: List[Message]):
         if not hasattr(task, 'chat_sessions') or task.chat_sessions is None:
             task.chat_sessions = {}
         task.chat_sessions[session_id] = [
-            msg.dict() if hasattr(msg, 'dict') else msg for msg in messages
+            msg.model_dump() if hasattr(msg, 'model_dump') else (msg.dict() if hasattr(msg, 'dict') else msg) for msg in messages
         ]
         persistence_model.tasks.update(task_id, task)
         
@@ -2181,7 +2181,7 @@ def save_chat_messages(task_id: str, messages: List[Message]):
             session_file = session_dir / f"{st.session_state.browser_session_id}.json"
             
             with open(session_file, 'w') as f:
-                json.dump(session_data, f, default=lambda x: x.dict() if hasattr(x, 'dict') else str(x))
+                json.dump(session_data, f, default=lambda x: x.model_dump() if hasattr(x, 'model_dump') else (x.dict() if hasattr(x, 'dict') else str(x)))
 
 def load_chat_messages(task_id: str) -> List[Message]:
     """Load chat messages from task's current session."""

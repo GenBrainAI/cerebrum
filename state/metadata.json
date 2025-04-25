@@ -2,9 +2,5 @@
   "last_used_state": "weather",
   "last_tm_id": "7cdb9015-d721-4103-bac7-905126c7c89b",
   "last_task_id": "4346c1f9-ce40-44bc-8028-0c1ac556a30f",
-  "last_updated": "2025-04-20T12:32:42.103139",
-  "last_task_manager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
-  "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
-  "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
-  "state_file": "state/concert_travel_planner_state.json"
+  "last_updated": "2025-04-26T01:09:40.697823"
 }
