@@ -2487,15 +2487,16 @@ def main():
     """Main application entry point."""
     print("\n🔄 Starting main application")
     
-    # Configure Streamlit page
-    st.set_page_config(
-        page_title="Cerebrum Chat",
-        layout="wide",
-        menu_items={
-            'Get Help': 'https://github.com/GenBrainAI/cerebrum',
-            'About': 'Cerebrum AI Chat Interface'
-        }
-    )
+    # Configure Streamlit page only when run directly, not when imported
+    if __name__ == "__main__":
+        st.set_page_config(
+            page_title="Cerebrum Chat",
+            layout="wide",
+            menu_items={
+                'Get Help': 'https://github.com/GenBrainAI/cerebrum',
+                'About': 'Cerebrum AI Chat Interface'
+            }
+        )
     
     # Track if we've already run the main function in this session
     if 'main_executed' in st.session_state:
