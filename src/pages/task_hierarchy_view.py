@@ -694,6 +694,11 @@ async def render_task_hierarchy_view():
                 demo_launcher = TaskTreeDemoLauncher(st.session_state.task_controller)
                 demo_launcher.render()
             
+            with st.expander("Task Tree Notebook Demonstrations", expanded=False):
+                from src.server.views.components.notebook_task_tree_integration import NotebookTaskTreeIntegration
+                notebook_integration = NotebookTaskTreeIntegration(st.session_state.task_controller)
+                notebook_integration.render()
+            
             await render_tree_view(st.session_state.task_controller)
         
         # Handle keyboard shortcuts
