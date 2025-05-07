@@ -75,7 +75,7 @@ class TaskHierarchyController:
 
     def handle_node_click(self, node_id: UUID):
         """Handle tree node selection."""
-        self.view_state.selected_node = node_id
+        self.view_state.selected_node = str(node_id) if node_id else None
         # TODO: Implement task selection logic
 
     async def get_task_tree(self):
@@ -470,8 +470,8 @@ class TaskHierarchyController:
             # Initialize task runner if needed
             if not self.task_runner:
                 self.task_runner = TaskRunner(self.global_persistence)
-                # Set this controller as the task runner's controller
-                self.task_runner._controller = self
+                # Initialize the task runner
+                # self.task_runner._controller = self
                 await self.task_runner.initialize()
                 
             # Run the task sequence
@@ -505,8 +505,8 @@ class TaskHierarchyController:
             # Initialize task runner if needed
             if not self.task_runner:
                 self.task_runner = TaskRunner(self.global_persistence)
-                # Set this controller as the task runner's controller
-                self.task_runner._controller = self
+                # Initialize the task runner
+                # self.task_runner._controller = self
                 await self.task_runner.initialize()
             
             # Log message context being passed
@@ -1428,8 +1428,12 @@ class TaskHierarchyController:
             if not state_path.exists():
                 return f"State file not found: {state_file}"
             
-            state_loader = StateLoader()
-            loaded_state = state_loader.load_state_from_file(str(state_path))
+            try:
+                import json
+                with open(state_path, 'r') as f:
+                    loaded_state = json.load(f)
+            except Exception as e:
+                return f"Failed to load state from {state_file}: {str(e)}"
             
             if not loaded_state:
                 return f"Failed to load state from {state_file}"
@@ -1437,8 +1441,21 @@ class TaskHierarchyController:
             # Reset the global persistence model
             self.global_persistence.reset()
             
-            # Load the state into global persistence
-            state_loader.restore_state_to_model(self.global_persistence, loaded_state)
+            # Load the state into global persistence directly
+            try:
+                if "tasksmanagers" in loaded_state:
+                    for tm_data in loaded_state["tasksmanagers"]:
+                        from ...models.tasks_manager import TasksManager
+                        tm = TasksManager.model_validate(tm_data)
+                        self.global_persistence.tasksmanagers.create(tm)
+                
+                if "tasks" in loaded_state:
+                    for task_data in loaded_state["tasks"]:
+                        from ...models.task import Task
+                        task = Task.model_validate(task_data)
+                        self.global_persistence.tasks.create(task)
+            except Exception as e:
+                return f"Failed to restore state to model: {str(e)}"
             
             # Update view state with context from loaded state
             if "context_state" in loaded_state:

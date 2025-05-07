@@ -32,7 +32,7 @@ class ViewState(BaseModel):
         "ollama/llama3"
     ]
 
-    def set_active_task(self, task_id: str, task_name: str, manager_id: str, manager_name: str):
+    def set_active_task(self, task_id: str, task_name: str, manager_id: Optional[str], manager_name: str):
         """Set active task context."""
         self.task_status = {
             "loaded": True,

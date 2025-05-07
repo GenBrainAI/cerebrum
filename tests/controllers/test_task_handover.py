@@ -91,13 +91,14 @@ async def test_task_handover_basic():
             persistence_model.tasks.update(task_id, task)
             return {"response": "Task 3 output"}
     
-    task_runner.run_task = mock_run_task
+    from unittest.mock import patch
     
-    # Run the task sequence
-    results = await task_runner.run_task_sequence(
-        tasksmanager_id="test_tm",
-        task_ids=["task1", "task2", "task3"]
-    )
+    with patch.object(task_runner, 'run_task', side_effect=mock_run_task):
+        # Run the task sequence
+        results = await task_runner.run_task_sequence(
+            tasksmanager_id="test_tm",
+            task_ids=["task1", "task2", "task3"]
+        )
     
     # Verify all tasks ran successfully
     if isinstance(results, dict) and "results" in results:
@@ -227,13 +228,14 @@ async def test_task_handover_error_handling():
             persistence_model.tasks.update(task_id, task)
             return {"response": "Task 3 output"}
     
-    task_runner.run_task = mock_run_task
+    from unittest.mock import patch
     
-    # Run the task sequence
-    results = await task_runner.run_task_sequence(
-        tasksmanager_id="test_tm",
-        task_ids=["task1", "task2", "task3"]
-    )
+    with patch.object(task_runner, 'run_task', side_effect=mock_run_task):
+        # Run the task sequence
+        results = await task_runner.run_task_sequence(
+            tasksmanager_id="test_tm",
+            task_ids=["task1", "task2", "task3"]
+        )
     
     # Verify task states directly from the model
     task1_updated = persistence_model.tasks.read("task1")
@@ -384,13 +386,14 @@ async def test_task_handover_complex_dependencies():
             persistence_model.tasks.update(task_id, task)
             return {"response": result}
     
-    task_runner.run_task = mock_run_task
+    from unittest.mock import patch
     
-    # Run the task sequence
-    results = await task_runner.run_task_sequence(
-        tasksmanager_id="test_tm",
-        task_ids=["task1", "task2", "task3", "task4"]
-    )
+    with patch.object(task_runner, 'run_task', side_effect=mock_run_task):
+        # Run the task sequence
+        results = await task_runner.run_task_sequence(
+            tasksmanager_id="test_tm",
+            task_ids=["task1", "task2", "task3", "task4"]
+        )
     
     # Verify all tasks ran successfully
     if isinstance(results, dict) and "results" in results:
@@ -451,4 +454,4 @@ def mock_persistence():
             self.crewai_config = MagicMock()
             self.curried_proxies = MagicMock()
     
-    return MockPersistence() 
+    return MockPersistence()        
