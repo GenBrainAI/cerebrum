@@ -225,6 +225,44 @@ class TaskHierarchySidebar:
             # Quick action buttons
             st.subheader("Quick Actions")
             
+            st.write("Demo States")
+            
+            if st.button("🎵 Load Concert Trip Planner", help="Load the Concert Trip Planner demo", key="sidebar_concert_btn"):
+                try:
+                    with st.spinner("Loading Concert Trip Planner demo..."):
+                        from src.chat import get_state_dir, load_state
+                        from pathlib import Path
+                        
+                        concert_state_path = str(get_state_dir() / "concert_travel_planner.json")
+                        if Path(concert_state_path).exists():
+                            result = load_state(concert_state_path)
+                            st.success("Concert Trip Planner demo loaded successfully!")
+                            st.session_state.active_tab = 0  # Switch to chat view
+                            st.rerun()
+                        else:
+                            st.error("Concert Trip Planner demo state not found")
+                except Exception as e:
+                    st.error(f"Error loading Concert Trip Planner demo: {str(e)}")
+            
+            if st.button("🌳 Load Task Tree Demo", help="Load the Task Tree demo", key="sidebar_task_tree_btn"):
+                try:
+                    with st.spinner("Loading Task Tree demo..."):
+                        from src.chat import get_state_dir, load_state
+                        from pathlib import Path
+                        
+                        task_tree_state_path = str(get_state_dir() / "task_tree_demo.json")
+                        if Path(task_tree_state_path).exists():
+                            result = load_state(task_tree_state_path)
+                            st.success("Task Tree demo loaded successfully!")
+                            st.session_state.active_tab = 3  # Switch to tree view
+                            st.rerun()
+                        else:
+                            st.error("Task Tree demo state not found")
+                except Exception as e:
+                    st.error(f"Error loading Task Tree demo: {str(e)}")
+            
+            st.markdown("---")
+            
             # Create new task manager button
             if st.button("➕ New Task Manager", help="Create a new task manager"):
                 # Ensure we're using global persistence for task management
