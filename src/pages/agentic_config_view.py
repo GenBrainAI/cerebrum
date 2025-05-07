@@ -449,12 +449,6 @@ async def render_agentic_config_view():
 
 def main():
     """Main function to run the view."""
-    st.set_page_config(
-        page_title="Agentic Framework",
-        page_icon="🧠",
-        layout="wide"
-    )
-    
     # Initialize active_tab if not in session state
     if 'active_tab' not in st.session_state:
         st.session_state.active_tab = 0  # Default to chat

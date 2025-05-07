@@ -617,7 +617,6 @@ async def render_tools_catalog_view():
 
 def main():
     """Main entry point for tools catalog view."""
-    st.set_page_config(page_title="Tools Catalog", layout="wide")
     asyncio.run(render_tools_catalog_view())
 
 if __name__ == "__main__":

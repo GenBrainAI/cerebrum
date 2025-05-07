@@ -20,15 +20,6 @@ def initialize_context_session():
 
 def render_context_page():
     """Render the context management page."""
-    st.set_page_config(
-        page_title="Context Management - Cerebrum",
-        layout="wide",
-        menu_items={
-            'Get Help': 'https://github.com/GenBrainAI/cerebrum',
-            'About': 'Cerebrum Context Management System'
-        }
-    )
-
     initialize_context_session()
     
     try:
