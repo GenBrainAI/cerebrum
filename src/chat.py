@@ -453,6 +453,38 @@ def render_state_management():
         
         st.write("---")
         
+        st.write("Demo States")
+        
+        if st.button("Load Concert Trip Planner", key="load_concert_trip_btn", use_container_width=True):
+            try:
+                with st.spinner("Loading Concert Trip Planner demo..."):
+                    concert_state_path = str(get_state_dir() / "concert_travel_planner.json")
+                    if Path(concert_state_path).exists():
+                        result = load_state(concert_state_path)
+                        st.session_state.state_loaded = True
+                        st.session_state.state_success_message = "Concert Trip Planner demo loaded successfully!"
+                        st.rerun()
+                    else:
+                        st.session_state.state_error_message = "Concert Trip Planner demo state not found"
+            except Exception as e:
+                st.session_state.state_error_message = f"Error loading Concert Trip Planner demo: {str(e)}"
+        
+        if st.button("Load Task Tree Demo", key="load_task_tree_btn", use_container_width=True):
+            try:
+                with st.spinner("Loading Task Tree demo..."):
+                    task_tree_state_path = str(get_state_dir() / "task_tree_demo.json")
+                    if Path(task_tree_state_path).exists():
+                        result = load_state(task_tree_state_path)
+                        st.session_state.state_loaded = True
+                        st.session_state.state_success_message = "Task Tree demo loaded successfully!"
+                        st.rerun()
+                    else:
+                        st.session_state.state_error_message = "Task Tree demo state not found"
+            except Exception as e:
+                st.session_state.state_error_message = f"Error loading Task Tree demo: {str(e)}"
+        
+        st.write("---")
+        
         # New state creation
         st.write("Create New State")
         new_state_name = st.text_input("New State Name", key="new_state_name_input")
