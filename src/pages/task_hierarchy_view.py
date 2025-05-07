@@ -499,7 +499,12 @@ async def render_task_hierarchy_view():
             if not task_managers:
                 try:
                     from src.state_setup.tasks import setup_test_tasks
-                    setup_test_tasks(st.session_state.persistence_model)
+                    from src.server.persistence.in_memory_persistence import InMemoryPersistenceModel
+                    if isinstance(st.session_state.persistence_model, InMemoryPersistenceModel):
+                        setup_test_tasks(st.session_state.persistence_model)
+                    else:
+                        # Create a new InMemoryPersistenceModel if the type doesn't match
+                        setup_test_tasks()
                     st.info("Created demo task managers and tasks for testing")
                 except Exception as e:
                     st.warning(f"Failed to create test tasks: {str(e)}")
