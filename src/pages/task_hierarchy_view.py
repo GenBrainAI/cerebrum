@@ -759,13 +759,6 @@ async def render_task_hierarchy_view():
 
 def main():
     """Main entry point"""
-    st.set_page_config(
-        page_title="Task Hierarchy - Cerebrum",
-        page_icon="🧠",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
     # Create and run async loop
     async_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(async_loop)
