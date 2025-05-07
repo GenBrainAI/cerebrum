@@ -25,13 +25,6 @@ logger = logging.getLogger(__name__)
 def main():
     """Run the Cerebrum application."""
     try:
-        # Set page config
-        st.set_page_config(
-            page_title="Cerebrum",
-            page_icon="🧠",
-            layout="wide",
-            initial_sidebar_state="expanded",
-        )
         
         # Add CSS for styling
         st.markdown("""
@@ -79,4 +72,4 @@ def main():
         st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
-    main() 
+    main()  
