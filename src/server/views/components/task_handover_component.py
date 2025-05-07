@@ -103,9 +103,11 @@ class TaskHandoverComponent:
             )
         
         # Execute button
-        if st.button("Execute Task Sequence", disabled=not selected_task_ids or (selected_task_ids and not is_valid)):
+        is_disabled = bool(not selected_task_ids or (selected_task_ids and not is_valid))
+        if st.button("Execute Task Sequence", disabled=is_disabled):
             # Run the task sequence
-            self._run_task_sequence(selected_tm_id, selected_task_ids, input_data)
+            if selected_tm_id:  # Ensure tasksmanager_id is not None
+                self._run_task_sequence(selected_tm_id, selected_task_ids, input_data)
     
     def _validate_task_sequence(self, tasks: List[Task], selected_task_ids: List[str]) -> tuple:
         """Validate that the selected task sequence satisfies all dependencies."""
@@ -253,4 +255,4 @@ class TaskHandoverComponent:
             
             # Create tasks and wait for them
             tasks_future = asyncio.gather(execute_tasks(), update_progress())
-            loop.run_until_complete(tasks_future) 
+            loop.run_until_complete(tasks_future)  
