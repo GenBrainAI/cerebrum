@@ -334,6 +334,17 @@ class TaskRunner:
             logger.info(f"\n🚀 Running task {task_id} from manager {tasksmanager_id}")
 
             # Get task and manager
+            # First, we need to read the task to log its attributes.
+            # This is a bit of a chicken-and-egg problem, but necessary for the requested logging.
+            # We'll re-read it later if needed, or this read will suffice.
+            task_for_logging = self.persistence_model.tasks.read(task_id)
+            if task_for_logging:
+                logger.info(f"RUN_TASK_DEBUG: task_id='{task_id}', task_name='{task_for_logging.name}'")
+                logger.info(f"RUN_TASK_DEBUG: task_framework='{task_for_logging.framework if hasattr(task_for_logging, 'framework') else 'N/A'}'")
+                logger.info(f"RUN_TASK_DEBUG: task_crewai_config_id='{task_for_logging.crewai_config_id if hasattr(task_for_logging, 'crewai_config_id') else 'N/A'}'")
+            else:
+                logger.warning(f"RUN_TASK_DEBUG: Could not read task with id='{task_id}' for initial logging.")
+
             task = self.persistence_model.tasks.read(task_id)
             if not task:
                 raise ValueError(f"Task {task_id} not found")
@@ -834,8 +845,13 @@ class TaskRunner:
             return str(data)
         elif isinstance(data, (str, int, float, bool, type(None))):
             return data
+        # Check for Pydantic models specifically
+        elif hasattr(data, 'model_dump') and callable(getattr(data, 'model_dump')): # Pydantic v2+
+            return self._sanitize_crewai_input(data.model_dump())
+        elif hasattr(data, 'dict') and callable(getattr(data, 'dict')): # Pydantic v1
+            return self._sanitize_crewai_input(data.dict())
         else:
-            # Convert any other types to strings
+            # Convert any other unhandled types to strings
             return str(data)
 
     async def _run_crewai_task(

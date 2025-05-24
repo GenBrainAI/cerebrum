@@ -2,8 +2,8 @@
   "toolsets": {},
   "tools": {},
   "tasksmanagers": {
-    "16584b53-1e94-4990-b1d7-e555b58cb949": {
-      "id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+    "e345f55e-0d9d-422c-8f1e-1f9276f18012": {
+      "id": "e345f55e-0d9d-422c-8f1e-1f9276f18012",
       "name": "Concert Travel Planner",
       "model": null,
       "description": "Plan trips to concerts and music festivals",
@@ -21,10 +21,10 @@
     }
   },
   "tasks": {
-    "85e5cbc5-61f1-444c-98a3-e7fd04880075": {
-      "id": "85e5cbc5-61f1-444c-98a3-e7fd04880075",
+    "669aa911-b314-412f-a6e7-f13ad907bf89": {
+      "id": "669aa911-b314-412f-a6e7-f13ad907bf89",
       "name": "Plan Concert Trip",
-      "tasksmanager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+      "tasksmanager_id": "e345f55e-0d9d-422c-8f1e-1f9276f18012",
       "description": "Plan a complete trip to a concert, including travel, accommodation, and activities",
       "status": "pending",
       "error": null,
@@ -41,15 +41,15 @@
       "chat_sessions": {},
       "toolsets": [],
       "curried_tools": [],
-      "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
-      "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+      "curried_proxy_id": "097888ea-8882-48c1-8c46-d1475193846b",
+      "crewai_config_id": "28f7daf4-789b-4d29-b0c8-b711af973982",
       "autogen_config_id": null,
       "tree_flow_id": null,
       "agent_role": null,
       "framework": "crewai",
       "model": null,
-      "created_at": "2025-04-20T00:48:10.701643",
-      "updated_at": "2025-04-20T00:48:10.701644",
+      "created_at": "2025-05-24T12:21:56.173802",
+      "updated_at": "2025-05-24T12:21:56.173804",
       "config": {},
       "use_context": true,
       "inherit_manager_context": false,
@@ -62,13 +62,13 @@
       "input_from_tasks": [],
       "output_to_tasks": [],
       "output_data": {},
-      "human_input": false,
+      "human_input": true,
       "data": {}
     },
-    "6b1d2715-32a7-409a-a758-16ce0f4238fc": {
-      "id": "6b1d2715-32a7-409a-a758-16ce0f4238fc",
+    "a43e2707-2437-41e4-b7d0-9917eae6a9d3": {
+      "id": "a43e2707-2437-41e4-b7d0-9917eae6a9d3",
       "name": "Search for Specific Concerts",
-      "tasksmanager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+      "tasksmanager_id": "e345f55e-0d9d-422c-8f1e-1f9276f18012",
       "description": "Find concerts and performances by specific artists or in specific locations",
       "status": "pending",
       "error": null,
@@ -85,15 +85,15 @@
       "chat_sessions": {},
       "toolsets": [],
       "curried_tools": [],
-      "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
-      "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+      "curried_proxy_id": "097888ea-8882-48c1-8c46-d1475193846b",
+      "crewai_config_id": "28f7daf4-789b-4d29-b0c8-b711af973982",
       "autogen_config_id": null,
       "tree_flow_id": null,
       "agent_role": null,
       "framework": "crewai",
       "model": null,
-      "created_at": "2025-04-20T00:48:10.701671",
-      "updated_at": "2025-04-20T00:48:10.701672",
+      "created_at": "2025-05-24T12:21:56.173916",
+      "updated_at": "2025-05-24T12:21:56.173917",
       "config": {},
       "use_context": true,
       "inherit_manager_context": false,
@@ -106,13 +106,13 @@
       "input_from_tasks": [],
       "output_to_tasks": [],
       "output_data": {},
-      "human_input": false,
+      "human_input": true,
       "data": {}
     },
-    "743a383f-5a4f-42a1-9146-b2b06f8bcbad": {
-      "id": "743a383f-5a4f-42a1-9146-b2b06f8bcbad",
+    "1348b4ae-3634-4ab9-93a2-c6428712dbc6": {
+      "id": "1348b4ae-3634-4ab9-93a2-c6428712dbc6",
       "name": "Recommend Music Festivals",
-      "tasksmanager_id": "16584b53-1e94-4990-b1d7-e555b58cb949",
+      "tasksmanager_id": "e345f55e-0d9d-422c-8f1e-1f9276f18012",
       "description": "Get personalized music festival recommendations based on preferences",
       "status": "pending",
       "error": null,
@@ -129,15 +129,15 @@
       "chat_sessions": {},
       "toolsets": [],
       "curried_tools": [],
-      "curried_proxy_id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
-      "crewai_config_id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
+      "curried_proxy_id": "097888ea-8882-48c1-8c46-d1475193846b",
+      "crewai_config_id": "28f7daf4-789b-4d29-b0c8-b711af973982",
       "autogen_config_id": null,
       "tree_flow_id": null,
       "agent_role": null,
       "framework": "crewai",
       "model": null,
-      "created_at": "2025-04-20T00:48:10.701690",
-      "updated_at": "2025-04-20T00:48:10.701690",
+      "created_at": "2025-05-24T12:21:56.173959",
+      "updated_at": "2025-05-24T12:21:56.173959",
       "config": {},
       "use_context": true,
       "inherit_manager_context": false,
@@ -150,16 +150,16 @@
       "input_from_tasks": [],
       "output_to_tasks": [],
       "output_data": {},
-      "human_input": false,
+      "human_input": true,
       "data": {}
     }
   },
   "messages": {},
   "crewai_config": {
-    "288b0af9-c757-45ad-b90e-5368a83c60ec": {
-      "id": "288b0af9-c757-45ad-b90e-5368a83c60ec",
-      "created_at": "2025-04-20T00:48:10.701503",
-      "updated_at": "2025-04-20T00:48:10.701507",
+    "28f7daf4-789b-4d29-b0c8-b711af973982": {
+      "id": "28f7daf4-789b-4d29-b0c8-b711af973982",
+      "created_at": "2025-05-24T12:21:56.173242",
+      "updated_at": "2025-05-24T12:21:56.173244",
       "create_crew": {
         "description": "A crew specializing in planning concert trips",
         "process": "sequential",
@@ -278,8 +278,8 @@
     }
   },
   "curried_proxies": {
-    "b7eea812-0c6a-4aea-b525-ff3028338a14": {
-      "id": "b7eea812-0c6a-4aea-b525-ff3028338a14",
+    "097888ea-8882-48c1-8c46-d1475193846b": {
+      "id": "097888ea-8882-48c1-8c46-d1475193846b",
       "tool_names": [
         "brave_search",
         "web_search",
@@ -1594,7 +1594,7 @@
               "description": "Instance object"
             },
             "original_obj": {
-              "env_path": "/Users/mb/projects/genbrain/cerebrum/src/.env"
+              "env_path": "/app/src/.env"
             },
             "class_name": null,
             "method_name": null,
@@ -1880,7 +1880,7 @@
           },
           "FileReadTool": {
             "name": "FileReadTool",
-            "description": "Tool Name: Read a file's content\nTool Arguments: {'file_path': {'description': 'Mandatory file full path to read the file', 'type': 'str'}}\nTool Description: A tool that reads the content of a file. To use this tool, provide a 'file_path' parameter with the path to the file you want to read.",
+            "description": "Tool Name: Read a file's content\nTool Arguments: {'file_path': {'description': 'Mandatory file full path to read the file', 'type': 'str'}, 'start_line': {'description': 'Line number to start reading from (1-indexed)', 'type': 'Union[int, NoneType]'}, 'line_count': {'description': 'Number of lines to read. If None, reads the entire file', 'type': 'Union[int, NoneType]'}}\nTool Description: A tool that reads the content of a file. To use this tool, provide a 'file_path' parameter with the path to the file you want to read. Optionally, provide 'start_line' to start reading from a specific line and 'line_count' to limit the number of lines read.",
             "tool_type": "crewai_tool",
             "parameters": [
               {
@@ -1889,6 +1889,20 @@
                 "description": "Mandatory file full path to read the file",
                 "default": null,
                 "required": true
+              },
+              {
+                "name": "start_line",
+                "type_hint": "Optional",
+                "description": "Line number to start reading from (1-indexed)",
+                "default": 1,
+                "required": false
+              },
+              {
+                "name": "line_count",
+                "type_hint": "Optional",
+                "description": "Number of lines to read. If None, reads the entire file",
+                "default": null,
+                "required": false
               }
             ],
             "schema": null,
@@ -1898,7 +1912,7 @@
             },
             "original_obj": {
               "name": "Read a file's content",
-              "description": "Tool Name: Read a file's content\nTool Arguments: {'file_path': {'description': 'Mandatory file full path to read the file', 'type': 'str'}}\nTool Description: A tool that reads the content of a file. To use this tool, provide a 'file_path' parameter with the path to the file you want to read.",
+              "description": "Tool Name: Read a file's content\nTool Arguments: {'file_path': {'description': 'Mandatory file full path to read the file', 'type': 'str'}, 'start_line': {'description': 'Line number to start reading from (1-indexed)', 'type': 'Union[int, NoneType]'}, 'line_count': {'description': 'Number of lines to read. If None, reads the entire file', 'type': 'Union[int, NoneType]'}}\nTool Description: A tool that reads the content of a file. To use this tool, provide a 'file_path' parameter with the path to the file you want to read. Optionally, provide 'start_line' to start reading from a specific line and 'line_count' to limit the number of lines read.",
               "args_schema": "<Error serializing Pydantic model: BaseModel.model_dump() missing 1 required positional argument: 'self'>",
               "description_updated": false,
               "cache_function": {},
@@ -2533,7 +2547,7 @@
               {
                 "name": "session_id",
                 "type_hint": "typing.Optional[str]",
-                "description": "Optional session ID to track which conversation this is part of",
+                "description": "Optional session ID (not directly used by future mechanism but good for context)",
                 "default": null,
                 "required": false
               },
@@ -2553,17 +2567,24 @@
             "original_obj": {},
             "class_name": "human_input",
             "method_name": "streamlit_run",
-            "async_tool": false
+            "async_tool": true
           },
           "human_input.submit_response": {
             "name": "submit_response",
-            "description": "Submit a response to the waiting question.",
+            "description": "Submit a response to the waiting question identified by request_id.",
             "tool_type": "class_method",
             "parameters": [
               {
+                "name": "request_id",
+                "type_hint": "str",
+                "description": "The ID of the input request this response is for.",
+                "default": null,
+                "required": true
+              },
+              {
                 "name": "response",
                 "type_hint": "str",
-                "description": "The human's response to the question",
+                "description": "The human's response to the question.",
                 "default": null,
                 "required": true
               }
@@ -2672,18 +2693,18 @@
               "response_queue": {
                 "maxsize": 0,
                 "queue": "deque([])",
-                "mutex": "<unlocked _thread.lock object at 0x14065d6c0>",
+                "mutex": "<unlocked _thread.lock object at 0x7fdbe0acf4c0>",
                 "not_empty": {
-                  "acquire": "<built-in method acquire of _thread.lock object at 0x14065d6c0>",
-                  "release": "<built-in method release of _thread.lock object at 0x14065d6c0>"
+                  "acquire": "<built-in method acquire of _thread.lock object at 0x7fdbe0acf4c0>",
+                  "release": "<built-in method release of _thread.lock object at 0x7fdbe0acf4c0>"
                 },
                 "not_full": {
-                  "acquire": "<built-in method acquire of _thread.lock object at 0x14065d6c0>",
-                  "release": "<built-in method release of _thread.lock object at 0x14065d6c0>"
+                  "acquire": "<built-in method acquire of _thread.lock object at 0x7fdbe0acf4c0>",
+                  "release": "<built-in method release of _thread.lock object at 0x7fdbe0acf4c0>"
                 },
                 "all_tasks_done": {
-                  "acquire": "<built-in method acquire of _thread.lock object at 0x14065d6c0>",
-                  "release": "<built-in method release of _thread.lock object at 0x14065d6c0>"
+                  "acquire": "<built-in method acquire of _thread.lock object at 0x7fdbe0acf4c0>",
+                  "release": "<built-in method release of _thread.lock object at 0x7fdbe0acf4c0>"
                 },
                 "unfinished_tasks": 0
               },
